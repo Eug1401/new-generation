@@ -406,9 +406,9 @@
    const modal=ensureMatchListModal();
    UI.$('#matchListTitle').textContent=`Partite · ${team?.name||'Squadra'}`;
    UI.$('#matchListBody').innerHTML=matchListHtml(s,list);
-   modal.classList.add('open');document.body.classList.add('modal-open');setTimeout(()=>UI.$('#closeMatchListModal')?.focus(),0);
+   modal.classList.add('open');
  }
- function closeMatchListModal(){UI.$('#matchListModal')?.classList.remove('open');if(!UI.$('#matchTaskModal')?.classList.contains('open'))document.body.classList.remove('modal-open');}
+ function closeMatchListModal(){UI.$('#matchListModal')?.classList.remove('open');}
 
  function ensureMatchTaskModal(){
    let modal=UI.$('#matchTaskModal');
@@ -441,7 +441,7 @@
    const title=mode==='info'?'Info partita':mode==='goals'?'Marcatori':mode==='cards'?'Cartellini':'Scegli cosa modificare';
    UI.$('#matchTaskTitle').textContent=`${title} · ${store.teamName(s,m.homeTeamId,m.homeLabel)} vs ${store.teamName(s,m.awayTeamId,m.awayLabel)}`;
    UI.$('#matchTaskBody').innerHTML=mode==='menu'?matchCommandHtml(s,m):(mode==='info'?infoFormHtml(s,m):reportFormHtml(s,m,mode));
-   modal.classList.add('open');document.body.classList.add('modal-open');setTimeout(()=>UI.$('#closeMatchTaskModal')?.focus(),0);
+   modal.classList.add('open');
  }
  function closeMatchTaskModal(opts={}){
    syncOpenTaskDraft();
@@ -454,7 +454,7 @@
      window.NG_MATCH_LOCK.release(selectedMatch);
    }
    currentTaskMode='menu';previousTaskMode='menu';
-   UI.$('#matchTaskModal')?.classList.remove('open');document.body.classList.remove('modal-open');
+   UI.$('#matchTaskModal')?.classList.remove('open');
  }
  function matchCommandHtml(s,m){
    const d=getReportDraft(m);
@@ -710,9 +710,9 @@ Verrà svuotato il campo arbitro in ${withRef.length} partita/e. Campo, data, or
    if(match){selectedMatch=match.dataset.selectMatch;render();closeMatchListModal();openMatchPanel('menu');return;}
    const panel=e.target.closest('[data-open-match-panel]');if(panel){syncOpenTaskDraft();openMatchPanel(panel.dataset.openMatchPanel);return;}
    if(e.target.id==='closeMatchListModal')closeMatchListModal();
-   if(e.target.id==='matchListModal'){e.preventDefault();e.stopPropagation();}
+   if(e.target.id==='matchListModal'){e.preventDefault();e.stopPropagation();closeMatchListModal();}
    if(e.target.id==='closeMatchTaskModal')closeMatchTaskModal();
-   if(e.target.id==='matchTaskModal'){e.preventDefault();e.stopPropagation();}
+   if(e.target.id==='matchTaskModal'){e.preventDefault();e.stopPropagation();closeMatchTaskModal({force:true});}
  });
  UI.$('#adminMatchRoundFilter').addEventListener('change',e=>{roundFilter=e.target.value;selectedMatch='';render();if(teamFilter)openTeamMatchesModal();});
  document.addEventListener('submit',e=>{
@@ -835,7 +835,6 @@ Verrà svuotato il campo arbitro in ${withRef.length} partita/e. Campo, data, or
    }
  });
 
- document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeMatchTaskModal({force:currentTaskMode==='menu'});closeMatchListModal();}});
 
  // Realtime: re-render quando lo stato admin arriva aggiornato da un altro client
  window.NexoraAdminRefresh=function(){

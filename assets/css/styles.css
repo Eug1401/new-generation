@@ -5222,3 +5222,63 @@ input[type="color"]{min-height:44px;padding:4px;cursor:pointer}
   .print-page .standings-report-table th,.print-page .standings-report-table td{width:auto!important;min-width:0!important}
 }
 .help-box a{display:inline-flex;align-items:center;min-height:24px;color:inherit;font-weight:800;text-underline-offset:3px}
+
+/* === v125 · overlay e controlli a dimensione stabile === */
+body.ng-overlay-open{
+  overflow:hidden!important;
+  overscroll-behavior:none!important;
+}
+.modal,.ng-modal-backdrop,.filter-sheet-modal,.mobile-nav-sheet,.ng-confirm-overlay,.photos-lightbox{
+  isolation:isolate;
+}
+.ng-modal.card:hover,.modal-content.card:hover,.ng-confirm-card:hover{
+  transform:none!important;
+}
+.ng-confirm-overlay:not(.open):not(.is-closing){pointer-events:none}
+.ng-confirm-overlay.is-closing{pointer-events:none}
+.message{animation:none}
+
+.btn.is-loading{
+  position:relative;
+  overflow:hidden;
+  white-space:nowrap;
+  pointer-events:none;
+}
+.btn.is-loading .ng-btn-original{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:inherit;
+  visibility:hidden;
+}
+.btn.is-loading .ng-btn-busy-layer{
+  position:absolute;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  padding:inherit;
+  pointer-events:none;
+}
+.ng-btn-spinner{
+  inline-size:1em;
+  block-size:1em;
+  flex:0 0 1em;
+  border:2px solid currentColor;
+  border-inline-end-color:transparent;
+  border-radius:50%;
+  animation:ngControlSpin .72s linear infinite;
+}
+.btn.is-success .ng-btn-spinner,.btn.is-error .ng-btn-spinner{display:none}
+@keyframes ngControlSpin{to{transform:rotate(1turn)}}
+
+@media(prefers-reduced-motion:reduce){
+  .ng-btn-spinner{animation-duration:1.2s!important}
+}
+
+/* Apertura deterministica dei dialoghi amministrativi: solo opacity/transform. */
+.ng-modal-backdrop.show{animation:ngAdminBackdropIn .16s ease-out both}
+.ng-modal-backdrop.show .ng-modal{animation:ngAdminDialogIn .2s cubic-bezier(.16,1,.3,1) both}
+@keyframes ngAdminBackdropIn{from{opacity:0}to{opacity:1}}
+@keyframes ngAdminDialogIn{from{opacity:0;transform:translate3d(0,12px,0) scale(.985)}to{opacity:1;transform:translate3d(0,0,0) scale(1)}}

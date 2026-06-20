@@ -58,12 +58,15 @@
   // -------------------- Confirm Modal --------------------
   // Sostituto del confirm() nativo con UI custom e backdrop blur
   function confirmDialog(opts){
+    if(document.querySelector('.ng-confirm-overlay')) return Promise.resolve(false);
     return new Promise(resolve => {
       const overlay = document.createElement('div');
+      const titleId = `ng-confirm-title-${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
       overlay.className = 'ng-confirm-overlay';
-      overlay.innerHTML = `<div class="ng-confirm-card" role="dialog" aria-modal="true">
-        <div class="ng-confirm-icon">${opts.icon || '⚠️'}</div>
-        <h3 class="ng-confirm-title">${UI.esc(opts.title || 'Sei sicuro?')}</h3>
+      overlay.setAttribute('aria-hidden','true');
+      overlay.innerHTML = `<div class="ng-confirm-card" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
+        <div class="ng-confirm-icon" aria-hidden="true">${opts.icon || '⚠️'}</div>
+        <h3 class="ng-confirm-title" id="${titleId}">${UI.esc(opts.title || 'Sei sicuro?')}</h3>
         <p class="ng-confirm-text">${UI.esc(opts.text || '')}</p>
         <div class="ng-confirm-actions">
           <button type="button" class="btn ng-confirm-cancel">${UI.esc(opts.cancelLabel || 'Annulla')}</button>
@@ -71,20 +74,35 @@
         </div>
       </div>`;
       document.body.appendChild(overlay);
-      requestAnimationFrame(()=>overlay.classList.add('open'));
+      overlay.getBoundingClientRect();
+      overlay.setAttribute('aria-hidden','false');
+      overlay.classList.add('open');
+      let settled = false;
+      function finishRemoval(){
+        overlay.remove();
+      }
+      function removeAfterTransition(){
+        requestAnimationFrame(()=>{
+          const card=overlay.querySelector('.ng-confirm-card');
+          const animations = typeof overlay.getAnimations === 'function'
+            ? [...overlay.getAnimations(),...(card?.getAnimations?.()||[])]
+            : [];
+          if(!animations.length){ finishRemoval(); return; }
+          Promise.allSettled(animations.map(animation=>animation.finished)).then(finishRemoval);
+        });
+      }
       function close(result){
+        if(settled) return;
+        settled = true;
+        overlay.classList.add('is-closing');
         overlay.classList.remove('open');
-        setTimeout(()=>overlay.remove(), 200);
+        overlay.setAttribute('aria-hidden','true');
+        removeAfterTransition();
         resolve(result);
       }
       overlay.addEventListener('click', e=>{
-        if(e.target === overlay) close(false);
-        else if(e.target.closest('.ng-confirm-cancel')) close(false);
+        if(e.target === overlay || e.target.closest('.ng-confirm-cancel')) close(false);
         else if(e.target.closest('.ng-confirm-ok')) close(true);
-      });
-      document.addEventListener('keydown', function onKey(e){
-        if(e.key === 'Escape'){ close(false); document.removeEventListener('keydown', onKey); }
-        else if(e.key === 'Enter'){ close(true); document.removeEventListener('keydown', onKey); }
       });
     });
   }
@@ -694,8 +712,7 @@
     }, {passive:true});
     document.addEventListener('keydown', e=>{
       if(!lb.classList.contains('open')) return;
-      if(e.key === 'Escape') closeLightbox();
-      else if(e.key === 'ArrowLeft') navLightbox(-1);
+      if(e.key === 'ArrowLeft') navLightbox(-1);
       else if(e.key === 'ArrowRight') navLightbox(1);
     });
   }
@@ -706,12 +723,10 @@
     const lb = UI.$('#photosLightbox');
     lb.classList.add('open');
     lb.setAttribute('aria-hidden','false');
-    document.body.style.overflow = 'hidden';
   }
   function closeLightbox(){
     const lb = UI.$('#photosLightbox');
     if(lb){ lb.classList.remove('open'); lb.setAttribute('aria-hidden','true'); }
-    document.body.style.overflow = '';
     lightboxIndex = -1;
   }
   function navLightbox(delta){

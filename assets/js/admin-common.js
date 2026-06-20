@@ -196,7 +196,7 @@
       const execBtn=dlg.querySelector('#resetExecuteBtn');
       confirmCheck.addEventListener('change',()=>{execBtn.disabled=!confirmCheck.checked;});
       dlg.querySelector('#cancelResetBtn').addEventListener('click',()=>dlg.classList.remove('show'));
-      dlg.addEventListener('click',e=>{if(e.target===dlg){e.preventDefault();e.stopPropagation();}});
+      dlg.addEventListener('click',e=>{if(e.target===dlg){e.preventDefault();e.stopPropagation();dlg.classList.remove('show');}});
       execBtn.addEventListener('click',async()=>{
         if(!confirmCheck.checked)return;
         const msg=dlg.querySelector('#resetDialogMsg');
@@ -204,7 +204,9 @@
         const exportRecap=dlg.querySelector('#resetExportRecap')?.checked;
         const current=state();
         try{
-          execBtn.disabled=true;
+          const busy=window.NGInteractive;
+          if(busy) busy.setButtonBusy(execBtn,true,'Reset in corso…');
+          else execBtn.disabled=true;
           msg.innerHTML='<div class="message">Preparo i file selezionati prima del reset...</div>';
           if(exportBackup){downloadStateBackup(current,'reset-flow');}
           if(exportRecap){await downloadRecapPdf(current);}
@@ -212,7 +214,8 @@
           setTimeout(resetStorageAndState,900);
         }catch(err){
           console.error(err);
-          execBtn.disabled=false;
+          if(window.NGInteractive) window.NGInteractive.setButtonBusy(execBtn,false);
+          else execBtn.disabled=false;
           msg.innerHTML=`<div class="message error">Operazione interrotta: ${UI.esc(err.message||err)}</div>`;
         }
       });
@@ -366,11 +369,13 @@
       const msg=dlg.querySelector('#simulationDialogMsg');
       chk.addEventListener('change',()=>{exec.disabled=!chk.checked;});
       dlg.querySelector('#cancelSimulationBtn').addEventListener('click',()=>dlg.classList.remove('show'));
-      dlg.addEventListener('click',e=>{if(e.target===dlg){e.preventDefault();e.stopPropagation();}});
+      dlg.addEventListener('click',e=>{if(e.target===dlg){e.preventDefault();e.stopPropagation();dlg.classList.remove('show');}});
       exec.addEventListener('click',async()=>{
         if(!chk.checked)return;
         try{
-          exec.disabled=true;
+          const busy=window.NGInteractive;
+          if(busy) busy.setButtonBusy(exec,true,'Simulazione…');
+          else exec.disabled=true;
           msg.innerHTML='<div class="message">Genero dati finti e referti di test...</div>';
           const res=runTournamentSimulation();
           msg.innerHTML=`<div class="message ok"><strong>Simulazione completata.</strong><br>${res.teams} squadre, ${res.players} giocatori finti/realistici, ${res.played} partite refertate su ${res.matches}. Salvataggio in corso...</div>`;
@@ -383,7 +388,8 @@
           setTimeout(()=>location.reload(),500);
         }catch(err){
           console.error(err);
-          exec.disabled=false;
+          if(window.NGInteractive) window.NGInteractive.setButtonBusy(exec,false);
+          else exec.disabled=false;
           msg.innerHTML=`<div class="message error">${UI.esc(err.message||err)}</div>`;
         }
       });

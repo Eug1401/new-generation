@@ -482,7 +482,11 @@
       if(submit?.disabled)return;
       const fd = new FormData(form);
       const msg = overlay.querySelector('#ngLoginMsg');
-      if(submit){submit.disabled=true;submit.setAttribute('aria-busy','true');submit.textContent='Accesso...';}
+      const busy=window.NGInteractive;
+      if(submit){
+        if(busy) busy.setButtonBusy(submit,true,'Accesso…');
+        else{submit.disabled=true;submit.setAttribute('aria-busy','true');}
+      }
       form.setAttribute('aria-busy','true');
       msg.innerHTML = '<div class="message">Accesso in corso...</div>';
       try{
@@ -490,7 +494,10 @@
         if(error){
           msg.textContent='';
           const errorBox=document.createElement('div');errorBox.className='message error';errorBox.textContent=error.message||'Accesso non riuscito.';msg.appendChild(errorBox);
-          if(submit){submit.disabled=false;submit.removeAttribute('aria-busy');submit.textContent='Entra';}
+          if(submit){
+            if(busy) busy.setButtonBusy(submit,false);
+            else{submit.disabled=false;submit.removeAttribute('aria-busy');}
+          }
           form.removeAttribute('aria-busy');
           overlay.querySelector('#ngLoginEmail')?.focus();
           return;
@@ -499,7 +506,10 @@
       }catch(err){
         msg.textContent='';
         const errorBox=document.createElement('div');errorBox.className='message error';errorBox.textContent=err?.message||'Servizio di accesso non disponibile.';msg.appendChild(errorBox);
-        if(submit){submit.disabled=false;submit.removeAttribute('aria-busy');submit.textContent='Entra';}
+        if(submit){
+          if(busy) busy.setButtonBusy(submit,false);
+          else{submit.disabled=false;submit.removeAttribute('aria-busy');}
+        }
         form.removeAttribute('aria-busy');
       }
     });
@@ -1084,10 +1094,18 @@
     btn.style.marginLeft = '8px';
     btn.textContent = 'Riprova';
     btn.addEventListener('click', () => {
-      btn.disabled = true;
-      btn.textContent = 'Riprovo...';
+      const busy=window.NGInteractive;
+      if(busy?.isButtonBusy(btn)) return;
+      if(busy) busy.setButtonBusy(btn,true,'Riprovo…');
+      else btn.disabled = true;
       attemptInitialPublicFetch(true).then(ok => {
-        if(!ok){ btn.disabled = false; btn.textContent = 'Riprova'; }
+        if(!ok){
+          if(busy) busy.setButtonBusy(btn,false);
+          else btn.disabled = false;
+        }
+      }).catch(()=>{
+        if(busy) busy.setButtonBusy(btn,false);
+        else btn.disabled = false;
       });
     });
     el.appendChild(btn);

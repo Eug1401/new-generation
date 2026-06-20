@@ -6,8 +6,13 @@
     'select:not([disabled])','textarea:not([disabled])','[tabindex]:not([tabindex="-1"])',
     'details > summary:first-of-type','[contenteditable="true"]'
   ].join(',');
+  const overlaySelector = '.modal,.ng-modal-backdrop,.filter-sheet-modal,.mobile-nav-sheet,.ng-confirm-overlay,.photos-lightbox,.photo-lightbox,.public-photo-lightbox,.login-overlay';
   let generatedId = 0;
   const modalTriggers = new WeakMap();
+  const modalOpenState = new WeakMap();
+  const modalFocusFrames = new WeakMap();
+  const busyButtons = new WeakMap();
+  let scrollLockState = null;
 
   const ready = fn => document.readyState === 'loading'
     ? document.addEventListener('DOMContentLoaded', fn, {once:true})
@@ -154,19 +159,96 @@
   function modalContainer(node){
     if(!(node instanceof Element)) return null;
     if(node.matches('[role="dialog"]')) return node;
-    return node.querySelector('[role="dialog"],.modal-content,.ng-modal,.filter-sheet-panel,.mobile-nav-panel,.ng-confirm-card,.lightbox-content') || null;
+    return node.querySelector('[role="dialog"],.modal-content,.ng-modal,.filter-sheet-panel,.mobile-nav-panel,.ng-confirm-card,.lightbox-stage,.lightbox-content') || null;
   }
 
   function overlayIsOpen(overlay){
     if(overlay.classList.contains('modal')) return overlay.classList.contains('open');
     if(overlay.classList.contains('ng-modal-backdrop')) return overlay.classList.contains('show');
     if(overlay.classList.contains('filter-sheet-modal') || overlay.classList.contains('mobile-nav-sheet') || overlay.classList.contains('ng-confirm-overlay')) return overlay.classList.contains('open');
-    if(overlay.classList.contains('photo-lightbox') || overlay.classList.contains('public-photo-lightbox')) return overlay.classList.contains('open');
-    if(overlay.classList.contains('login-overlay')) return true;
+    if(overlay.classList.contains('photos-lightbox') || overlay.classList.contains('photo-lightbox') || overlay.classList.contains('public-photo-lightbox')) return overlay.classList.contains('open');
+    if(overlay.classList.contains('login-overlay')) return overlay.isConnected;
     return overlay.classList.contains('open') || overlay.classList.contains('show');
   }
 
+  function overlayBlocksPage(overlay){
+    return overlayIsOpen(overlay) || overlay.classList.contains('is-closing');
+  }
+
+  function allOverlays(root=document){
+    const overlays=[];
+    if(root.matches?.(overlaySelector)) overlays.push(root);
+    root.querySelectorAll?.(overlaySelector).forEach(el=>overlays.push(el));
+    return overlays;
+  }
+
+  function lockDocumentScroll(){
+    if(scrollLockState || !document.body) return;
+    const body=document.body;
+    const computed=getComputedStyle(body);
+    const stableGutter=getComputedStyle(document.documentElement).scrollbarGutter.includes('stable');
+    const scrollbar=stableGutter ? 0 : Math.max(0,window.innerWidth-document.documentElement.clientWidth);
+    scrollLockState={
+      overflow:body.style.overflow,
+      overscrollBehavior:body.style.overscrollBehavior,
+      paddingRight:body.style.paddingRight
+    };
+    if(scrollbar>0){
+      const currentPadding=parseFloat(computed.paddingRight)||0;
+      body.style.paddingRight=`${currentPadding+scrollbar}px`;
+      document.documentElement.style.setProperty('--ng-scrollbar-compensation',`${scrollbar}px`);
+    }
+    body.style.overflow='hidden';
+    body.style.overscrollBehavior='none';
+    body.classList.add('ng-overlay-open');
+  }
+
+  function unlockDocumentScroll(){
+    if(!scrollLockState || !document.body) return;
+    const body=document.body;
+    body.style.overflow=scrollLockState.overflow;
+    body.style.overscrollBehavior=scrollLockState.overscrollBehavior;
+    body.style.paddingRight=scrollLockState.paddingRight;
+    body.classList.remove('ng-overlay-open','modal-open','mobile-nav-open');
+    document.documentElement.style.removeProperty('--ng-scrollbar-compensation');
+    scrollLockState=null;
+  }
+
+  function syncDocumentLock(){
+    const blocked=allOverlays().some(overlay=>overlayBlocksPage(overlay));
+    if(blocked) lockDocumentScroll();
+    else unlockDocumentScroll();
+  }
+
+  function scheduleFocus(overlay,callback){
+    const previous=modalFocusFrames.get(overlay);
+    if(previous) cancelAnimationFrame(previous);
+    const frame=requestAnimationFrame(()=>{
+      modalFocusFrames.delete(overlay);
+      callback();
+    });
+    modalFocusFrames.set(overlay,frame);
+  }
+
+  function restoreModalTrigger(overlay){
+    const trigger=modalTriggers.get(overlay);
+    modalTriggers.delete(overlay);
+    if(trigger instanceof HTMLElement && trigger.matches('button,a,[role="button"]')) trigger.setAttribute('aria-expanded','false');
+    if(!(trigger instanceof HTMLElement) || !document.contains(trigger)) return;
+    scheduleFocus(overlay,()=>{
+      const stillOpen=activeOverlay();
+      if(stillOpen && stillOpen!==overlay && !stillOpen.contains(trigger)){
+        const dialog=modalContainer(stillOpen);
+        const first=dialog ? [...dialog.querySelectorAll(focusableSelector)].find(visible) : null;
+        (first||dialog)?.focus?.({preventScroll:true});
+        return;
+      }
+      trigger.focus({preventScroll:true});
+    });
+  }
+
   function updateModal(overlay){
+    if(!(overlay instanceof Element) || !overlay.matches(overlaySelector)) return;
     const dialog = modalContainer(overlay);
     if(!dialog) return;
     if(!dialog.hasAttribute('role')) dialog.setAttribute('role','dialog');
@@ -174,38 +256,42 @@
     if(!dialog.hasAttribute('tabindex')) dialog.tabIndex = -1;
     if(!dialog.hasAttribute('aria-label') && !dialog.hasAttribute('aria-labelledby')){
       const heading = dialog.querySelector('h1,h2,h3');
-      if(heading){
-        dialog.setAttribute('aria-labelledby',ensureId(heading,'ng-dialog-title'));
-      }else{
-        dialog.setAttribute('aria-label','Finestra di dialogo');
-      }
+      if(heading) dialog.setAttribute('aria-labelledby',ensureId(heading,'ng-dialog-title'));
+      else dialog.setAttribute('aria-label','Finestra di dialogo');
     }
     const open = overlayIsOpen(overlay);
-    const hiddenValue = String(!open);
-    if(overlay.getAttribute('aria-hidden') !== hiddenValue) overlay.setAttribute('aria-hidden',hiddenValue);
-    if(open){
-      if(!modalTriggers.has(overlay)) modalTriggers.set(overlay,document.activeElement);
-      requestAnimationFrame(()=>{
+    const wasOpen = modalOpenState.get(overlay) === true;
+    overlay.setAttribute('aria-hidden',String(!open));
+    modalOpenState.set(overlay,open);
+    if(open && !wasOpen){
+      const trigger=document.activeElement;
+      modalTriggers.set(overlay,trigger);
+      if(trigger instanceof HTMLElement && trigger.matches('button,a,[role="button"]')){
+        trigger.setAttribute('aria-controls',ensureId(overlay,'ng-overlay'));
+        trigger.setAttribute('aria-expanded','true');
+      }
+      scheduleFocus(overlay,()=>{
+        if(!overlayIsOpen(overlay)) return;
         const current = document.activeElement;
         if(!overlay.contains(current)){
           const first = [...dialog.querySelectorAll(focusableSelector)].find(visible);
           (first || dialog).focus({preventScroll:true});
         }
       });
-    }else{
-      const trigger = modalTriggers.get(overlay);
-      if(trigger instanceof HTMLElement && document.contains(trigger) && !overlay.contains(document.activeElement)){
-        requestAnimationFrame(()=>trigger.focus({preventScroll:true}));
+    }else if(!open && wasOpen){
+      if(overlay.classList.contains('is-closing')){
+        modalOpenState.set(overlay,true);
+        syncDocumentLock();
+        return;
       }
-      modalTriggers.delete(overlay);
+      restoreModalTrigger(overlay);
     }
+    syncDocumentLock();
   }
 
   function enhanceModals(root){
-    const overlays = [];
-    if(root.matches?.('.modal,.ng-modal-backdrop,.filter-sheet-modal,.mobile-nav-sheet,.ng-confirm-overlay,.photo-lightbox,.public-photo-lightbox,.login-overlay')) overlays.push(root);
-    root.querySelectorAll?.('.modal,.ng-modal-backdrop,.filter-sheet-modal,.mobile-nav-sheet,.ng-confirm-overlay,.photo-lightbox,.public-photo-lightbox,.login-overlay').forEach(el=>overlays.push(el));
-    overlays.forEach(updateModal);
+    allOverlays(root).forEach(updateModal);
+    syncDocumentLock();
   }
 
   function enhance(root=document){
@@ -219,23 +305,109 @@
   }
 
   function activeOverlay(){
-    return [...document.querySelectorAll('.modal.open,.ng-modal-backdrop.show,.filter-sheet-modal.open,.mobile-nav-sheet.open,.ng-confirm-overlay.open,.photo-lightbox.open,.public-photo-lightbox.open,.login-overlay')]
-      .filter(visible).pop() || null;
+    return allOverlays()
+      .filter(overlay=>overlayIsOpen(overlay) && visible(overlay))
+      .sort((a,b)=>{
+        const za=Number.parseInt(getComputedStyle(a).zIndex,10)||0;
+        const zb=Number.parseInt(getComputedStyle(b).zIndex,10)||0;
+        if(za!==zb) return za-zb;
+        return (a.compareDocumentPosition(b)&Node.DOCUMENT_POSITION_FOLLOWING)?-1:1;
+      })
+      .pop() || null;
   }
 
   function closeActiveOverlay(overlay){
     const selectors = [
-      '[data-close-match-filter]','[data-mobile-more="close"]','[data-lightbox-close]',
+      '[data-close-match-filter]','[data-mobile-more="close"]','[data-lightbox-close]','.lightbox-close',
       '#closeModal','#closeArticleModal','#closeTeamModal','#closeMatchTaskModal','#closeMatchListModal',
       '#closeGroupMoveModal','#closeCriterionMoveModal','#closePlayersTeamModal',
       '#cancelResetBtn','#cancelSimulationBtn','.ng-confirm-cancel','.article-modal-close','.match-modal-close'
     ];
     let button = overlay.querySelector(selectors.join(','));
     if(!button){
-      button = [...overlay.querySelectorAll('button')].find(btn=>/^(chiudi|annulla|close)$/i.test(btn.textContent.trim()));
+      button = [...overlay.querySelectorAll('button')].find(btn=>/^(chiudi|annulla|close|×)$/i.test(btn.textContent.trim()));
     }
     if(button) button.click();
   }
+
+  function setButtonBusy(button,busy,label='Attendi…'){
+    if(!(button instanceof HTMLButtonElement || button instanceof HTMLInputElement)) return false;
+    if(busy){
+      if(busyButtons.has(button)){
+        setButtonBusyLabel(button,label,true);
+        return false;
+      }
+      const rect=button.getBoundingClientRect();
+      const state={
+        html:button.innerHTML,
+        value:button.value,
+        disabled:button.disabled,
+        ariaBusy:button.getAttribute('aria-busy'),
+        minWidth:button.style.minWidth,
+        minHeight:button.style.minHeight
+      };
+      busyButtons.set(button,state);
+      if(rect.width>0) button.style.minWidth=`${Math.ceil(rect.width)}px`;
+      if(rect.height>0) button.style.minHeight=`${Math.ceil(rect.height)}px`;
+      button.disabled=true;
+      button.setAttribute('aria-busy','true');
+      button.classList.add('is-loading');
+      if(button instanceof HTMLInputElement){
+        button.value=label;
+      }else{
+        const original=document.createElement('span');
+        original.className='ng-btn-original';
+        original.setAttribute('aria-hidden','true');
+        original.innerHTML=state.html;
+        const layer=document.createElement('span');
+        layer.className='ng-btn-busy-layer';
+        const spinner=document.createElement('span');
+        spinner.className='ng-btn-spinner';
+        spinner.setAttribute('aria-hidden','true');
+        const text=document.createElement('span');
+        text.className='ng-btn-busy-text';
+        text.textContent=label;
+        layer.append(spinner,text);
+        button.replaceChildren(original,layer);
+      }
+      return true;
+    }
+    const state=busyButtons.get(button);
+    if(!state) return false;
+    if(button instanceof HTMLInputElement) button.value=state.value;
+    else button.innerHTML=state.html;
+    button.disabled=state.disabled;
+    if(state.ariaBusy===null) button.removeAttribute('aria-busy');
+    else button.setAttribute('aria-busy',state.ariaBusy);
+    button.style.minWidth=state.minWidth;
+    button.style.minHeight=state.minHeight;
+    button.classList.remove('is-loading','is-success','is-error');
+    busyButtons.delete(button);
+    return true;
+  }
+
+  function setButtonBusyLabel(button,label,spinner=true,tone=''){
+    if(!busyButtons.has(button)) return false;
+    if(button instanceof HTMLInputElement){
+      button.value=label;
+      return true;
+    }
+    const text=button.querySelector('.ng-btn-busy-text');
+    const icon=button.querySelector('.ng-btn-spinner');
+    if(text) text.textContent=label;
+    if(icon) icon.hidden=!spinner;
+    button.classList.toggle('is-success',tone==='success');
+    button.classList.toggle('is-error',tone==='error');
+    return true;
+  }
+
+  window.NGInteractive={
+    setButtonBusy,
+    setButtonBusyLabel,
+    isButtonBusy:button=>busyButtons.has(button),
+    syncDocumentLock,
+    activeOverlay
+  };
 
   ready(()=>{
     document.documentElement.classList.remove('no-js');
@@ -244,11 +416,22 @@
 
     const observer = new MutationObserver(records=>{
       for(const record of records){
-        if(record.type === 'childList') record.addedNodes.forEach(node=>{if(node instanceof Element) enhance(node);});
-        else if(record.type === 'attributes' && record.target instanceof Element) updateModal(record.target);
+        if(record.type === 'childList'){
+          record.addedNodes.forEach(node=>{if(node instanceof Element) enhance(node);});
+          record.removedNodes.forEach(node=>{
+            if(!(node instanceof Element)) return;
+            allOverlays(node).forEach(overlay=>{
+              if(modalOpenState.get(overlay)===true) restoreModalTrigger(overlay);
+              modalOpenState.set(overlay,false);
+            });
+          });
+        }else if(record.type === 'attributes' && record.target instanceof Element){
+          updateModal(record.target);
+        }
       }
       enhanceMessages(document);
       updateTabs();
+      syncDocumentLock();
     });
     observer.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['class']});
 
@@ -274,6 +457,7 @@
       const dialog = modalContainer(overlay);
       if(event.key === 'Escape'){
         event.preventDefault();
+        event.stopPropagation();
         closeActiveOverlay(overlay);
         return;
       }
@@ -284,5 +468,7 @@
       if(event.shiftKey && document.activeElement === first){event.preventDefault();last.focus();}
       else if(!event.shiftKey && document.activeElement === last){event.preventDefault();first.focus();}
     },true);
+
+    window.addEventListener('pagehide',unlockDocumentScroll,{once:true});
   });
 })();

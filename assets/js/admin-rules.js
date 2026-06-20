@@ -40,9 +40,9 @@
     UI.$('#criterionMoveTitle').textContent=`Sposta ${c.label}`;
     UI.$('#criterionMoveBody').innerHTML=`<div class="selected-team-summary"><span class="criterion-rank big">${index+1}</span><div><strong>${UI.esc(c.label)}</strong><small>Posizione attuale: ${index+1}</small></div></div><div class="group-move-actions">${criteriaOrder.map((targetId,i)=>`<button class="match-action-card compact ${i===index?'active':''}" type="button" data-mobile-criterion-from="${index}" data-mobile-criterion-to="${i}"><strong>Posizione ${i+1}</strong><small>${UI.esc(criteriaMeta(targetId).label)}</small></button>`).join('')}</div>`;
     modal.classList.add('open');
-    document.body.classList.add('modal-open');
+    
   }
-  function closeCriterionMoveModal(){UI.$('#criterionMoveModal')?.classList.remove('open');document.body.classList.remove('modal-open');}
+  function closeCriterionMoveModal(){UI.$('#criterionMoveModal')?.classList.remove('open');}
 
   function renderCompetitionEditor(){const box=UI.$('#competitionsEditor');if(!box)return;competitions=competitions.length?competitions:[{id:'comp_oro',name:'Playoff Oro',startRank:1,teams:4}];box.innerHTML=competitions.map(c=>`<div class="competition-row" data-comp-id="${c.id}"><div><label>Nome</label><input data-comp-field="name" value="${UI.esc(c.name)}" placeholder="Playoff Oro"></div><div><label>Da posizione</label><input data-comp-field="startRank" type="number" min="1" value="${UI.esc(c.startRank)}"></div><div><label>N. squadre</label><input data-comp-field="teams" type="number" min="2" value="${UI.esc(c.teams)}"><p class="muted">2,4,8,16...</p></div>${competitions.length>1?`<button class="btn danger small" data-delete-competition="${c.id}" type="button">Elimina</button>`:'<span class="pill">Default</span>'}</div>`).join('');UI.$('#superCupHome').innerHTML=compOptions(UI.$('#superCupHome').value||competitions[0]?.id||'');UI.$('#superCupAway').innerHTML=compOptions(UI.$('#superCupAway').value||competitions[1]?.id||'');updateSuperCupVisibility();}
   function renderGroupsEditor(){const box=UI.$('#groupsEditor');if(!box)return;groupConfigs=groupConfigs.length?groupConfigs:[{name:'Girone A',size:4,qualifiers:2},{name:'Girone B',size:4,qualifiers:2}];box.innerHTML=groupConfigs.map((g,i)=>`<div class="competition-row" data-group-index="${i}"><div><label>Nome girone</label><input data-group-field="name" value="${UI.esc(g.name)}"></div><div><label>Squadre nel girone</label><input data-group-field="size" type="number" min="2" value="${UI.esc(g.size)}"></div><div><label>Squadre qualificate</label><input data-group-field="qualifiers" type="number" min="1" value="${UI.esc(g.qualifiers)}"><p class="muted">Almeno 1 per girone. Totale valido: almeno 2 qualificate complessive. Il tabellone assegna BYE automatici alle migliori quando servono.</p></div>${groupConfigs.length>2?`<button class="btn danger small" data-delete-group="${i}" type="button">Elimina</button>`:'<span class="pill">Girone</span>'}</div>`).join('');}
@@ -71,7 +71,7 @@
     const pick=e.target.closest('[data-pick-criterion]');if(pick){if(isTouchDevice())openCriterionMoveModal(Number(pick.dataset.pickCriterion));return;}
     const mobile=e.target.closest('[data-mobile-criterion-from]');if(mobile){moveCriterion(Number(mobile.dataset.mobileCriterionFrom),Number(mobile.dataset.mobileCriterionTo));closeCriterionMoveModal();return;}
     if(e.target.id==='closeCriterionMoveModal')closeCriterionMoveModal();
-    if(e.target.id==='criterionMoveModal'){e.preventDefault();e.stopPropagation();}
+    if(e.target.id==='criterionMoveModal'){e.preventDefault();e.stopPropagation();closeCriterionMoveModal();}
   });
 
   document.addEventListener('dragstart',e=>{const row=e.target.closest('[data-criterion-index]');if(!row||isTouchDevice())return;e.dataTransfer.setData('text/plain',row.dataset.criterionIndex);row.classList.add('dragging');});

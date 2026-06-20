@@ -82,10 +82,10 @@
     const current=assignments[teamId]||'';
     UI.$('#groupMoveBody').innerHTML=`<div class="selected-team-summary">${UI.logo(team,false)}<div><strong>${UI.esc(team.name)}</strong><small>Girone attuale: ${UI.esc(current||'Non assegnata')}</small></div></div><div class="group-move-actions">${groupNames(s).map(name=>{const g=groupByName(s,name);const c=assignedTeamsFor(s,name).length;return `<button class="match-action-card compact" type="button" data-mobile-move-team="${UI.esc(teamId)}" data-mobile-move-group="${UI.esc(name)}"><strong>${UI.esc(name)}</strong><small>${c}/${g.size} squadre · ${g.qualifiers} qualificate</small></button>`;}).join('')}<button class="match-action-card compact danger-soft" type="button" data-mobile-move-team="${UI.esc(teamId)}" data-mobile-move-group=""><strong>Non assegnata</strong><small>Rimuovi momentaneamente dai gironi</small></button></div>`;
     modal.classList.add('open');
-    document.body.classList.add('modal-open');
-    setTimeout(()=>UI.$('#closeGroupMoveModal')?.focus(),0);
+    
+    
   }
-  function closeGroupMoveModal(){UI.$('#groupMoveModal')?.classList.remove('open');document.body.classList.remove('modal-open');}
+  function closeGroupMoveModal(){UI.$('#groupMoveModal')?.classList.remove('open');}
 
   function applyAssignments(){
     const s=A.state();
@@ -124,7 +124,7 @@
     const mobileMove=e.target.closest('[data-mobile-move-team]');
     if(mobileMove){moveTeam(mobileMove.dataset.mobileMoveTeam,mobileMove.dataset.mobileMoveGroup||'');return;}
     if(e.target.id==='closeGroupMoveModal'){closeGroupMoveModal();return;}
-    if(e.target.id==='groupMoveModal'){e.preventDefault();e.stopPropagation();return;}
+    if(e.target.id==='groupMoveModal'){e.preventDefault();e.stopPropagation();closeGroupMoveModal();return;}
     const move=e.target.closest('[data-move-picked-to]');if(move&&pickedTeamId){moveTeam(pickedTeamId,move.dataset.movePickedTo||'');}
   });
   document.addEventListener('dragstart',e=>{if(isTouchDevice()){e.preventDefault();return;}const row=e.target.closest('[data-team-id]');if(row){e.dataTransfer.setData('text/plain',row.dataset.teamId);row.classList.add('dragging');}});
@@ -132,7 +132,6 @@
   document.addEventListener('dragover',e=>{if(isTouchDevice())return;const col=e.target.closest('[data-group-drop]');if(col){e.preventDefault();col.classList.add('drop-active');}});
   document.addEventListener('dragleave',e=>{const col=e.target.closest('[data-group-drop]');if(col&&!col.contains(e.relatedTarget))col.classList.remove('drop-active');});
   document.addEventListener('drop',e=>{if(isTouchDevice())return;const col=e.target.closest('[data-group-drop]');if(col){e.preventDefault();const id=e.dataTransfer.getData('text/plain');moveTeam(id,col.dataset.groupDrop||'');}});
-  document.addEventListener('keydown',e=>{if(e.key==='Escape')closeGroupMoveModal();});
 
   UI.$('#serpentineBtn')?.addEventListener('click',()=>{assignments=store.serpentineAssignments(A.state());A.flash('#groupsMessage','Distribuzione bilanciata applicata in anteprima. Premi “Applica e rigenera” per salvarla.','ok');render();});
   UI.$('#randomBtn')?.addEventListener('click',()=>{assignments=store.randomAssignments(A.state());A.flash('#groupsMessage','Sorteggio casuale applicato in anteprima. Premi “Applica e rigenera” per salvarlo.','ok');render();});

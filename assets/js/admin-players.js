@@ -153,14 +153,14 @@
    UI.$('#playersTeamModalTitle').textContent=t?`Gestione ${t.name}`:'Gestione squadra';
    renderWorkspace('#playersTeamModalBody');
    modal.classList.add('open');
-   document.body.classList.add('modal-open');
-   setTimeout(()=>UI.$('#closePlayersTeamModal')?.focus(),0);
+   
+   
  }
- function closePlayersModal(){UI.$('#playersTeamModal')?.classList.remove('open');document.body.classList.remove('modal-open');}
+ function closePlayersModal(){UI.$('#playersTeamModal')?.classList.remove('open');}
  function render(){renderTeamButtons(); const box=UI.$('#playersWorkspace'); if(box) box.innerHTML='<div class="empty">Clicca una squadra per aprire la schermata completa di gestione roster.</div>';}
  document.addEventListener('DOMContentLoaded',render);
  document.addEventListener('click',e=>{const btn=e.target.closest('[data-player-team]');if(btn){openPlayersTeam(btn.dataset.playerTeam);return;} if(e.target.id==='closePlayersTeamModal')closePlayersModal();
-   if(e.target.id==='playersTeamModal'){e.preventDefault();e.stopPropagation();}});
+   if(e.target.id==='playersTeamModal'){e.preventDefault();e.stopPropagation();closePlayersModal();}});
  document.addEventListener('submit',e=>{
    const f=e.target;
    if(f.id==='playerCreateForm'){
