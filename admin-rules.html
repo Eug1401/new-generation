@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="it" class="no-js">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#070b12"><meta name="color-scheme" content="dark"><link rel="preconnect" href="https://mcksxqtgibkazxnkdfra.supabase.co" crossorigin><link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin><link rel="dns-prefetch" href="https://mcksxqtgibkazxnkdfra.supabase.co"><link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
+  <title>New Generation · Regole</title>
+  <link rel="stylesheet" href="assets/css/styles.css?v=v124-ux">
+</head>
+<body><a class="skip-link" href="#main-content">Vai al contenuto principale</a>
+<div class="shell">
+  <header class="site-header">
+    <div class="brand"><div data-brand-logo><div class="logo"><span></span></div></div><div><h1 data-brand-title>New Generation · Regole</h1><p data-brand-subtitle>Formato torneo, fasi, campi e generazione automatica.</p></div></div>
+    <div class="actions"><button class="btn primary" id="simulateTournamentBtn" type="button">Simula</button><button class="btn danger" id="resetAllBtn" type="button">Reset</button></div>
+  </header>
+  <nav class="admin-nav" aria-label="Navigazione amministrazione"><a href="admin.html">Dashboard</a><a href="admin-rules.html" class="active">Regole & calendario</a><a href="admin-groups.html">Gironi</a><a href="admin-teams.html">Squadre</a><a href="admin-players.html">Giocatori</a><a href="admin-matches.html">Partite & referti</a><a href="admin-articles.html">Articoli</a><a href="admin-photos.html" class="">Foto</a><a href="admin-reports.html">Report & PDF</a></nav>
+  <main id="main-content" tabindex="-1">
+    <div class="grid">
+      <article class="card pad span-7">
+        <h2>Regole torneo</h2>
+        <form id="rulesForm" class="form-grid">
+          <div><label>Nome torneo</label><input name="name" id="ruleName" required></div>
+          <div><label>Formato</label><select name="format" id="ruleFormat"><option value="league">Campionato all'italiana</option><option value="knockout">Eliminazione diretta</option><option value="groups_knockout">Gironi + eliminazione diretta</option><option value="league_knockout">Campionato + eliminazione diretta</option></select></div>
+          <div id="formatHint" class="field-full"></div>
+          <div class="field-full"><label><input type="checkbox" name="isKingsLeague" id="isKingsLeague" style="width:auto"> Modalità Kings League</label><p class="muted">Se attiva, nel referto partita ogni gol può valere 1 oppure 2. Il risultato e la classifica usano il peso selezionato.</p></div>
+
+          <div class="field-full standings-criteria-box">
+            <div class="section-title compact"><div><h3>Personalizza classifica</h3><p>Riordina i criteri: l'algoritmo userà questo ordine per campionato, gironi, qualificazioni e tabellone. Su PC trascina le righe; su telefono usa frecce o pulsante ↕.</p></div><span class="pill">Tie-breaker</span></div>
+            <div id="standingsCriteriaEditor" class="standings-criteria-editor" aria-label="Ordine criteri classifica"></div>
+            <p class="muted" id="standingsCriteriaSummary"></p>
+          </div>
+
+          <div class="field-full groups-only">
+            <div class="section-title compact"><div><h3>Configurazione gironi</h3><p>Specifica per ogni girone quante squadre contiene e quante si qualificano alla fase finale. La somma delle squadre dei gironi deve coincidere con le squadre iscritte e le qualificate complessive devono essere 2, 4, 8, 16... per generare finale, semifinali, quarti o ottavi senza BYE.</p></div><button class="btn small" id="addGroupBtn" type="button">Aggiungi girone</button></div>
+            <div id="groupsEditor"></div>
+          </div>
+
+          <div class="field-full league-ko-only">
+            <div class="section-title compact"><div><h3>Competizioni a eliminazione diretta</h3><p>Di default esiste solo Playoff Oro. Aggiungi Argento, Bronzo, ecc. solo quando servono. Il seeding è automatico e distribuisce le migliori teste di serie per incontrarsi il più tardi possibile.</p></div><button class="btn small" id="addCompetitionBtn" type="button">Aggiungi competizione</button></div>
+            <div id="competitionsEditor"></div>
+          </div>
+          <div class="field-full league-ko-only" id="superCupBox" style="display:none"><h3>Supercoppa</h3><label><input type="checkbox" name="superCupEnabled" id="superCupEnabled" style="width:auto"> Abilita Supercoppa</label><div class="supercup-grid margin-top"><div><label>Prima finalista</label><select id="superCupHome" name="superCupHome"></select></div><div><label>Seconda finalista</label><select id="superCupAway" name="superCupAway"></select></div></div><p class="muted">Disponibile solo se hai almeno due competizioni. Di base: vincente Playoff Oro contro vincente Playoff Argento.</p></div>
+
+          <div><label>Numero campi disponibili</label><input name="fieldCount" id="fieldCount" type="number" min="1"></div>
+          <div class="groups-only"><label>Assegnazione campi gironi</label><select name="groupFieldPolicy" id="groupFieldPolicy"><option value="auto">Automatica bilanciata</option><option value="fixed_by_group">Un girone per campo</option></select><p class="muted" id="groupFieldPolicyHint">Se i gironi sono pari ai campi, puoi fissare ogni girone sul proprio campo: Girone A → Campo 1, Girone B → Campo 2, ecc.</p></div>
+          <div><label><input type="checkbox" name="oneDay" id="oneDay" style="width:auto"> Torneo tutto in un giorno</label><p class="muted">Se attivo, il sistema usa data, ora inizio, durata e pause. L’ora fine viene calcolata automaticamente.</p></div>
+          <div class="field-full multi-day-field"><label>Giorni della settimana in cui si gioca</label><div class="weekday-grid" id="playingDaysBox"><label><input type="checkbox" name="playingDays" value="1"> Lun</label><label><input type="checkbox" name="playingDays" value="2"> Mar</label><label><input type="checkbox" name="playingDays" value="3"> Mer</label><label><input type="checkbox" name="playingDays" value="4"> Gio</label><label><input type="checkbox" name="playingDays" value="5"> Ven</label><label><input type="checkbox" name="playingDays" value="6"> Sab</label><label><input type="checkbox" name="playingDays" value="0"> Dom</label></div><p class="muted">Per tornei lunghi il calendario usa solo questi giorni. Se l'intervallo non basta, viene indicata la data fine consigliata.</p></div>
+          <div><label>Data inizio / data torneo</label><input name="startDate" id="startDate" type="date"></div>
+          <div class="multi-day-field"><label>Data fine</label><input name="endDate" id="endDate" type="date"><p class="muted" id="suggestedEndHint"></p></div>
+          <div class="one-day-field"><label>Ora inizio</label><input name="startTime" id="startTime" type="time"></div>
+          <div class="one-day-field"><label>Durata partita in minuti</label><input name="matchDuration" id="matchDuration" type="number" min="5"></div>
+          <div class="one-day-field"><label>Pausa tra slot in minuti</label><input name="breakMinutes" id="breakMinutes" type="number" min="0"></div>
+          <div class="field-full one-day-field">
+            <div class="pause-settings-box">
+              <label><input type="checkbox" name="oneDayPauseEnabled" id="oneDayPauseEnabled" style="width:auto"> Pausa programmata nel torneo</label>
+              <p class="muted">Solo per tornei in un giorno: blocca uno slot del calendario, ad esempio pausa pranzo, briefing o premiazione intermedia.</p>
+              <div class="form-grid compact-form" id="oneDayPauseControls">
+                <div><label>Ora inizio pausa</label><input name="oneDayPauseStart" id="oneDayPauseStart" type="time"></div>
+                <div><label>Durata pausa in minuti</label><input name="oneDayPauseDuration" id="oneDayPauseDuration" type="number" min="0" step="5"></div>
+              </div>
+            </div>
+          </div>
+          <div class="field-full split-actions"><button class="btn primary" type="submit">Salva regole</button><button class="btn" id="generateCalendarBtn" type="button">Genera calendario automatico</button><button class="btn" id="generateAlternativeCalendarBtn" type="button">Genera calendario alternativo</button></div>
+        </form>
+        <div id="rulesMessage" class="margin-top"></div>
+      </article>
+      <article class="card pad span-5"><h2>Riepilogo</h2><div id="tournamentSummary"></div><div id="generationPreview" class="margin-top"></div><div id="calendarAdvisor" class="margin-top"></div><div class="help-box margin-top">Per i gironi puoi personalizzare dimensione e qualificate. Le assegnazioni manuali sono nella nuova pagina <a href="admin-groups.html">Gironi</a>. Per tornei giornalieri l’ora fine viene calcolata dall’app in base a partite, campi, durata e pause.</div></article>
+      <article class="card pad span-12"><h2>Calendario generato</h2><div id="generatedCalendar" class="stack"></div></article>
+    </div>
+  </main>
+</div>
+<script defer src="assets/js/store.js?v=v124-ux"></script><script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script defer src="assets/js/supabase-config.js?v=v124-ux"></script><script defer src="assets/js/supabase-sync.js?v=v124-ux"></script><script defer src="assets/js/ui.js?v=v124-ux"></script><script defer src="assets/js/ux-a11y.js?v=v124-ux"></script><script defer src="assets/js/admin-common.js?v=v124-ux"></script><script defer src="assets/js/admin-rules.js?v=v124-ux"></script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+NEW GENERATION + SUPABASE
+
+Questa versione include il backend condiviso Supabase.
+Finché assets/js/supabase-config.js ha ENABLED:false, l'app funziona ancora in locale.
+Quando configuri URL e ANON_KEY e metti ENABLED:true:
+- admin.html e pagine admin richiedono login Supabase;
+- ogni salvataggio admin aggiorna la riga online app_state/main;
+- index.html legge la stessa riga online;
+- gli utenti pubblici vedono gli stessi dati aggiornati.
+
+File importanti:
+- SUPABASE_SETUP.sql: script da eseguire nel SQL Editor Supabase.
+- assets/js/supabase-config.js: incolla qui Project URL e anon public key.
+- assets/js/supabase-sync.js: sincronizzazione online.
+
+Sicurezza:
+- La anon key è pubblica per definizione.
+- La sicurezza è garantita da Row Level Security.
+- Le policy permettono SELECT a tutti e scrittura solo ad authenticated.
+- Crea l'utente admin da Supabase Authentication e disabilita/evita registrazioni pubbliche.
+
+Loghi:
+- Per semplicità, i loghi caricati sono salvati nello stato JSON come Data URL.
+- Va bene per tornei piccoli. Per molti loghi pesanti, conviene passare a Supabase Storage.
+
+ARTICOLI
+La feature Articoli non richiede nuove tabelle: gli articoli sono salvati nel campo JSONB data della tabella app_state.
+L'admin autenticato può crearli/modificarli/eliminarli da admin-articles.html.
+Gli utenti pubblici li vedono nel tab Articoli di index.html dopo il caricamento/aggiornamento dati da Supabase.
