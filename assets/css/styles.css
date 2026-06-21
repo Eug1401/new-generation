@@ -5951,3 +5951,360 @@ th { background: rgba(215,164,45,.06); color: var(--gold-soft); }
 }
 
 /* End of v126.3 played-green */
+
+/* =====================================================================
+   v126.4 — Mobile bottom nav restore + focus-ring scoping + fluidity
+   Three concrete fixes:
+
+   1) GOLD BORDER AT OPEN
+      Causa: il layer v126 aveva
+          :focus-visible { outline: 2px solid var(--gold); }
+      che si applicava ANCHE a <main id="main-content" tabindex="-1">
+      quando lo skip-link o un focus programmatico vi atterravano sopra.
+      Fix: scope di :focus-visible ai soli elementi realmente
+      interattivi (a/button/input/select/textarea/summary e
+      [tabindex] diversi da -1). main, section, article, .shell e
+      .tab-panel non possono più ricevere il bordo oro.
+
+   2) MOBILE BOTTOM NAV
+      Causa: in v126 era stato disabilitato globalmente con
+          .mobile-bottom-nav, .mobile-nav-sheet { display:none !important }
+      Fix: ripristinato come fixed-bottom SOLO su mobile (≤720px),
+      con safe-area-inset-bottom, padding di compensazione sul body,
+      indicatore realtime spostato sopra di esso. Su desktop resta
+      nascosto (le tabs top sono la nav primaria).
+
+   3) FLUIDITÀ
+      - transizioni scoped a opacity/transform/background-color/border-color
+      - aspect-ratio riservato per loghi squadra (no layout shift)
+      - tab-panel con contain:layout style (no reflow globale al cambio)
+      - update live: i singoli match-card cambiano solo background del badge,
+        non si ricostruisce il layout (gestito già da CSS, qui rafforzato)
+   ===================================================================== */
+
+/* ===================== 1) FOCUS RING SCOPING ========================== */
+
+/* Reset del :focus-visible globale del layer v126 (cause del bordo oro) */
+:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Riapplicato SOLO su elementi realmente interattivi.
+   [tabindex="-1"] è ESCLUSO esplicitamente: è il pattern per i target
+   di skip-link e per i contenitori focusable solo programmaticamente. */
+a:focus-visible,
+button:focus-visible,
+[role="button"]:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible,
+[role="tab"]:focus-visible,
+[role="dialog"] > button:focus-visible,
+.tab-btn:focus-visible,
+.admin-nav a:focus-visible,
+.quick-card:focus-visible,
+.mobile-nav-item:focus-visible,
+.mobile-sheet-item:focus-visible,
+[tabindex]:not([tabindex="-1"]):focus-visible {
+  outline: 2px solid var(--gold) !important;
+  outline-offset: 3px !important;
+  border-radius: 6px;
+  box-shadow: 0 0 0 4px rgba(215,164,45,.18) !important;
+}
+
+/* Garantisce che i contenitori strutturali NON possano mai mostrare
+   un bordo focus, anche se ricevono focus programmaticamente. */
+main,
+main:focus,
+main:focus-visible,
+section:focus,
+section:focus-visible,
+article:focus,
+article:focus-visible,
+.shell,
+.shell:focus,
+.shell:focus-visible,
+.tab-panel,
+.tab-panel:focus,
+.tab-panel:focus-visible,
+.modal-content,
+.modal-content:focus,
+.modal-content:focus-visible,
+[tabindex="-1"]:focus,
+[tabindex="-1"]:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  border-color: var(--line);
+}
+
+/* Eccezione: input/select/textarea hanno il loro stile focus dedicato */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none !important;
+  border-color: var(--gold) !important;
+  box-shadow: 0 0 0 4px rgba(215,164,45,.18) !important;
+}
+
+/* ===================== 2) MOBILE BOTTOM NAV ============================ */
+
+/* Su desktop nascondi la bottom-nav (le tabs sono la nav primaria) */
+.mobile-bottom-nav,
+.mobile-nav-sheet { display: none; }
+
+/* Mobile: riattivata, fixed con safe-area */
+@media (max-width: 720px) {
+
+  /* Nasconde le tabs top per evitare nav duplicata (UX coerente con
+     il design originale del progetto). Resta accessibile via
+     bottom-nav che usa gli stessi data-tab. */
+  body.public-page .tabs { display: none !important; }
+
+  /* La bottom-nav DEVE esistere — appended via public.js setupMobileNavigation() */
+  .mobile-bottom-nav {
+    display: grid !important;
+    grid-template-columns: repeat(5, 1fr);
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    z-index: 90;
+    gap: 4px;
+    padding: 6px;
+    margin: 0;
+    border: 1px solid rgba(215,164,45,.32);
+    border-radius: 22px;
+    background: rgba(10,8,5,.94);
+    box-shadow: 0 18px 50px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,236,168,.08);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    transform: translateZ(0);  /* GPU layer → no flicker durante scroll */
+  }
+
+  .mobile-nav-item {
+    display: flex !important;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    background: transparent;
+    border: 0;
+    color: var(--muted);
+    padding: 8px 4px;
+    min-height: 52px;
+    font-size: .66rem;
+    font-weight: 800;
+    line-height: 1.1;
+    border-radius: 14px;
+    cursor: pointer;
+    transition: background-color .15s ease, color .15s ease;
+    -webkit-tap-highlight-color: transparent;
+    text-align: center;
+  }
+  .mobile-nav-icon {
+    font-size: 1.15rem;
+    line-height: 1;
+    display: inline-block;
+    width: 1.15rem;
+    text-align: center;
+  }
+  .mobile-nav-item:active { background: rgba(215,164,45,.10); }
+  .mobile-nav-item.active {
+    color: var(--gold-ink);
+    background: linear-gradient(135deg, var(--gold), var(--gold-soft));
+    box-shadow: 0 4px 14px -4px rgba(215,164,45,.45);
+  }
+  .mobile-nav-item.active .mobile-nav-icon { color: var(--gold-ink); }
+
+  /* Spazio per non far coprire l'ultima sezione dalla bottom-nav */
+  body.public-page {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  }
+  body.public-page .shell { padding-bottom: 8px; }
+
+  /* "Altro" sheet che si apre dal bottom nav */
+  .mobile-nav-sheet {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    align-items: flex-end;
+    background: rgba(0,0,0,.55);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mobile-nav-sheet.open {
+    display: flex !important;
+  }
+  .mobile-nav-backdrop {
+    position: absolute;
+    inset: 0;
+    cursor: pointer;
+  }
+  .mobile-nav-panel {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-bottom: 0;
+    border-radius: 24px 24px 0 0;
+    padding: 14px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -22px 60px rgba(0,0,0,.55);
+    animation: ngSheetIn .18s ease-out;
+  }
+  @keyframes ngSheetIn {
+    from { transform: translateY(20px); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+  }
+  .mobile-sheet-handle {
+    width: 40px; height: 4px;
+    background: rgba(255,248,231,.28);
+    border-radius: 4px;
+    margin: 0 auto 12px;
+  }
+  .mobile-sheet-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .mobile-sheet-head strong {
+    font-size: 1rem;
+    color: var(--text);
+  }
+  .mobile-sheet-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  .mobile-sheet-item {
+    display: flex !important;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    background: rgba(255,248,231,.04);
+    border: 1px solid var(--line);
+    color: var(--text);
+    padding: 16px 8px;
+    border-radius: 16px;
+    cursor: pointer;
+    min-height: 84px;
+    font-size: .8rem;
+    font-weight: 700;
+    transition: background-color .15s ease, border-color .15s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mobile-sheet-item:active {
+    background: rgba(215,164,45,.10);
+    border-color: rgba(215,164,45,.45);
+  }
+  .mobile-sheet-item span:first-child {
+    font-size: 1.4rem;
+    line-height: 1;
+  }
+  .mobile-sheet-item strong {
+    font-size: .82rem;
+    color: var(--text);
+  }
+
+  /* L'indicatore realtime (.ng-realtime-indicator) deve salire sopra
+     la bottom-nav per non sovrapporsi a essa. */
+  .ng-realtime-indicator {
+    bottom: calc(76px + env(safe-area-inset-bottom, 0px)) !important;
+    left: 12px !important;
+  }
+}
+
+/* Su tablet/landscape stretto continuano a esistere le tabs top:
+   nasconde la bottom-nav sopra 720px in modo deterministico. */
+@media (min-width: 721px) {
+  .mobile-bottom-nav,
+  .mobile-nav-sheet { display: none !important; }
+}
+
+/* ===================== 3) FLUIDITÀ UI ================================== */
+
+/* Aspect-ratio riservato per i loghi → no layout shift al loro caricamento */
+.team-logo,
+.team-logo-fallback {
+  aspect-ratio: 1 / 1;
+  width: 54px;
+  height: auto;
+}
+.team-logo.big,
+.team-logo-fallback.big {
+  aspect-ratio: 1 / 1;
+  width: 82px;
+  height: auto;
+}
+.team-inline .team-logo,
+.team-inline .team-logo-fallback,
+.bracket-team .team-logo,
+.bracket-team .team-logo-fallback {
+  width: 32px;
+  height: auto;
+  aspect-ratio: 1 / 1;
+}
+
+/* Contain il reflow dei tab-panel — il cambio di .active non ricalcola
+   il layout fuori dal pannello attivo */
+.tab-panel { contain: layout style; }
+
+/* Transizioni scoped (mai "all"). Le proprietà animate sono solo:
+   opacity, transform, background-color, border-color, box-shadow, color */
+.btn, .pill, .card, .clickable, .quick-card, .match-card,
+.tab-btn, .admin-nav a, .mobile-nav-item, .mobile-sheet-item,
+.team-card, .article-card {
+  transition:
+    background-color .15s ease,
+    border-color .15s ease,
+    color .15s ease,
+    box-shadow .15s ease,
+    opacity .15s ease;
+}
+
+/* No transform su hover di nessun elemento → no layout-jitter.
+   Le micro-elevazioni residue (es. .quick-card:hover translateY) restano
+   ma sono molto piccole e disattivate da prefers-reduced-motion sopra. */
+
+/* Match-card: il bordo cambia stato (live/played/pending) senza spostare
+   il contenuto perché il bordo è 1px sempre. */
+.match-card { border-width: 1px; }
+
+/* Tabelle: header su sfondo opaco per evitare flicker dello sticky
+   (lo sticky resta solo dentro modali / table-wrap, comportamento
+   standard non page-level). */
+table th { background-color: rgba(20,17,11,.92); }
+
+/* Skeleton/placeholder: dimensioni coerenti col contenuto finale */
+.empty { min-height: 60px; }
+
+/* Immagini lazy-loaded (foto squadre): aspect-ratio riservato */
+.photo-img-wrap {
+  aspect-ratio: 4 / 3;
+  background: rgba(255,248,231,.04);
+}
+.photo-img-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Posizione di scroll: tab-panel changes don't auto-reset (managed by JS)
+   ma garantiamo che il browser non aggiunga scroll-padding strani */
+html { scroll-padding-top: 12px; }
+
+/* Bottom-nav: assicura che gli aggiornamenti live (badge che pulsano)
+   non causino flicker sui suoi elementi (GPU layer) */
+.mobile-bottom-nav,
+.mobile-nav-item.active { will-change: auto; }
+
+/* End of v126.4 mobile nav + focus + fluidity */
+
+/* v126.4 — reduced motion for the new mobile sheet */
+@media (prefers-reduced-motion: reduce) {
+  .mobile-nav-panel { animation: none !important; }
+}
