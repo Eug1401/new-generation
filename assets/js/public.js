@@ -1200,6 +1200,10 @@
     // skipAlign=true quando lo state arriva già normalizzato (es. da Supabase via publishPublicState)
     if(!opts.skipAlign) store.alignState(state);
     try{UI.applySiteTheme(state);}catch(e){}
+    // v126.11: aggiorna lo <style id="ngTeamLogos"> con i data-URL dei loghi.
+    // Una sola volta per render (no più ripetizione del data-URL per ogni
+    // occorrenza nelle card). Internamente bailout se invariato.
+    try{UI.injectTeamLogoStyles && UI.injectTeamLogoStyles(state);}catch(e){}
     updateAppViewportVars();
     sanitizeFavoriteTeam();
     // Differisco il save() su localStorage al prossimo idle (no block del thread).

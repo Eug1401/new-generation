@@ -704,7 +704,7 @@
     dlg.classList.add('show');
   }
 
-  function initGlobalActions(){try{UI.applySiteTheme(state());}catch(e){}const reset=UI.$('#resetAllBtn');if(reset)reset.addEventListener('click',openResetDialog);const sim=UI.$('#simulateTournamentBtn');if(sim)sim.addEventListener('click',openSimulationDialog);}
+  function initGlobalActions(){try{UI.applySiteTheme(state());}catch(e){} try{UI.injectTeamLogoStyles && UI.injectTeamLogoStyles(state());}catch(e){} const reset=UI.$('#resetAllBtn');if(reset)reset.addEventListener('click',openResetDialog);const sim=UI.$('#simulateTournamentBtn');if(sim)sim.addEventListener('click',openSimulationDialog);}
   function renderStats(id){const box=UI.$(id); if(box) box.innerHTML=UI.statsGrid(store.selectors.stats(state()));}
   function teamOptions(s, selected=''){return UI.teamOptions(s, selected);}
   function renderTeamsList(container){
@@ -774,4 +774,8 @@
   document.addEventListener('click',e=>{const b=e.target.closest('[data-toggle-form]'); if(b)b.closest('.team-row,.player-row,.event-row')?.querySelector('form')?.toggleAttribute('hidden');});
   window.NexoraAdmin={state,save,commit,flash,adminLabel,initGlobalActions,openSimulationDialog,runTournamentSimulation,renderStats,teamOptions,renderTeamsList,renderRoster,filteredMatches,renderMatchFilters,openPrint,downloadRecapPdf,downloadStateBackup,parseBackupPayload,importStateBackup};
   document.addEventListener('DOMContentLoaded',initGlobalActions);
+  // v126.11: ad ogni cambio di stato admin (anche da sync remoto) rigenera
+  // lo <style id="ngTeamLogos"> per evitare riferimenti a classi orfane
+  // quando vengono aggiunte/rimosse squadre o modificati i loghi.
+  window.addEventListener('ng:admin-state-loaded',()=>{try{UI.injectTeamLogoStyles && UI.injectTeamLogoStyles(state());}catch(_){}});
 })();

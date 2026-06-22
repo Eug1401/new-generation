@@ -227,6 +227,14 @@
   // ---------------------------------------------------------------------
   // Riepilogo a card (4 colonne tipiche)
   // ---------------------------------------------------------------------
+  // v126.11: drawSummary con auto-fit del valore e altezza card dinamica.
+  // Prima il valore "Formato" (potenzialmente lungo: "Gironi + Eliminazione
+  // diretta") andava a capo dentro la stessa card sovrapponendosi alla nota.
+  // Ora:
+  //  1) misuro la larghezza del valore e riduco il font fino a 7.5pt
+  //  2) se ancora non basta, divido in più righe controllate
+  //  3) calcolo la cardH come il massimo necessario fra tutte le card della
+  //     riga, così le card restano uniformi e nessun testo si sovrappone
   function drawSummary(doc, items, y, cols=4){
     const list = (items||[]).filter(Boolean);
     if(!list.length) return y;
@@ -234,26 +242,62 @@
     const margin = 14, gap = 4;
     const count = Math.max(1, Math.min(cols, list.length));
     const cardW = (W - margin*2 - gap*(count-1)) / count;
-    const cardH = 20;
-    list.forEach((it, i)=>{
+    const allowedTextW = cardW - 6; // padding interno orizzontale
+
+    // Pre-misurazione per ogni card
+    const computed = list.map(it => {
+      const valStr  = String(it.value ?? '—');
+      const noteStr = it.note ? String(it.note) : '';
+      // Auto-shrink del valore: da 11pt fino a 7.5pt finché entra in una riga
+      let valSize = 11;
+      const scaleFactor = doc.internal.scaleFactor;
+      while(valSize > 7.5){
+        const w = doc.getStringUnitWidth(valStr) * valSize / scaleFactor;
+        if(w <= allowedTextW) break;
+        valSize -= 0.5;
+      }
+      // Se nemmeno a 7.5pt entra in una riga, splitto a capo controllato
+      doc.setFontSize(valSize);
+      const valLines = doc.splitTextToSize(valStr, allowedTextW);
+      // Nota: max 2 righe a 6.6pt
+      doc.setFontSize(6.6);
+      const noteLines = noteStr ? doc.splitTextToSize(noteStr, allowedTextW).slice(0, 2) : [];
+      return { it, valSize, valLines, noteLines };
+    });
+
+    // Altezza card uniforme = massimo necessario nella riga
+    const topPad = 5.2;     // posizione baseline label
+    const valTop = 3.4;     // gap fra label e prima riga del valore
+    const valLineH = (sz) => sz * 0.42 + 0.6;
+    // valore: usa la dimensione del valore più grande della riga
+    const maxValSize  = Math.max(...computed.map(c => c.valSize));
+    const maxValLines = Math.max(...computed.map(c => c.valLines.length));
+    const maxNoteLines = Math.max(...computed.map(c => c.noteLines.length));
+    const cardH = topPad + valTop + maxValLines * valLineH(maxValSize) + (maxNoteLines ? (1.5 + maxNoteLines * 3) : 0) + 3;
+
+    computed.forEach((c, i)=>{
       const row = Math.floor(i / count);
       const col = i % count;
-      const x = margin + col*(cardW + gap);
-      const yy = y + row*(cardH + gap);
-      setFill(doc, it.tone==='accent' ? C.goldSoft : C.goldFaint);
+      const x   = margin + col*(cardW + gap);
+      const yy  = y + row*(cardH + gap);
+      setFill(doc, c.it.tone==='accent' ? C.goldSoft : C.goldFaint);
       setDraw(doc, C.hair); doc.setLineWidth(0.2);
       doc.roundedRect(x, yy, cardW, cardH, 2.4, 2.4, 'FD');
       // barretta laterale
-      setFill(doc, it.tone==='accent' ? C.gold : C.hair);
+      setFill(doc, c.it.tone==='accent' ? C.gold : C.hair);
       doc.rect(x, yy, 1.4, cardH, 'F');
+      // label
       setText(doc, C.muted); doc.setFont('helvetica','bold'); doc.setFontSize(6.6);
-      doc.text(String(it.label||'').toUpperCase(), x + 4, yy + 5.2, { maxWidth: cardW - 6 });
-      setText(doc, C.ink); doc.setFont('helvetica','bold'); doc.setFontSize(11);
-      doc.text(String(it.value??'—'), x + 4, yy + 11.6, { maxWidth: cardW - 6 });
-      if(it.note){
+      doc.text(String(c.it.label||'').toUpperCase(), x + 4, yy + topPad, { maxWidth: allowedTextW });
+      // valore (può essere multi-line)
+      setText(doc, C.ink); doc.setFont('helvetica','bold'); doc.setFontSize(c.valSize);
+      const valBaselineY = yy + topPad + valTop + valLineH(c.valSize);
+      doc.text(c.valLines, x + 4, valBaselineY);
+      // nota — sotto la fine del valore + gap fisso
+      if(c.noteLines.length){
         setText(doc, C.muted); doc.setFont('helvetica','normal'); doc.setFontSize(6.6);
-        const noteLines = doc.splitTextToSize(String(it.note), cardW - 6);
-        doc.text(noteLines.slice(0,2), x + 4, yy + 15.6);
+        const noteY = valBaselineY + (c.valLines.length - 1) * valLineH(c.valSize) + 3.2;
+        doc.text(c.noteLines, x + 4, noteY);
       }
     });
     const rows = Math.ceil(list.length / count);
@@ -633,6 +677,143 @@
 
     drawFooter(doc, ctx);
     doc.save(pdfName(s, 'classifiche-gironi'));
+  }
+
+  // ---------------------------------------------------------------------
+  // Filtro per il PDF "Calendario completo": includi tutto TRANNE le live.
+  // Distinto da isConcluded (che è solo per il recap delle partite).
+  // ---------------------------------------------------------------------
+  function isInCalendar(s, m){
+    if(!m) return false;
+    if(m.status === 'live') return false;
+    return true; // include 'played', 'scheduled' e qualsiasi stato non-live
+  }
+  function calendarStatusLabel(s, m){
+    if(m.status === 'live') return 'Live';
+    if(isConcluded(s, m)) return 'Giocata';
+    return 'Da giocare';
+  }
+
+  // ---------------------------------------------------------------------
+  // === PDF: CALENDARIO COMPLETO (verticale o orizzontale) =============
+  //     Include partite concluse + partite da giocare. ESCLUDE le live.
+  //     Per le partite concluse mostra il risultato finale; per le altre
+  //     mostra "Da giocare" senza inventare punteggi fittizi.
+  // ---------------------------------------------------------------------
+  async function pdfCalendar(){
+    const s = currentPdfState();
+    const logos = await preloadTeamLogos(s);
+    // Per calendari estesi conviene il formato orizzontale: più colonne
+    // visibili senza compressione dei testi.
+    const { doc, ctx } = await makeDoc(s, 'l',
+      'Calendario completo',
+      'Partite concluse e da giocare · live escluse',
+      'Calendario');
+
+    // Filtro centralizzato (no live), ordinamento stabile per data/ora/round.
+    const rows = (s.matches||[])
+      .filter(m => isInCalendar(s, m))
+      .sort((a,b) => {
+        const da = String(a.date||''), db = String(b.date||'');
+        if(da !== db) return da.localeCompare(db);
+        const ta = String(a.time||''), tb = String(b.time||'');
+        if(ta !== tb) return ta.localeCompare(tb);
+        if((a.roundIndex||0) !== (b.roundIndex||0)) return (a.roundIndex||0) - (b.roundIndex||0);
+        return String(a.id||'').localeCompare(String(b.id||''));
+      })
+      .map(m => ({
+        phase  : store.PHASE_LABELS?.[m.phase] || m.phase || '—',
+        round  : m.round || '—',
+        date   : fmtDate(m),
+        field  : m.field || '—',
+        homeId : m.homeTeamId,
+        awayId : m.awayTeamId,
+        home   : store.teamName(s, m.homeTeamId, m.homeLabel) || m.homeLabel || 'Da definire',
+        away   : store.teamName(s, m.awayTeamId, m.awayLabel) || m.awayLabel || 'Da definire',
+        score  : isConcluded(s, m) ? (store.scoreText ? store.scoreText(s, m) : '—') : 'Da giocare',
+        concluded: isConcluded(s, m),
+        teamId : m.homeTeamId, // per il logo della prima colonna squadra
+      }));
+
+    const concluded = rows.filter(r => r.concluded).length;
+    const pending   = rows.length - concluded;
+    const liveExcluded = (s.matches||[]).filter(m => m.status === 'live').length;
+
+    let y = 34;
+    y = drawSection(doc,
+      'Programma gare',
+      'Calendario integrale del torneo',
+      'Vengono incluse esclusivamente partite concluse e da giocare. Le partite live sono escluse: il loro stato non è stabile e cambierebbe ad ogni rigenerazione del documento.',
+      y);
+
+    y = drawSummary(doc, [
+      { label:'Partite totali',  value:String(rows.length), note:'Concluse + da giocare' },
+      { label:'Concluse',        value:String(concluded), note:'Referto chiuso', tone:'accent' },
+      { label:'Da giocare',      value:String(pending),   note:'In programma' },
+      { label:'Live escluse',    value:String(liveExcluded), note: liveExcluded ? 'Non riportate nel PDF' : 'Nessuna live in corso' }
+    ], y, 4);
+
+    if(!rows.length){
+      y = drawCallout(doc, 'Calendario vuoto: nessuna partita disponibile da stampare al momento.', y);
+      drawFooter(doc, ctx);
+      doc.save(pdfName(s, 'calendario-completo'));
+      return;
+    }
+    if(liveExcluded){
+      y = drawCallout(doc, `${liveExcluded} partit${liveExcluded===1?'a':'e'} attualmente live esclus${liveExcluded===1?'a':'e'} dal calendario: vengono escluse per garantire un documento stabile alla rigenerazione.`, y);
+    }
+
+    // Tabella principale del calendario
+    doc.autoTable(Object.assign({}, tableTheme(), {
+      startY: y,
+      columns: [
+        { header:'Fase',          dataKey:'phase' },
+        { header:'Giornata',      dataKey:'round' },
+        { header:'Data e ora',    dataKey:'date' },
+        { header:'Casa',          dataKey:'home' },
+        { header:'Ospite',        dataKey:'away' },
+        { header:'Campo',         dataKey:'field' },
+        { header:'Risultato',     dataKey:'score' }
+      ],
+      body: rows,
+      columnStyles: {
+        0: { cellWidth: 32 },
+        1: { cellWidth: 28, halign:'center' },
+        2: { cellWidth: 36 },
+        3: { cellWidth: 56 },
+        4: { cellWidth: 56 },
+        5: { cellWidth: 34 },
+        6: { cellWidth: 28, halign:'center', fontStyle:'bold' }
+      },
+      didParseCell: function(d){
+        // Padding-left per fare spazio al logo nelle colonne squadra
+        if(d.section === 'body' && (d.column.index === 3 || d.column.index === 4)){
+          d.cell.styles.cellPadding = { top: 2.4, right: 2.4, bottom: 2.4, left: 10 };
+          d.cell.styles.fontStyle = 'bold';
+        }
+        // Highlight risultato concluso
+        if(d.section === 'body' && d.column.index === 6){
+          const row = rows[d.row.index];
+          if(row && row.concluded){
+            d.cell.styles.fillColor = C.goldSoft;
+            d.cell.styles.textColor = C.goldInk;
+          } else {
+            d.cell.styles.textColor = C.muted;
+            d.cell.styles.fontStyle = 'italic';
+          }
+        }
+      },
+      didDrawCell: function(d){
+        if(d.section !== 'body') return;
+        const r = rows[d.row.index];
+        if(!r) return;
+        if(d.column.index === 3) drawLogo(d.doc, logos[r.homeId], d.cell.x + 1.6, d.cell.y + (d.cell.height-6)/2, 6, r.home);
+        if(d.column.index === 4) drawLogo(d.doc, logos[r.awayId], d.cell.x + 1.6, d.cell.y + (d.cell.height-6)/2, 6, r.away);
+      }
+    }));
+
+    drawFooter(doc, ctx);
+    doc.save(pdfName(s, 'calendario-completo'));
   }
 
   // ---------------------------------------------------------------------
@@ -1050,7 +1231,8 @@
       standings:{ enabled:teamCount>0, detail: teamCount?`${teamCount} squadre`:'Aggiungi squadre' },
       scorers  :{ enabled:teamCount>0, detail: scorers?`${Math.min(scorers,15)} marcatori`:'Nessun gol: PDF vuoto' },
       groups   :{ enabled:hasGroups,   detail: hasGroups?'Classifiche gironi':'Non previsto dal format' },
-      calendar :{ enabled:matchCount>0,detail: concluded ? `${concluded} partite concluse` : (matchCount?'0 concluse: PDF segnaposto':'Nessuna partita') },
+      calendar :{ enabled:matchCount>0, detail: matchCount ? `${matchCount} partite (no live)` : 'Nessuna partita' },
+      recap    :{ enabled:matchCount>0, detail: concluded ? `${concluded} partite concluse` : (matchCount?'0 concluse: PDF segnaposto':'Nessuna partita') },
       bracket  :{ enabled: Boolean(bracket.available), detail: bracket.available?'Tabellone disponibile':(bracket.message||'Non previsto dal format') }
     };
   }
@@ -1103,7 +1285,8 @@
       else if(kind === 'scorers')   await pdfScorers();
       else if(kind === 'groups')    await pdfGroups();
       else if(kind === 'bracket')   await pdfBracket();
-      else                          await pdfRecap();   // ex "calendar"
+      else if(kind === 'recap')     await pdfRecap();
+      else                          await pdfCalendar(); // 'calendar' = calendario completo (no live)
       toast('Download PDF avviato.');
     }catch(err){
       console.error(err);

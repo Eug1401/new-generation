@@ -6526,3 +6526,32 @@ html { scroll-padding-top: 12px; }
   margin-top: 14px;
 }
 .reset-modal .reset-choice-grid .btn { flex: 1 1 auto; min-width: 140px; }
+
+/* =====================================================================
+   v126.11 — Logo wrap come background-image (no più <img> per partita)
+   I data-URL dei loghi sono in <style id="ngTeamLogos">: qui basta
+   `background-size:cover; background-position:center` sul wrap.
+   Il fallback iniziali resta dietro (z-index:0); se il wrap ha la classe
+   .ng-tl-{teamId} il bg copre le iniziali, altrimenti restano visibili.
+   ===================================================================== */
+.team-logo-wrap {
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  /* le altre proprietà (dimensioni, border-radius, aspect-ratio,
+     overflow:hidden, isolation) sono già definite in v126.6 */
+}
+
+/* =====================================================================
+   v126.11 — Scroll fix per rotella mouse desktop
+   Rimuovo content-visibility:auto dalle tab inattive (introdotto in v126.6
+   per perf). Con `.tab-panel{display:none}` + `.tab-panel.active{display:block}`
+   già nel base CSS, content-visibility è ridondante e poteva falsare lo
+   stimato scrollHeight della pagina su alcuni browser causando scroll a
+   "scatti" o aree non scorribili con la rotella.
+   ===================================================================== */
+.tab-panel:not(.active) {
+  content-visibility: visible;            /* override v126.6 */
+  contain-intrinsic-size: auto;            /* override v126.6 */
+}
+/* End v126.11 */

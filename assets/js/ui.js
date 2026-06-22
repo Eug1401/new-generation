@@ -3,27 +3,51 @@
   const esc=v=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
   const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
   function initials(name){return String(name||'?').split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();}
-  // Logo rendering stabile (v126.6):
-  // - wrapper con dimensioni riservate (aspect-ratio dal CSS)
-  // - iniziali SEMPRE presenti dietro l'<img>: se l'immagine sta caricando
-  //   o fallisce, l'utente vede le iniziali, mai un frame vuoto
-  // - data-team-id per identità stabile (debug + key)
-  // - onerror="this.remove()" sicuro: lascia visibile il fallback senza
-  //   manipolazioni outerHTML che possono colpire nodi orfani
-  // - loading="lazy" + decoding="async": niente blocchi di paint con
-  //   liste lunghe e data-URL pesanti
+  // v126.11 - Logo squadra: rendering basato su classe CSS
+  // I data-URL dei loghi non vengono più embeddati ogni volta nell'HTML
+  // delle card (che con 30 partite × 2 squadre × ~15KB di base64 ripetuto
+  // arrivava a ~900KB di stringa HTML da reparseare ad ogni render).
+  // Ora i data-URL vivono in UN singolo <style id="ngTeamLogos"> nel
+  // <head> con regole .ng-tl-{teamId} { background-image:url(...) }, e
+  // qui generiamo solo un riferimento alla classe.
+  // - Wrapper con dimensioni riservate (aspect-ratio dal CSS)
+  // - Iniziali del fallback SEMPRE presenti dietro: se non c'è classe
+  //   logo, le iniziali sono visibili; se c'è, il bg le copre
+  // - data-team-id per identità stabile (debug + diagnostica)
   function logo(team,big=false){
     const bigCls=big?'big':'';
     const tid=esc(team?.id||'');
     const inits=esc(initials(team?.name));
     const safeName=esc(team?.name||'');
-    if(team?.logo){
-      return `<span class="team-logo-wrap ${bigCls}" data-team-id="${tid}">`+
-        `<span class="team-logo-fallback ${bigCls}" aria-hidden="true"><span>${inits}</span></span>`+
-        `<img class="team-logo ${bigCls}" src="${esc(team.logo)}" alt="Logo ${safeName}" loading="lazy" decoding="async" draggable="false" onerror="this.remove()">`+
-        `</span>`;
+    const hasLogo=Boolean(team?.logo);
+    const logoCls=hasLogo?` ng-tl-${tid}`:'';
+    return `<span class="team-logo-wrap ${bigCls}${logoCls}" data-team-id="${tid}" role="img" aria-label="Logo ${safeName}">`+
+      `<span class="team-logo-fallback ${bigCls}" aria-hidden="true"><span>${inits}</span></span>`+
+      `</span>`;
+  }
+
+  // Inietta/aggiorna lo <style id="ngTeamLogos"> con tutte le regole
+  // .ng-tl-{teamId} { background-image:url(<data-url>) }. Chiamata UNA volta
+  // per stato (su render dello state). I data-URL base64 generati da
+  // canvas.toDataURL non contengono mai parentesi o virgolette, quindi
+  // possono finire dentro url(...) senza escape.
+  function injectTeamLogoStyles(state){
+    if(!state || !Array.isArray(state.teams)) return;
+    let style=document.getElementById('ngTeamLogos');
+    if(!style){
+      style=document.createElement('style');
+      style.id='ngTeamLogos';
+      document.head.appendChild(style);
     }
-    return `<span class="team-logo-fallback ${bigCls}" data-team-id="${tid}" title="Logo non disponibile"><span>${inits}</span></span>`;
+    let css='';
+    for(const t of state.teams){
+      if(t && t.id && t.logo){
+        // class name safe: gli id sono uid alfanumerici/underscore
+        css+=`.ng-tl-${t.id}{background-image:url(${t.logo})}\n`;
+      }
+    }
+    // Update solo se diverso (no innerHTML inutili)
+    if(style.textContent!==css) style.textContent=css;
   }
   function fmtDate(m){if(m.date&&m.time)return new Intl.DateTimeFormat('it-IT',{dateStyle:'medium',timeStyle:'short'}).format(new Date(`${m.date}T${m.time}`)); if(m.date)return new Intl.DateTimeFormat('it-IT',{dateStyle:'medium'}).format(new Date(`${m.date}T00:00`)); return 'Da definire';}
   function teamOptions(state,selected=''){return `<option value="">Seleziona squadra</option>`+state.teams.map(t=>`<option value="${t.id}" ${t.id===selected?'selected':''}>${esc(t.name)}</option>`).join('');}
@@ -240,5 +264,5 @@
   function bindTabs(){document.addEventListener('click',e=>{const b=e.target.closest('[data-tab]');if(!b)return;const target=b.dataset.tab;$$('[data-tab]').forEach(x=>x.classList.remove('active'));$$('.tab-panel').forEach(x=>x.classList.remove('active'));$$(`[data-tab="${target}"]`).forEach(x=>x.classList.add('active'));$('#'+target)?.classList.add('active');document.dispatchEvent(new CustomEvent('ng:tab-changed',{detail:{tab:target}}));});}
   function bindDisclosures(){document.addEventListener('toggle',e=>{const d=e.target;if(!(d instanceof HTMLDetailsElement)||!d.open)return;const list=d.closest('.team-disclosure-list,.admin-disclosure-list,.admin-player-list');if(!list)return;list.querySelectorAll('details[open]').forEach(x=>{if(x!==d)x.open=false;});},true);}
   document.addEventListener('DOMContentLoaded',bindDisclosures);
-  window.NexoraUI={esc,$,$$,logo,siteTitle,siteSubtitle,siteLogoMarkup,applySiteTheme,fmtDate,teamOptions,playerOptions,statsGrid,standingsTable,groupStandingsSelector,groupStandingsTables,playerStatsTable,presidentStatsTable,matchStatusMeta,matchCard,matchList,teamGrid,rulesSummary,bracketMarkup,articleCard,articleDetail,articleList,articlePlaceholder,replaceBrokenArticleImage,createTextPdf,bindTabs,bindDisclosures};
+  window.NexoraUI={esc,$,$$,logo,injectTeamLogoStyles,siteTitle,siteSubtitle,siteLogoMarkup,applySiteTheme,fmtDate,teamOptions,playerOptions,statsGrid,standingsTable,groupStandingsSelector,groupStandingsTables,playerStatsTable,presidentStatsTable,matchStatusMeta,matchCard,matchList,teamGrid,rulesSummary,bracketMarkup,articleCard,articleDetail,articleList,articlePlaceholder,replaceBrokenArticleImage,createTextPdf,bindTabs,bindDisclosures};
 })();
