@@ -280,6 +280,9 @@
     const words=String(article?.body||'').trim().split(/\s+/).filter(Boolean).length;
     return Math.max(1,Math.ceil(words/220));
   }
+  function hasLongArticleToken(value,limit=28){
+    return String(value||'').split(/\s+/).some(token=>Array.from(token).length>limit);
+  }
   function articleDetailMeta(article,{preview=false}={}){
     const rows=[];
     const author=String(article?.author||'').trim()||'Redazione New Generation';
@@ -287,12 +290,12 @@
     const updatedValue=article?.updatedAt||'';
     const published=fmtArticleDate(publishedValue,{dateOnly:true});
     const updated=fmtArticleDate(updatedValue,{dateOnly:true});
-    if(author)rows.push(`<span class="article-detail-author">di ${esc(author)}</span>`);
-    if(published)rows.push(`<time datetime="${esc(publishedValue)}">${esc(published)}</time>`);
-    if(updated&&updated!==published)rows.push(`<span>Aggiornato ${esc(updated)}</span>`);
-    rows.push(`<span>${articleReadingTime(article)} min di lettura</span>`);
-    if(preview)rows.push(`<span class="article-status status-${esc(article?.status||'published')}">${esc(articleStatusLabel(article?.status))}</span>`);
-    return `<div class="article-detail-meta">${rows.join('')}</div>`;
+    if(author)rows.push(`<span class="article-detail-author"><span class="article-meta-label">Autore</span><span>di ${esc(author)}</span></span>`);
+    if(published)rows.push(`<time datetime="${esc(publishedValue)}"><span class="article-meta-label">Data</span><span>${esc(published)}</span></time>`);
+    if(updated&&updated!==published)rows.push(`<span><span class="article-meta-label">Aggiornato</span><span>${esc(updated)}</span></span>`);
+    rows.push(`<span><span class="article-meta-label">Lettura</span><span>${articleReadingTime(article)} min</span></span>`);
+    rows.push(`<span class="article-status status-${esc(article?.status||'published')}"><span class="article-meta-label">Stato</span><span>${esc(articleStatusLabel(article?.status))}</span></span>`);
+    return `<div class="article-detail-meta" aria-label="Informazioni articolo">${rows.join('')}</div>`;
   }
   function articleDetail(article,{preview=false}={}){
     const title=String(article?.title||'News');
@@ -307,14 +310,20 @@
     const published=fmtArticleDate(publishedValue);
     const updated=updatedValue&&updatedValue!==publishedValue?fmtArticleDate(updatedValue):'';
     const backLabel=preview?'Chiudi anteprima':'Torna agli articoli';
+    const titleClass=hasLongArticleToken(title)?' article-title-has-long-token':'';
+    const subtitleClass=hasLongArticleToken(subtitle)?' article-copy-has-long-token':'';
     return `<article class="article-detail article-detail-editorial${image?' has-image':' no-image'}" data-article-detail="${esc(article?.id||'')}">
       ${preview?'<div class="article-preview-banner">Anteprima amministratore · strumenti di modifica separati dal contenuto pubblico</div>':''}
       <nav class="article-detail-nav" aria-label="Navigazione articolo"><button type="button" class="article-back-link" data-article-back>← ${backLabel}</button></nav>
       <header class="article-detail-header">
-        <span class="article-detail-category">${esc(category)}</span>
-        <h1>${esc(title)}</h1>
-        ${subtitle?`<p class="article-detail-subtitle">${esc(subtitle)}</p>`:''}
-        ${articleDetailMeta(article,{preview})}
+        <div class="article-detail-heading">
+          <span class="article-detail-category">${esc(category)}</span>
+          <h1 class="${titleClass.trim()}">${esc(title)}</h1>
+          ${subtitle?`<p class="article-detail-subtitle${subtitleClass}">${esc(subtitle)}</p>`:''}
+        </div>
+        <aside class="article-detail-meta-panel" aria-label="Riepilogo pubblicazione">
+          ${articleDetailMeta(article,{preview})}
+        </aside>
       </header>
       ${image?`<section class="article-detail-media article-featured-photo" aria-label="Fotografia principale dell’articolo">
         <figure class="article-featured-photo-card">

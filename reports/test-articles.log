@@ -1,0 +1,79 @@
+
+> new-generation-tournament@1.26.17 test:articles
+> node tools/test-ui-stability.mjs --articles-only
+
+[articles] PASS · lista pubblica filtra bozze e programmati
+[articles] PASS · titoli e immagini accessibili
+[articles] PASS · ricerca pubblica
+[articles] PASS · filtro categoria pubblico
+[articles] PASS · apertura dettaglio con URL stabile
+[articles] PASS · pulsante indietro e posizione lista
+[articles] PASS · dettaglio completo e formattazione sicura
+[articles] PASS · fotografia in sezione editoriale autonoma e ordinata
+[articles] PASS · visualizzatore fotografia: zoom, Escape e ritorno focus
+[articles] PASS · refresh e URL diretto
+[articles] PASS · apertura ripetuta senza contenuto precedente
+[articles] PASS · articolo inesistente
+[articles] PASS · responsive 320px
+[articles] PASS · responsive 390px
+[articles] PASS · responsive 844px
+[articles] PASS · responsive 768px
+[articles] PASS · responsive 1440px
+[articles] PASS · dettaglio fotografico responsive 320px
+[articles] PASS · dettaglio fotografico responsive 768px
+[articles] PASS · dettaglio fotografico responsive 1440px
+[articles] PASS · elenco e modulo admin completi
+[articles] PASS · validazione obbligatori
+[articles] PASS · upload e anteprima immagine
+[articles] PASS · slug automatico e stato non salvato
+[articles] PASS · anteprima amministratore
+[articles] PASS · anteprima: Escape e ritorno focus
+[articles] PASS · creazione bozza senza perdita dati
+[articles] PASS · bozza non visibile al pubblico
+[articles] PASS · avviso modifiche non salvate
+[articles] PASS · annullamento modifica
+[articles] PASS · pubblicazione aggiorna il pubblico
+[articles] PASS · sanificazione contenuto
+[articles] PASS · rifiuto immagine troppo grande
+[articles] PASS · conferma eliminazione esplicita e interattiva
+[articles] PASS · eliminazione: Escape e ritorno focus
+[articles] PASS · eliminazione disponibile dal dettaglio admin
+[articles] PASS · annullamento eliminazione
+[articles] PASS · ID eliminazione non valido bloccato
+[articles] PASS · errore backend mantiene articolo e consente nuovo tentativo
+[articles] PASS · eliminazione e doppio click
+[articles] PASS · refresh dopo eliminazione non ripristina articolo
+[articles] PASS · admin mobile e touch
+{
+  "root": "/mnt/data/article_ui_review/new-generation-main",
+  "pages": 13,
+  "widths": [
+    320,
+    360,
+    375,
+    390,
+    412,
+    430,
+    480,
+    768,
+    1024,
+    1280,
+    1440,
+    1920
+  ],
+  "mode": "articles",
+  "results": [
+    {
+      "test": "Articoli end-to-end: pubblico, admin, immagini, sicurezza, URL, responsive e sincronizzazione",
+      "result": "PASS",
+      "details": "[{\"name\":\"lista pubblica filtra bozze e programmati\",\"ok\":true,\"details\":\"{\\\"count\\\":2,\\\"badge\\\":\\\"2\\\",\\\"titles\\\":[\\\"Titolo molto lungo per verificare che la card editoriale rimanga leggibile senza tagliare informazioni importanti su smartphone e desktop\\\",\\\"Notizia test\\\"],\\\"draft\\\":false,\\\"scheduled\\\":false,\\\"alt\\\":\\\"Locandina verticale del torneo\\\",\\\"href\\\":\\\"#article=analisi-completa\\\",\\\"nullText\\\":false}\"},{\"name\":\"titoli e immagini accessibili\",\"ok\":true,\"details\":\"{\\\"count\\\":2,\\\"badge\\\":\\\"2\\\",\\\"titles\\\":[\\\"Titolo molto lungo per verificare che la card editoriale rimanga leggibile senza tagliare informazioni importanti su smartphone e desktop\\\",\\\"Notizia test\\\"],\\\"draft\\\":false,\\\"scheduled\\\":false,\\\"alt\\\":\\\"Locandina verticale del torneo\\\",\\\"href\\\":\\\"#article=analisi-completa\\\",\\\"nullText\\\":false}\"},{\"name\":\"ricerca pubblica\",\"ok\":true,\"details\":\"{\\\"cards\\\":1,\\\"ids\\\":[\\\"article_2\\\"]}\"},{\"name\":\"filtro categoria pubblico\",\"ok\":true,\"details\":\"{\\\"cards\\\":1,\\\"id\\\":\\\"article_2\\\"}\"},{\"name\":\"apertura dettaglio con URL stabile\",\"ok\":true,\"details\":\"{\\\"modal\\\":{\\\"exists\\\":true,\\\"open\\\":true,\\\"count\\\":1,\\\"bodyLocked\\\":true,\\\"overflow\\\":\\\"hidden\\\",\\\"activeId\\\":\\\"copyArticleLink\\\",\\\"activeText\\\":\\\"Copia link\\\",\\\"scrollY\\\":420,\\\"clientWidth\\\":1270,\\\"scrollWidth\\\":1260},\\\"detail\\\":{\\\"hash\\\":\\\"#article=notizia-test\\\",\\\"title\\\":\\\"Notizia test\\\",\\\"body\\\":\\\"\\\\n      \\\\n      ← Torna agli articoli\\\\n      \\\\n        \\\\n          Aggiornamenti\\\\n          Notizia test\\\\n          \\\\n        \\\\n        \\\\n          Autoredi Redazione TestData20 giugno 2026Lettura1 minStatoPubblicato\\\\n        \\\\n      \\\\n      \\\\n      \\\\n        Contenuto di prova per la stabilità della modale.\\\\n        \\\\n        Pubblicato: 20 giu 2026, 10:00\\\\n        ← Torna agli articoli\\\\n      \\\\n    \\\",\\\"dialog\\\":\\\"dialog\\\",\\\"photoSections\\\":0,\\\"mainLandmarks\\\":1}}\"},{\"name\":\"pulsante indietro e posizione lista\",\"ok\":true,\"details\":\"{\\\"scrollBefore\\\":420,\\\"scrollAfter\\\":420,\\\"hash\\\":\\\"#articles\\\"}\"},{\"name\":\"dettaglio completo e formattazione sicura\",\"ok\":true,\"details\":\"{\\\"title\\\":\\\"Titolo molto lungo per verificare che la card editoriale rimanga leggibile senza tagliare informazioni importanti su smartphone e desktop\\\",\\\"h3\\\":\\\"Analisi completa\\\",\\\"strong\\\":\\\"grassetto\\\",\\\"em\\\":\\\"corsivo\\\",\\\"link\\\":\\\"https://example.com/\\\",\\\"list\\\":2,\\\"quote\\\":\\\"Una citazione leggibile.\\\",\\\"objectFit\\\":\\\"contain\\\",\\\"caption\\\":\\\"Didascalia immagine verticale\\\",\\\"scriptCount\\\":0}\"},{\"name\":\"fotografia in sezione editoriale autonoma e ordinata\",\"ok\":true,\"details\":\"{\\\"sections\\\":1,\\\"detailDisplay\\\":\\\"block\\\",\\\"photoPosition\\\":\\\"relative\\\",\\\"hintPosition\\\":\\\"static\\\",\\\"headerBeforePhoto\\\":true,\\\"photoBeforeBody\\\":true,\\\"frameWidth\\\":997.280029296875,\\\"modalWidth\\\":1107.68017578125,\\\"imgObjectFit\\\":\\\"contain\\\",\\\"overflow\\\":-10}\"},{\"name\":\"visualizzatore fotografia: zoom, Escape e ritorno focus\",\"ok\":true,\"details\":\"{\\\"articleViewer\\\":{\\\"open\\\":true,\\\"hidden\\\":\\\"false\\\",\\\"zoom\\\":\\\"150%\\\",\\\"focusClose\\\":true},\\\"articleViewerClosed\\\":true}\"},{\"name\":\"refresh e URL diretto\",\"ok\":true,\"details\":\"{\\\"hash\\\":\\\"#article=analisi-completa\\\",\\\"title\\\":\\\"Titolo molto lungo per verificare che la card editoriale rimanga leggibile senza tagliare informazioni importanti su smartphone e desktop\\\",\\\"cards\\\":2}\"},{\"name\":\"apertura ripetuta senza contenuto precedente\",\"ok\":true,\"details\":\"{\\\"title\\\":\\\"Notizia test\\\",\\\"old\\\":false}\"},{\"name\":\"articolo inesistente\",\"ok\":true,\"details\":\"Articolo non disponibilePotrebbe essere stato rimosso, non ancora pubblicato o l’indirizzo potrebbe essere errato.\"},{\"name\":\"responsive 320px\",\"ok\":true,\"details\":\"{\\\"width\\\":320,\\\"doc\\\":0,\\\"cardRight\\\":295,\\\"vw\\\":320,\\\"columns\\\":\\\"268px\\\",\\\"mainAreas\\\":\\\"none\\\",\\\"mediaArea\\\":\\\"auto\\\",\\\"mediaColumn\\\":\\\"auto\\\",\\\"contentArea\\\":\\\"auto\\\",\\\"contentColumn\\\":\\\"auto\\\",\\\"mediaH\\\":150.75,\\\"titleDisplay\\\":\\\"block\\\",\\\"lineClamp\\\":\\\"2\\\",\\\"touch\\\":true}\"},{\"name\":\"responsive 390px\",\"ok\":true,\"details\":\"{\\\"width\\\":390,\\\"doc\\\":0,\\\"cardRight\\\":365,\\\"vw\\\":390,\\\"columns\\\":\\\"338px\\\",\\\"mainAreas\\\":\\\"none\\\",\\\"mediaArea\\\":\\\"auto\\\",\\\"mediaColumn\\\":\\\"auto\\\",\\\"contentArea\\\":\\\"auto\\\",\\\"contentColumn\\\":\\\"auto\\\",\\\"mediaH\\\":190.125,\\\"titleDisplay\\\":\\\"block\\\",\\\"lineClamp\\\":\\\"2\\\",\\\"touch\\\":true}\"},{\"name\":\"responsive 844px\",\"ok\":true,\"details\":\"{\\\"width\\\":844,\\\"doc\\\":-10,\\\"cardRight\\\":801,\\\"vw\\\":844,\\\"columns\\\":\\\"300px 456px\\\",\\\"mainAreas\\\":\\\"none\\\",\\\"mediaArea\\\":\\\"auto\\\",\\\"mediaColumn\\\":\\\"auto\\\",\\\"contentArea\\\":\\\"auto\\\",\\\"contentColumn\\\":\\\"auto\\\",\\\"mediaH\\\":220,\\\"titleDisplay\\\":\\\"block\\\",\\\"lineClamp\\\":\\\"2\\\",\\\"touch\\\":true}\"},{\"name\":\"responsive 768px\",\"ok\":true,\"details\":\"{\\\"width\\\":768,\\\"doc\\\":-10,\\\"cardRight\\\":733,\\\"vw\\\":768,\\\"columns\\\":\\\"300px 396px\\\",\\\"mainAreas\\\":\\\"none\\\",\\\"mediaArea\\\":\\\"auto\\\",\\\"mediaColumn\\\":\\\"auto\\\",\\\"contentArea\\\":\\\"auto\\\",\\\"contentColumn\\\":\\\"auto\\\",\\\"mediaH\\\":220,\\\"titleDisplay\\\":\\\"block\\\",\\\"lineClamp\\\":\\\"2\\\",\\\"touch\\\":true}\"},{\"name\":\"responsive 1440px\",\"ok\":true,\"details\":\"{\\\"width\\\":1440,\\\"doc\\\":-10,\\\"cardRight\\\":1397,\\\"vw\\\":1440,\\\"columns\\\":\\\"300px 1052px\\\",\\\"mainAreas\\\":\\\"none\\\",\\\"mediaArea\\\":\\\"auto\\\",\\\"mediaColumn\\\":\\\"auto\\\",\\\"contentArea\\\":\\\"auto\\\",\\\"contentColumn\\\":\\\"auto\\\",\\\"mediaH\\\":300,\\\"titleDisplay\\\":\\\"block\\\",\\\"lineClamp\\\":\\\"2\\\",\\\"touch\\\":true}\"},{\"name\":\"dettaglio fotografico responsive 320px\",\"ok\":true,\"details\":\"{\\\"width\\\":320,\\\"overflow\\\":0,\\\"detailDisplay\\\":\\\"block\\\",\\\"photoWidth\\\":296,\\\"viewport\\\":320,\\\"frameMinHeight\\\":190,\\\"imgFit\\\":\\\"contain\\\",\\\"ordered\\\":true}\"},{\"name\":\"dettaglio fotografico responsive 768px\",\"ok\":true,\"details\":\"{\\\"width\\\":768,\\\"overflow\\\":0,\\\"detailDisplay\\\":\\\"block\\\",\\\"photoWidth\\\":714,\\\"viewport\\\":768,\\\"frameMinHeight\\\":368.64,\\\"imgFit\\\":\\\"contain\\\",\\\"ordered\\\":true}\"},{\"name\":\"dettaglio fotografico responsive 1440px\",\"ok\":true,\"details\":\"{\\\"width\\\":1440,\\\"overflow\\\":0,\\\"detailDisplay\\\":\\\"block\\\",\\\"photoWidth\\\":1156.85009765625,\\\"viewport\\\":1440,\\\"frameMinHeight\\\":660,\\\"imgFit\\\":\\\"contain\\\",\\\"ordered\\\":true}\"},{\"name\":\"elenco e modulo admin completi\",\"ok\":true,\"details\":\"{\\\"cards\\\":4,\\\"drafts\\\":1,\\\"scheduled\\\":1,\\\"fields\\\":true}\"},{\"name\":\"validazione obbligatori\",\"ok\":true,\"details\":\"{\\\"errors\\\":2,\\\"titleInvalid\\\":\\\"true\\\",\\\"bodyInvalid\\\":\\\"true\\\",\\\"count\\\":4}\"},{\"name\":\"upload e anteprima immagine\",\"ok\":true,\"details\":\"true\"},{\"name\":\"slug automatico e stato non salvato\",\"ok\":true,\"details\":\"{\\\"dirty\\\":\\\"true\\\",\\\"slug\\\":\\\"nuovo-articolo-end-to-end\\\"}\"},{\"name\":\"anteprima amministratore\",\"ok\":true,\"details\":\"{\\\"modal\\\":{\\\"exists\\\":true,\\\"open\\\":true,\\\"count\\\":1,\\\"bodyLocked\\\":true,\\\"overflow\\\":\\\"hidden\\\",\\\"activeId\\\":\\\"closeArticlePreviewModal\\\",\\\"activeText\\\":\\\"Chiudi\\\",\\\"scrollY\\\":0,\\\"clientWidth\\\":1270,\\\"scrollWidth\\\":1260},\\\"preview\\\":{\\\"open\\\":true,\\\"title\\\":\\\"Nuovo articolo end to end\\\",\\\"imgAlt\\\":\\\"Quadrato di prova\\\",\\\"editorial\\\":true}}\"},{\"name\":\"anteprima: Escape e ritorno focus\",\"ok\":true,\"details\":\"{\\\"closed\\\":true,\\\"unlocked\\\":true,\\\"focus\\\":true}\"},{\"name\":\"creazione bozza senza perdita dati\",\"ok\":true,\"details\":\"{\\\"id\\\":\\\"article_mqp84mli_9te9n8\\\",\\\"status\\\":\\\"draft\\\",\\\"image\\\":\\\"data:image/png;base64,\\\",\\\"tags\\\":[\\\"uno\\\",\\\"due\\\"],\\\"formTitle\\\":\\\"\\\"}\"},{\"name\":\"bozza non visibile al pubblico\",\"ok\":true,\"details\":\"\"},{\"name\":\"avviso modifiche non salvate\",\"ok\":true,\"details\":\"\"},{\"name\":\"annullamento modifica\",\"ok\":true,\"details\":\"\"},{\"name\":\"pubblicazione aggiorna il pubblico\",\"ok\":true,\"details\":\"\"},{\"name\":\"sanificazione contenuto\",\"ok\":true,\"details\":\"{\\\"scripts\\\":0,\\\"text\\\":\\\"\\\\n      Anteprima amministratore · strumenti di modifica separati dal contenuto pubblico\\\\n      ← Chiudi anteprima\\\\n      \\\\n        \\\\n          Comunicati\\\\n          Bozza riservata\\\\n          \\\\n        \\\\n        \\\\n          Autoredi AdminData21 giugno 2026Lettura1 minStatoBozza\\\\n        \\\\n      \\\\n      \\\\n        \\\\n          \\\\n            \\\\n              \\\\n              ↗ Apri fotografia\\\\n            \\\\n          \\\\n          \\\\n        \\\\n      \\\\n      \\\\n        <script>window.__articleXss=true</script> Testo bozza.\\\\n        \\\\n        Pubblicato: 21 giu 2026, 13:00\\\\n        ← Chiudi anteprima\\\\n      \\\\n    \\\",\\\"xss\\\":false}\"},{\"name\":\"rifiuto immagine troppo grande\",\"ok\":true,\"details\":\"L’immagine supera il limite di 12 MB.\"},{\"name\":\"conferma eliminazione esplicita e interattiva\",\"ok\":true,\"details\":\"{\\\"deleteDialog\\\":{\\\"exists\\\":true,\\\"open\\\":true,\\\"count\\\":1,\\\"bodyLocked\\\":true,\\\"overflow\\\":\\\"hidden\\\",\\\"activeId\\\":\\\"cancelDeleteArticleBtn\\\",\\\"activeText\\\":\\\"Annulla\\\",\\\"scrollY\\\":14,\\\"clientWidth\\\":1270,\\\"scrollWidth\\\":1260},\\\"deleteVisual\\\":{\\\"opacity\\\":\\\"1\\\",\\\"pointerEvents\\\":\\\"auto\\\",\\\"display\\\":\\\"grid\\\",\\\"open\\\":true,\\\"label\\\":\\\"Elimina articolo\\\"}}\"},{\"name\":\"eliminazione: Escape e ritorno focus\",\"ok\":true,\"details\":\"\"},{\"name\":\"eliminazione disponibile dal dettaglio admin\",\"ok\":true,\"details\":\"\"},{\"name\":\"annullamento eliminazione\",\"ok\":true,\"details\":\"\"},{\"name\":\"ID eliminazione non valido bloccato\",\"ok\":true,\"details\":\"{\\\"open\\\":false,\\\"message\\\":\\\"Impossibile eliminare: identificativo articolo non valido.\\\"}\"},{\"name\":\"errore backend mantiene articolo e consente nuovo tentativo\",\"ok\":true,\"details\":\"{\\\"exists\\\":true,\\\"open\\\":true,\\\"calls\\\":1,\\\"busy\\\":false}\"},{\"name\":\"eliminazione e doppio click\",\"ok\":true,\"details\":\"\"},{\"name\":\"refresh dopo eliminazione non ripristina articolo\",\"ok\":true,\"details\":\"\"},{\"name\":\"admin mobile e touch\",\"ok\":true,\"details\":\"{\\\"overflow\\\":0,\\\"actions\\\":12,\\\"large\\\":true,\\\"columns\\\":\\\"370px\\\"}\"}]"
+    },
+    {
+      "test": "Console JavaScript e richieste locali",
+      "result": "PASS",
+      "details": "{\"runtimeErrors\":[],\"localNetworkErrors\":[]}"
+    }
+  ],
+  "runtimeErrors": [],
+  "localNetworkErrors": []
+}
