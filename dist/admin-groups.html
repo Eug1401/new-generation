@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="it" class="no-js">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#070b12"><meta name="color-scheme" content="dark"><link rel="preconnect" href="https://mcksxqtgibkazxnkdfra.supabase.co" crossorigin><link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin><link rel="dns-prefetch" href="https://mcksxqtgibkazxnkdfra.supabase.co"><link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
+  <title>New Generation · Gironi</title>
+  <link rel="stylesheet" href="assets/css/styles.css?v=v125-ui-stable">
+</head>
+<body><a class="skip-link" href="#main-content">Vai al contenuto principale</a>
+<div class="shell">
+  <header class="site-header">
+    <div class="brand"><div data-brand-logo><div class="logo"><span></span></div></div><div><h1 data-brand-title>New Generation · Gironi</h1><p data-brand-subtitle>Modifica manualmente i gironi anche dopo la generazione.</p></div></div>
+    <div class="actions"><button class="btn primary" id="simulateTournamentBtn" type="button">Simula</button><button class="btn danger" id="resetAllBtn" type="button">Reset</button></div>
+  </header>
+  <nav class="admin-nav" aria-label="Navigazione amministrazione"><a href="admin.html">Dashboard</a><a href="admin-rules.html">Regole & calendario</a><a href="admin-groups.html" class="active">Gironi</a><a href="admin-teams.html">Squadre</a><a href="admin-players.html">Giocatori</a><a href="admin-matches.html">Partite & referti</a><a href="admin-articles.html">Articoli</a><a href="admin-photos.html" class="">Foto</a><a href="admin-reports.html">Report & PDF</a></nav>
+  <main id="main-content" tabindex="-1">
+    <div class="grid">
+      <article class="card pad span-12">
+        <div class="section-title">
+          <div><h2>Editor manuale gironi</h2><p>Usa i menu per spostare ogni squadra. Poi applica: l'app rigenera fase a gironi, calendario e tabellone usando le nuove assegnazioni.</p></div>
+          <span class="pill" id="groupModePill">Gironi</span>
+        </div>
+        <div class="toolbar wrap">
+          <button class="btn" id="serpentineBtn" type="button">Auto bilanciato</button>
+          <button class="btn" id="randomBtn" type="button">Sorteggio casuale</button>
+          <button class="btn" id="fromCalendarBtn" type="button">Riprendi dal calendario</button>
+          <button class="btn" id="clearAssignmentsBtn" type="button">Svuota</button>
+          <button class="btn" id="exportBackupBtn" type="button">Esporta backup</button>
+          <label class="btn file-btn">Importa backup<input id="importBackupInput" type="file" accept="application/json,.json" hidden></label>
+        </div>
+        <div id="groupsMessage" class="margin-top"></div>
+      </article>
+
+      <article class="card pad span-8">
+        <h2>Composizione gironi</h2>
+        <div id="manualGroupsEditor" class="group-builder"></div>
+      </article>
+      <article class="card pad span-4">
+        <h2>Controlli intelligenti</h2>
+        <div id="groupHealth" class="stack"></div>
+        <div class="split-actions margin-top"><button class="btn primary" id="applyGroupsBtn" type="button">Applica e rigenera</button></div>
+        <div class="help-box margin-top">Suggerimento: usa <strong>Auto bilanciato</strong> per distribuire i seed in serpentina, poi correggi a mano derby, vincoli logistici o preferenze dell'organizzatore.</div>
+      </article>
+
+      <article class="card pad span-12">
+        <h2>Anteprima calendario gironi</h2>
+        <p class="muted">Anteprima teorica basata sulle assegnazioni attuali. Per renderla ufficiale premi “Applica e rigenera”.</p>
+        <div id="groupPreview" class="stack"></div>
+      </article>
+    </div>
+  </main>
+</div>
+<script defer src="assets/js/store.js?v=v125-ui-stable"></script><script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script defer src="assets/js/supabase-config.js?v=v125-ui-stable"></script><script defer src="assets/js/supabase-sync.js?v=v125-ui-stable"></script><script defer src="assets/js/ui.js?v=v125-ui-stable"></script><script defer src="assets/js/ux-a11y.js?v=v125-ui-stable"></script><script defer src="assets/js/admin-common.js?v=v125-ui-stable"></script><script defer src="assets/js/admin-simulation.js?v=v126-simulation"></script><script defer src="assets/js/admin-groups.js?v=v125-ui-stable"></script>
+</body>
+</html>

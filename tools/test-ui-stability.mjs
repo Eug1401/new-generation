@@ -195,7 +195,12 @@ async function seedState(){
         {id:'match_2',phase:'league',round:'Giornata 1',roundIndex:0,homeTeamId:'team_c',awayTeamId:'team_d',date:'2026-06-20',time:'19:00',field:'Campo 2',referee:'Arbitro Test 2',status:'scheduled',goals:[],cards:[]},
         {id:'match_ko',phase:'playoff',round:'Semifinale Oro 1',roundIndex:1,bracketRound:'Semifinali',bracketName:'Oro',bracketRoundIndex:1,bracketMatchIndex:1,homeTeamId:'team_e',awayTeamId:'team_a',date:'2026-06-21',time:'20:00',field:'Campo 1',referee:'Arbitro KO',status:'scheduled',goals:[],cards:[]}
       ],
-      articles:[{id:'article_1',title:'Notizia test',body:'Contenuto di prova per la stabilità della modale.',image:'',createdAt:'2026-06-20T10:00:00Z',updatedAt:'2026-06-20T10:00:00Z'}],
+      articles:[
+        {id:'article_1',title:'Notizia test',body:'Contenuto di prova per la stabilità della modale.',image:'',category:'Aggiornamenti',author:'Redazione Test',status:'published',slug:'notizia-test',publishedAt:'2026-06-20T10:00:00Z',createdAt:'2026-06-20T10:00:00Z',updatedAt:'2026-06-20T10:00:00Z'},
+        {id:'article_2',title:'Titolo molto lungo per verificare che la card editoriale rimanga leggibile senza tagliare informazioni importanti su smartphone e desktop',subtitle:'Sottotitolo editoriale con caratteri accentati, emoji ⚽ e informazioni aggiuntive',excerpt:'Estratto lungo usato per controllare il troncamento visivo controllato senza perdita del contenuto completo.',body:'## Analisi completa\\nPrimo paragrafo con **grassetto**, *corsivo* e [collegamento](https://example.com).\\n- Prima voce\\n- Seconda voce\\n> Una citazione leggibile.\\nParolaMoltoLungaSenzaSpaziCheNonDeveCreareScrollOrizzontale1234567890',image:tall,imageAlt:'Locandina verticale del torneo',imageCaption:'Didascalia immagine verticale',category:'Approfondimenti',author:'Ada Rossi',tags:['torneo','analisi'],status:'published',slug:'analisi-completa',publishedAt:'2026-06-21T12:00:00Z',createdAt:'2026-06-21T11:00:00Z',updatedAt:'2026-06-21T12:00:00Z'},
+        {id:'article_3',title:'Bozza riservata',body:'<script>window.__articleXss=true</script> Testo bozza.',image:wide,category:'Comunicati',author:'Admin',status:'draft',slug:'bozza-riservata',createdAt:'2026-06-21T13:00:00Z',updatedAt:'2026-06-21T13:00:00Z'},
+        {id:'article_4',title:'Articolo programmato futuro',body:'Non deve essere ancora visibile.',image:circle,category:'Programmati',author:'Admin',status:'scheduled',slug:'programmato-futuro',publishedAt:'2099-01-01T09:00:00Z',createdAt:'2026-06-21T14:00:00Z',updatedAt:'2026-06-21T14:00:00Z'}
+      ],
       teamPhotos:{team_a:[{path:'test/photo-1.jpg',name:'photo-1.jpg',size:2048,ts:1781949600000}]}
     });
     localStorage.setItem(store.PUBLIC_KEY,JSON.stringify(state));
@@ -380,15 +385,159 @@ async function testFilterAndPublicModals(){
   record('Filtri e modali pubbliche: apertura, Escape, backdrop e assenza residui',filterOpen&&filterBackdrop&&filterEscape&&matchOpen&&matchBackdrop&&matchEscape&&teamOpen&&teamEscape&&articleOpen&&articleBackdrop&&residual===0,JSON.stringify({filterOpen,filterBackdrop,filterEscape,matchOpen,matchBackdrop,matchEscape,teamOpen,teamEscape,articleOpen,articleBackdrop,residual}));
 }
 
+
+async function testArticlesEndToEnd(){
+  const checks=[];
+  const add=(name,ok,details='')=>{checks.push({name,ok:Boolean(ok),details});console.log(`[articles] ${ok?'PASS':'FAIL'} · ${name}`);if(!ok)throw new Error(`Articoli · ${name}${details?`: ${details}`:''}`);};
+
+  await setViewport(1280,900);await navigate('index.html');await seedState();await navigate('index.html');await click('[data-tab="articles"]');
+  let publicState=await evaluate(`(()=>{
+    const cards=[...document.querySelectorAll('#publicArticles .article-card')];
+    const titles=cards.map(c=>c.querySelector('h3')?.textContent||'');
+    const image=document.querySelector('[data-article-id="article_2"] img.article-image');
+    return {count:cards.length,badge:document.querySelector('#publicArticleCount')?.textContent||'',titles,draft:!!document.querySelector('[data-article-id="article_3"]'),scheduled:!!document.querySelector('[data-article-id="article_4"]'),alt:image?.alt||'',href:document.querySelector('[data-article-id="article_2"] a')?.getAttribute('href')||'',nullText:document.querySelector('#publicArticles')?.textContent.includes('null')||document.querySelector('#publicArticles')?.textContent.includes('undefined')};
+  })()`);
+  add('lista pubblica filtra bozze e programmati',publicState.count===2&&!publicState.draft&&!publicState.scheduled,JSON.stringify(publicState));
+  add('titoli e immagini accessibili',publicState.titles.some(t=>t.startsWith('Titolo molto lungo'))&&publicState.alt==='Locandina verticale del torneo'&&publicState.href==='#article=analisi-completa'&&!publicState.nullText,JSON.stringify(publicState));
+
+  await evaluate(`(()=>{const input=document.querySelector('#publicArticleSearch');input.value='analisi completa';input.dispatchEvent(new Event('input',{bubbles:true}));})()`);await delay(220);
+  let filterState=await evaluate(`({cards:document.querySelectorAll('#publicArticles .article-card').length,ids:[...document.querySelectorAll('#publicArticles .article-card')].map(x=>x.dataset.articleId)})`);
+  add('ricerca pubblica',filterState.cards===1&&filterState.ids[0]==='article_2',JSON.stringify(filterState));
+  await click('#clearArticleFilters');
+  await evaluate(`(()=>{const select=document.querySelector('#publicArticleCategory');select.value='Approfondimenti';select.dispatchEvent(new Event('change',{bubbles:true}));})()`);await delay(100);
+  filterState=await evaluate(`({cards:document.querySelectorAll('#publicArticles .article-card').length,id:document.querySelector('#publicArticles .article-card')?.dataset.articleId||''})`);
+  add('filtro categoria pubblico',filterState.cards===1&&filterState.id==='article_2',JSON.stringify(filterState));
+  await click('#clearArticleFilters');
+
+  await evaluate(`document.body.style.minHeight='2400px';window.scrollTo(0,420)`);const scrollBefore=await evaluate('window.scrollY');
+  await click('[data-article-open="article_1"]');
+  let modal=await overlayState('#articleModal');
+  let detail=await evaluate(`({hash:location.hash,title:document.querySelector('#articleModalTitle')?.textContent||'',body:document.querySelector('#articleModalBody')?.textContent||'',dialog:document.querySelector('#articleModal')?.getAttribute('role')||''})`);
+  add('apertura dettaglio con URL stabile',modal.open&&detail.hash==='#article=notizia-test'&&detail.title==='Notizia test'&&detail.body.includes('Contenuto di prova')&&detail.dialog==='dialog',JSON.stringify({modal,detail}));
+  await evaluate('history.back()');await waitFor(()=>evaluate(`!document.querySelector('#articleModal')?.classList.contains('open')`),{label:'history back article'});
+  await waitFor(()=>evaluate(`Math.abs(window.scrollY-${scrollBefore})<2`),{label:'restore article list scroll'});
+  const scrollAfter=await evaluate('window.scrollY');
+  add('pulsante indietro e posizione lista',Math.abs(scrollBefore-scrollAfter)<2,JSON.stringify({scrollBefore,scrollAfter,hash:await evaluate('location.hash')}));
+
+  await click('[data-article-open="article_2"]');
+  detail=await evaluate(`(()=>{const root=document.querySelector('#articleModalBody');const img=root.querySelector('.article-detail-media img');return {title:root.querySelector('h1')?.textContent||'',h3:root.querySelector('.article-full-text h3')?.textContent||'',strong:root.querySelector('.article-full-text strong')?.textContent||'',em:root.querySelector('.article-full-text em')?.textContent||'',link:root.querySelector('.article-full-text a')?.href||'',list:root.querySelectorAll('.article-full-text li').length,quote:root.querySelector('blockquote')?.textContent||'',objectFit:img?getComputedStyle(img).objectFit:'',caption:root.querySelector('figcaption')?.textContent||'',scriptCount:root.querySelectorAll('script').length};})()`);
+  add('dettaglio completo e formattazione sicura',detail.title.startsWith('Titolo molto lungo')&&detail.h3==='Analisi completa'&&detail.strong==='grassetto'&&detail.em==='corsivo'&&detail.link.startsWith('https://example.com')&&detail.list===2&&detail.quote.includes('citazione')&&detail.objectFit==='contain'&&detail.caption.includes('Didascalia')&&detail.scriptCount===0,JSON.stringify(detail));
+  const hashBeforeRefresh=await evaluate('location.hash');await navigate('index.html');await waitFor(()=>evaluate(`document.querySelector('#articleModal')?.classList.contains('open')`),{label:'direct article refresh'});
+  const refreshed=await evaluate(`({hash:location.hash,title:document.querySelector('#articleModalBody h1')?.textContent||'',cards:document.querySelectorAll('#publicArticles .article-card').length})`);
+  add('refresh e URL diretto',hashBeforeRefresh==='#article=analisi-completa'&&refreshed.hash===hashBeforeRefresh&&refreshed.title.startsWith('Titolo molto lungo'),JSON.stringify(refreshed));
+
+  await evaluate(`history.pushState({},'','#article=notizia-test');window.dispatchEvent(new HashChangeEvent('hashchange'));`);await delay(100);
+  const switched=await evaluate(`({title:document.querySelector('#articleModalBody h1')?.textContent||'',old:document.querySelector('#articleModalBody')?.textContent.includes('Analisi completa')||false})`);
+  add('apertura ripetuta senza contenuto precedente',switched.title==='Notizia test'&&!switched.old,JSON.stringify(switched));
+  await evaluate(`history.pushState({},'','#article=inesistente');window.dispatchEvent(new HashChangeEvent('hashchange'));`);await delay(100);
+  const missing=await evaluate(`document.querySelector('#articleModalBody')?.textContent||''`);
+  add('articolo inesistente',missing.includes('Articolo non disponibile'),missing);
+  await click('#closeArticleModal');
+
+  const responsive=[];
+  for(const [width,height] of [[320,700],[390,844],[844,390],[768,1024],[1440,900]]){
+    await setViewport(width,height);await navigate('index.html');await click('[data-tab="articles"]');await delay(80);
+    const data=await evaluate(`(()=>{const card=document.querySelector('#publicArticles .article-card');const main=card?.querySelector('.article-card-main');const media=card?.querySelector('.article-media');const title=card?.querySelector('h3');const r=card?.getBoundingClientRect();return {width:${width},doc:document.documentElement.scrollWidth-document.documentElement.clientWidth,cardRight:r?.right||0,vw:innerWidth,columns:main?getComputedStyle(main).gridTemplateColumns:'',mainAreas:main?getComputedStyle(main).gridTemplateAreas:'',mediaArea:media?getComputedStyle(media).gridArea:'',mediaColumn:media?getComputedStyle(media).gridColumn:'',contentArea:card?.querySelector('.article-content')?getComputedStyle(card.querySelector('.article-content')).gridArea:'',contentColumn:card?.querySelector('.article-content')?getComputedStyle(card.querySelector('.article-content')).gridColumn:'',mediaH:media?.getBoundingClientRect().height||0,titleDisplay:title?getComputedStyle(title).display:'',lineClamp:title?getComputedStyle(title).webkitLineClamp:'',touch:[...document.querySelectorAll('#articles button,#articles input,#articles select')].every(el=>el.getBoundingClientRect().height>=40)};})()`);
+    responsive.push(data);
+    add(`responsive ${width}px`,data.doc<=1&&data.cardRight<=data.vw+1&&data.mediaH>0&&(width<=760||data.mediaH<=301)&&data.titleDisplay==='block'&&(width>760||!data.columns.includes(' '))&&data.touch,JSON.stringify(data));
+  }
+
+  await setViewport(1280,900);await navigate('admin-articles.html');
+  let adminState=await evaluate(`({cards:document.querySelectorAll('#adminArticlesList .article-card').length,drafts:document.querySelectorAll('.status-draft').length,scheduled:document.querySelectorAll('.status-scheduled').length,fields:['articleTitle','articleSubtitle','articleExcerpt','articleAuthor','articleCategory','articleTags','articleBody','articleImage','articleImageAlt','articleImageCaption','articleStatus','articlePublishedAt','articleSlug'].every(id=>!!document.getElementById(id))})`);
+  add('elenco e modulo admin completi',adminState.cards===4&&adminState.drafts===1&&adminState.scheduled===1&&adminState.fields,JSON.stringify(adminState));
+
+  await evaluate(`(()=>{document.querySelector('#articleTitle').value='';document.querySelector('#articleBody').value='';})()`);await click('#articleSubmitBtn');await delay(80);
+  const validation=await evaluate(`({errors:document.querySelectorAll('#articleFormErrors li').length,titleInvalid:document.querySelector('#articleTitle').getAttribute('aria-invalid'),bodyInvalid:document.querySelector('#articleBody').getAttribute('aria-invalid'),count:NexoraStore.selectors.allArticles(NexoraStore.load('admin')).length})`);
+  add('validazione obbligatori',validation.errors===2&&validation.titleInvalid==='true'&&validation.bodyInvalid==='true'&&validation.count===4,JSON.stringify(validation));
+  await navigate('admin-articles.html');
+
+  const imageLoaded=await evaluate(`(()=>new Promise(resolve=>{
+    const binary=atob('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFElEQVR42mP8z8AARAwMjIwgAQAQAAH+Q0YzAAAAAElFTkSuQmCC');
+    const bytes=new Uint8Array(binary.length);for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+    const file=new File([bytes],'test.png',{type:'image/png'});const dt=new DataTransfer();dt.items.add(file);
+    const input=document.querySelector('#articleImage');input.files=dt.files;input.dispatchEvent(new Event('change',{bubbles:true}));
+    const start=Date.now();const timer=setInterval(()=>{const img=document.querySelector('#articleImagePreview img');if(img&&img.src.startsWith('data:image/png')){clearInterval(timer);resolve(true);}else if(Date.now()-start>5000){clearInterval(timer);resolve(false);}},40);
+  }))()`);
+  add('upload e anteprima immagine',imageLoaded,String(imageLoaded));
+  await evaluate(`(()=>{const set=(id,value,event='input')=>{const el=document.getElementById(id);el.value=value;el.dispatchEvent(new Event(event,{bubbles:true}));};set('articleTitle','Nuovo articolo end to end');set('articleSubtitle','Sottotitolo di prova');set('articleExcerpt','Estratto di prova');set('articleAuthor','Tester');set('articleCategory','Test');set('articleTags','uno, due');set('articleBody','## Titolo interno\\nCorpo **formattato** e [link](https://example.com).');set('articleImageAlt','Quadrato di prova');set('articleImageCaption','Didascalia prova');set('articleStatus','draft','change');return {slug:document.getElementById('articleSlug').value,dirty:document.getElementById('articleFormTitle').dataset.unsaved};})()`);
+  const dirty=await evaluate(`({dirty:document.querySelector('#articleFormTitle').dataset.unsaved,slug:document.querySelector('#articleSlug').value})`);
+  add('slug automatico e stato non salvato',dirty.dirty==='true'&&dirty.slug==='nuovo-articolo-end-to-end',JSON.stringify(dirty));
+  await click('#articlePreviewBtn');modal=await overlayState('#articlePreviewModal');
+  const preview=await evaluate(`({open:document.querySelector('#articlePreviewModal')?.classList.contains('open'),title:document.querySelector('#articlePreviewModalBody h1')?.textContent||'',imgAlt:document.querySelector('#articlePreviewModalBody img')?.alt||''})`);
+  add('anteprima amministratore',modal.open&&modal.bodyLocked&&preview.title==='Nuovo articolo end to end'&&preview.imgAlt==='Quadrato di prova',JSON.stringify({modal,preview}));await pressKey('Escape');
+  add('anteprima: Escape e ritorno focus',await evaluate(`!document.querySelector('#articlePreviewModal').classList.contains('open')&&!document.body.classList.contains('ng-overlay-open')&&document.activeElement===document.querySelector('#articlePreviewBtn')`));
+  await click('#articleSubmitBtn');
+  await waitFor(()=>evaluate(`NexoraStore.selectors.allArticles(NexoraStore.load('admin')).some(a=>a.title==='Nuovo articolo end to end')`),{label:'create draft article'});
+  const created=await evaluate(`(()=>{const a=NexoraStore.selectors.allArticles(NexoraStore.load('admin')).find(a=>a.title==='Nuovo articolo end to end');return {id:a?.id||'',status:a?.status||'',image:a?.image?.slice(0,22)||'',tags:a?.tags||[],formTitle:document.querySelector('#articleTitle').value};})()`);
+  add('creazione bozza senza perdita dati',created.id&&created.status==='draft'&&created.image.startsWith('data:image/png')&&created.tags.length===2&&created.formTitle==='',JSON.stringify(created));
+
+  await navigate('index.html');await click('[data-tab="articles"]');
+  add('bozza non visibile al pubblico',!(await evaluate(`!![...document.querySelectorAll('#publicArticles h3')].find(el=>el.textContent==='Nuovo articolo end to end')`)));
+
+  await navigate('admin-articles.html');await click(`[data-edit-article="${created.id}"]`);
+  await evaluate(`(()=>{const sub=document.querySelector('#articleSubtitle');sub.value='Modifica non salvata';sub.dispatchEvent(new Event('input',{bubbles:true}));window.confirm=()=>true;})()`);
+  add('avviso modifiche non salvate',await evaluate(`document.querySelector('#articleFormTitle').dataset.unsaved==='true'`));
+  await click('#cancelEditArticleBtn');add('annullamento modifica',await evaluate(`document.querySelector('#articleTitle').value===''&&document.querySelector('#articleFormTitle').dataset.unsaved==='false'`));
+
+  await click(`[data-edit-article="${created.id}"]`);
+  await evaluate(`(()=>{const status=document.querySelector('#articleStatus');status.value='published';status.dispatchEvent(new Event('change',{bubbles:true}));const date=document.querySelector('#articlePublishedAt');const d=new Date(Date.now()-60000);date.value=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);date.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+  await click('#articleSubmitBtn');await waitFor(()=>evaluate(`NexoraStore.selectors.articleById(NexoraStore.load('admin'),${JSON.stringify(created.id)},{includeDrafts:true})?.status==='published'`),{label:'publish article'});
+  await navigate('index.html');await click('[data-tab="articles"]');
+  add('pubblicazione aggiorna il pubblico',await evaluate(`!![...document.querySelectorAll('#publicArticles h3')].find(el=>el.textContent==='Nuovo articolo end to end')`));
+
+  await navigate('admin-articles.html');
+  await click('[data-preview-article="article_3"]');
+  const safePreview=await evaluate(`({scripts:document.querySelectorAll('#articlePreviewModalBody script').length,text:document.querySelector('#articlePreviewModalBody')?.textContent||'',xss:window.__articleXss===true})`);
+  add('sanificazione contenuto',safePreview.scripts===0&&!safePreview.xss&&safePreview.text.includes('<script>'),JSON.stringify(safePreview));await pressKey('Escape');
+
+  const invalidFile=await evaluate(`(()=>new Promise(resolve=>{const file=new File([new Uint8Array(13*1024*1024)],'troppo-grande.jpg',{type:'image/jpeg'});const dt=new DataTransfer();dt.items.add(file);const input=document.querySelector('#articleImage');input.files=dt.files;input.dispatchEvent(new Event('change',{bubbles:true}));const start=Date.now();const timer=setInterval(()=>{const text=document.querySelector('#articleMsg')?.textContent||'';if(text.includes('12 MB')){clearInterval(timer);resolve(text);}else if(Date.now()-start>3000){clearInterval(timer);resolve(text);}},40);}))()`);
+  add('rifiuto immagine troppo grande',String(invalidFile).includes('12 MB'),String(invalidFile));
+
+  await click(`[data-delete-article="${created.id}"]`);let deleteDialog=await overlayState('#deleteArticleDialog');
+  add('conferma eliminazione esplicita',deleteDialog.open&&deleteDialog.bodyLocked&&(await evaluate(`document.querySelector('#deleteArticleDialogText').textContent.includes('Nuovo articolo end to end')`)),JSON.stringify(deleteDialog));
+  await pressKey('Escape');
+  add('eliminazione: Escape e ritorno focus',await evaluate(`!document.querySelector('#deleteArticleDialog').classList.contains('show')&&!document.body.classList.contains('ng-overlay-open')&&document.activeElement===document.querySelector(${JSON.stringify(`[data-delete-article="${created.id}"]`)})`));
+  await click(`[data-delete-article="${created.id}"]`);await click('#cancelDeleteArticleBtn');
+  add('annullamento eliminazione',!(await overlayState('#deleteArticleDialog')).open&&await evaluate(`!!NexoraStore.selectors.articleById(NexoraStore.load('admin'),${JSON.stringify(created.id)},{includeDrafts:true})`));
+  await click(`[data-delete-article="${created.id}"]`);
+  await evaluate(`NEW_GENERATION_SUPABASE.ENABLED=true;NG_FORCE_REMOTE_SAVE=()=>Promise.reject(new Error('backend test'));`);
+  await click('#confirmDeleteArticleBtn');await waitFor(()=>evaluate(`document.querySelector('#deleteArticleDialogMsg')?.textContent.includes('ripristinato')`),{label:'delete rollback'});
+  const rollback=await evaluate(`({exists:!!NexoraStore.selectors.articleById(NexoraStore.load('admin'),${JSON.stringify(created.id)},{includeDrafts:true}),open:document.querySelector('#deleteArticleDialog').classList.contains('show')})`);
+  add('errore eliminazione ripristina articolo',rollback.exists&&rollback.open,JSON.stringify(rollback));
+  await evaluate(`NEW_GENERATION_SUPABASE.ENABLED=false;`);
+  await evaluate(`(()=>{const b=document.querySelector('#confirmDeleteArticleBtn');b.click();b.click();})()`);
+  await waitFor(()=>evaluate(`!NexoraStore.selectors.articleById(NexoraStore.load('admin'),${JSON.stringify(created.id)},{includeDrafts:true})&&!document.querySelector('#deleteArticleDialog').classList.contains('show')`),{label:'final delete'});
+  add('eliminazione e doppio click',true);
+
+  await setViewport(390,844);await navigate('admin-articles.html');
+  const adminMobile=await evaluate(`(()=>{const actions=[...document.querySelectorAll('.article-admin-actions .btn')];return {overflow:document.documentElement.scrollWidth-document.documentElement.clientWidth,actions:actions.length,large:actions.every(b=>b.getBoundingClientRect().height>=44),columns:getComputedStyle(document.querySelector('.article-admin-layout')).gridTemplateColumns};})()`);
+  add('admin mobile e touch',adminMobile.overflow<=1&&adminMobile.actions>0&&adminMobile.large&&!adminMobile.columns.includes(' '),JSON.stringify(adminMobile));
+
+  record('Articoli end-to-end: pubblico, admin, immagini, sicurezza, URL, responsive e sincronizzazione',checks.every(c=>c.ok),JSON.stringify(checks));
+}
+
 async function testSimulationDialog(){
   await setViewport(1280,900);await navigate('admin.html');
-  await click('#simulateTournamentBtn');let st=await overlayState('#simulationDialog');const openOk=st.open&&st.bodyLocked&&st.count===1;
+  await click('#simulateTournamentBtn');let st=await overlayState('#simulationDialog');
+  const initial=await evaluate(`({title:document.querySelector('#simulationStepBody h3')?.textContent||'',steps:document.querySelectorAll('.simulation-stepper li').length,generated:document.querySelector('input[name="simulationTeamMode"][value="generated"]')?.checked,existingDisabled:document.querySelector('input[name="simulationTeamMode"][value="existing"]')?.disabled})`);
+  const openOk=st.open&&st.bodyLocked&&st.count===1&&initial.steps===5&&initial.generated&&initial.existingDisabled&&initial.title.includes('squadre già presenti');
   await pressKey('Escape');st=await overlayState('#simulationDialog');const escapeOk=!st.open&&!st.bodyLocked&&await evaluate(`document.activeElement===document.querySelector('#simulateTournamentBtn')`);
   for(let i=0;i<10;i++){await click('#simulateTournamentBtn');await click('#cancelSimulationBtn');}
   st=await overlayState('#simulationDialog');const cyclesOk=!st.open&&!st.bodyLocked&&st.count===1;
   await evaluate(`(()=>{const b=document.querySelector('#simulateTournamentBtn');b.focus();b.click();b.click();return true;})()`);await delay(80);st=await overlayState('#simulationDialog');const doubleOk=st.open&&st.count===1;
   await click('#simulationDialog');st=await overlayState('#simulationDialog');const backdropOk=!st.open&&!st.bodyLocked;
-  record('Modale simulazione: 10 cicli, doppio click, Escape, backdrop e focus',openOk&&escapeOk&&cyclesOk&&doubleOk&&backdropOk,JSON.stringify({openOk,escapeOk,cyclesOk,doubleOk,backdropOk,st}));
+
+  await click('#simulateTournamentBtn');
+  await click('#simulationNextBtn');const formatOk=await evaluate(`document.querySelector('#simulationStepBody h3')?.textContent.includes('formato')&&document.querySelectorAll('input[name="simulationFormat"]').length===4`);
+  await click('input[name="simulationFormat"][value="knockout"]');await click('#simulationNextBtn');const kingsOk=await evaluate(`document.querySelector('#simulationStepBody h3')?.textContent.includes('Kings')`);
+  await click('input[name="simulationKings"][value="yes"]');await click('#simulationNextBtn');const durationOk=await evaluate(`document.querySelector('#simulationStepBody h3')?.textContent.includes('un solo giorno o in più giorni')`);
+  await click('input[name="simulationDuration"][value="one_day"]');await click('#simulationNextBtn');
+  const summaryBefore=await evaluate(`({summary:document.querySelector('.simulation-summary')?.textContent||'',disabled:document.querySelector('#simulationExecuteBtn')?.disabled,label:document.querySelector('#simulationExecuteBtn')?.textContent||''})`);
+  await click('#simulationReplaceConfirm');await click('#simulationTeamsConfirm');
+  const summaryAfter=await evaluate(`({enabled:!document.querySelector('#simulationExecuteBtn')?.disabled,label:document.querySelector('#simulationExecuteBtn')?.textContent||'',kings:document.querySelector('.simulation-summary')?.textContent.includes('presidente obbligatorio')})`);
+  const wizardOk=formatOk&&kingsOk&&durationOk&&summaryBefore.disabled&&summaryBefore.label.includes('Genera torneo simulato')&&summaryAfter.enabled&&summaryAfter.kings;
+  await click('#cancelSimulationBtn');
+  record('Procedura Simula: wizard 5 passaggi, conferme, doppio click, Escape, backdrop e focus',openOk&&escapeOk&&cyclesOk&&doubleOk&&backdropOk&&wizardOk,JSON.stringify({openOk,escapeOk,cyclesOk,doubleOk,backdropOk,wizardOk,initial,summaryBefore,summaryAfter}));
 }
 async function testPhotoConfirmAndLightbox(){
   await setViewport(1280,900);await navigate('admin-photos.html');
@@ -426,17 +575,22 @@ async function testResizeAndScroll(){
 async function run(){
   fixtureRoot=prepareFileFixture();baseUrl='inline://';
   await launchBrowser();
+  const articlesOnly=process.argv.includes('--articles-only');
   try{
-    await testPageLoads();
-    await testResponsive();
-    await testTeamLogoRendering();
-    await testBusyButton();
-    await testAdminResetDialog();
-    await testSimulationDialog();
-    await testMobileSheet();
-    await testFilterAndPublicModals();
-    await testPhotoConfirmAndLightbox();
-    await testResizeAndScroll();
+    if(articlesOnly){
+      await testArticlesEndToEnd();
+    }else{
+      await testPageLoads();
+      await testResponsive();
+      await testTeamLogoRendering();
+      await testBusyButton();
+      await testAdminResetDialog();
+      await testSimulationDialog();
+      await testMobileSheet();
+      await testFilterAndPublicModals();
+      await testPhotoConfirmAndLightbox();
+      await testResizeAndScroll();
+    }
     record('Console JavaScript e richieste locali',runtimeErrors.length===0&&localNetworkErrors.length===0,JSON.stringify({runtimeErrors,localNetworkErrors}));
   }finally{
     try{client?.close();}catch{}
@@ -444,7 +598,7 @@ async function run(){
     if(server)await new Promise(resolve=>server.close(resolve));
     try{if(fixtureRoot)fs.rmSync(fixtureRoot,{recursive:true,force:true});}catch{}
   }
-  console.log(JSON.stringify({root,pages:pages.length,widths,results,runtimeErrors,localNetworkErrors},null,2));
+  console.log(JSON.stringify({root,pages:pages.length,widths,mode:articlesOnly?'articles':'ui',results,runtimeErrors,localNetworkErrors},null,2));
   if(results.some(r=>r.result==='FAIL'))process.exitCode=1;
 }
 run().catch(error=>{console.error(error.stack||error);try{browser?.kill('SIGTERM');}catch{}try{server?.close();}catch{}process.exit(1);});
