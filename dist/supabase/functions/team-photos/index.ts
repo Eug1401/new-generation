@@ -36,32 +36,41 @@ function env(name: string, fallback = '') {
   return Deno.env.get(name) || fallback;
 }
 
+function normalizeOrigin(value: string) {
+  return String(value || '').trim().replace(/\/$/, '');
+}
+
 function allowedOrigins() {
   return env('PHOTO_ALLOWED_ORIGINS')
     .split(',')
-    .map((value) => value.trim())
+    .map(normalizeOrigin)
     .filter(Boolean);
 }
 
-function corsHeaders(req: Request) {
-  const origin = req.headers.get('origin') || '';
+function isOriginAllowed(origin: string) {
   const configured = allowedOrigins();
-  const allowOrigin = configured.length ? (configured.includes(origin) ? origin : '') : '*';
+  const normalized = normalizeOrigin(origin);
+  return !normalized || !configured.length || configured.includes('*') || configured.includes(normalized);
+}
+
+function corsHeaders(req: Request) {
+  const origin = normalizeOrigin(req.headers.get('origin') || '');
   const headers: Record<string, string> = {
     'Access-Control-Allow-Headers': 'authorization, content-type, x-client-info, apikey',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
     'Access-Control-Max-Age': '86400',
     'Vary': 'Origin',
   };
-  if (allowOrigin) headers['Access-Control-Allow-Origin'] = allowOrigin;
+  // La route resta bloccata da ensureOriginAllowed, ma il browser può leggere
+  // il JSON 403 e mostrare ORIGIN_NOT_ALLOWED invece di "Failed to fetch".
+  headers['Access-Control-Allow-Origin'] = origin || '*';
   return headers;
 }
 
 function ensureOriginAllowed(req: Request) {
-  const origin = req.headers.get('origin') || '';
-  const configured = allowedOrigins();
-  if (origin && configured.length && !configured.includes(origin)) {
-    throw new HttpError(403, 'ORIGIN_NOT_ALLOWED', 'Origine non autorizzata per la sezione Foto.');
+  const origin = normalizeOrigin(req.headers.get('origin') || '');
+  if (!isOriginAllowed(origin)) {
+    throw new HttpError(403, 'ORIGIN_NOT_ALLOWED', 'Origine non autorizzata per la sezione Foto. Aggiorna PHOTO_ALLOWED_ORIGINS con il dominio esatto del sito.');
   }
 }
 
@@ -115,16 +124,62 @@ function fileExtension(filename: string) {
   return String(filename || '').split('.').pop()?.toLowerCase() || '';
 }
 
+function cloudinaryUrlConfig() {
+  const raw = env('CLOUDINARY_URL').trim();
+  if (!raw) return { cloudName: '', apiKey: '', apiSecret: '' };
+  try {
+    const parsed = new URL(raw.replace(/^cloudinary:\/\//i, 'https://'));
+    const result = {
+      cloudName: decodeURIComponent(parsed.hostname || ''),
+      apiKey: decodeURIComponent(parsed.username || ''),
+      apiSecret: decodeURIComponent(parsed.password || ''),
+    };
+    if (Object.values(result).some((value) => /<|>|your_|placeholder/i.test(value))) {
+      return { cloudName: '', apiKey: '', apiSecret: '' };
+    }
+    return result;
+  } catch {
+    return { cloudName: '', apiKey: '', apiSecret: '' };
+  }
+}
+
 function cloudinaryConfig() {
-  const cloudName = env('CLOUDINARY_CLOUD_NAME', 'dc17izhac');
-  const apiKey = env('CLOUDINARY_API_KEY');
-  const apiSecret = env('CLOUDINARY_API_SECRET');
+  const fromUrl = cloudinaryUrlConfig();
+  const cloudName = env('CLOUDINARY_CLOUD_NAME', fromUrl.cloudName || 'dc17izhac');
+  const apiKey = env('CLOUDINARY_API_KEY', fromUrl.apiKey);
+  const apiSecret = env('CLOUDINARY_API_SECRET', fromUrl.apiSecret);
   const rootFolder = cleanSegment(env('CLOUDINARY_TEAM_FOLDER', 'squadra'), 'squadra');
   const sectionTag = cleanSegment(env('CLOUDINARY_SECTION_TAG', 'foto-squadra'), 'foto-squadra');
   if (!cloudName || !apiKey || !apiSecret) {
     throw new HttpError(500, 'CLOUDINARY_CONFIG', 'Cloudinary non configurato per la sezione Foto.');
   }
   return { cloudName, apiKey, apiSecret, rootFolder, sectionTag };
+}
+
+function configurationHealth(req: Request) {
+  const fromUrl = cloudinaryUrlConfig();
+  const cloudName = env('CLOUDINARY_CLOUD_NAME', fromUrl.cloudName || 'dc17izhac');
+  const cloudinaryConfigured = Boolean(
+    cloudName &&
+    (env('CLOUDINARY_API_KEY') || fromUrl.apiKey) &&
+    (env('CLOUDINARY_API_SECRET') || fromUrl.apiSecret)
+  );
+  const supabaseConfigured = Boolean(env('SUPABASE_URL') && env('SUPABASE_ANON_KEY') && env('SUPABASE_SERVICE_ROLE_KEY'));
+  const origin = normalizeOrigin(req.headers.get('origin') || '');
+  return {
+    ok: cloudinaryConfigured && supabaseConfigured && isOriginAllowed(origin),
+    service: 'team-photos',
+    version: 'v126.17',
+    origin: origin || null,
+    originAllowed: isOriginAllowed(origin),
+    configuredOrigins: allowedOrigins().length,
+    cloudinary: {
+      configured: cloudinaryConfigured,
+      cloudName: cloudName || null,
+      source: env('CLOUDINARY_API_KEY') ? 'separate-secrets' : (fromUrl.apiKey ? 'CLOUDINARY_URL' : 'missing'),
+    },
+    supabase: { configured: supabaseConfigured },
+  };
 }
 
 function supabaseConfig() {
@@ -678,6 +733,7 @@ async function route(req: Request) {
   ensureOriginAllowed(req);
   const url = new URL(req.url);
   const action = url.searchParams.get('action') || '';
+  if (req.method === 'GET' && action === 'health') return json(req, configurationHealth(req));
   if (ADMIN_METHODS.has(req.method) && action !== 'zip') await requireAdmin(req);
   if (req.method === 'GET' && action === 'download') return downloadOriginal(req);
   if (req.method === 'GET' && action === 'detail') return json(req, { ok: true, photo: await resolvePhoto(url.searchParams.get('photoId') || '') });

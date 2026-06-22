@@ -1,0 +1,383 @@
+NEW GENERATION v126.16 — TEST RESULTS
+Data: 2026-06-22
+
+================================================================================
+npm test
+================================================================================
+
+> new-generation-tournament@1.26.16 test
+> node tools/validate-project.mjs
+
+{
+  "root": "/mnt/data/ng-work/new-generation-main",
+  "html": 13,
+  "js": 22,
+  "errors": 0,
+  "warnings": 0,
+  "mode": "test"
+}
+
+================================================================================
+npm run lint
+================================================================================
+
+> new-generation-tournament@1.26.16 lint
+> node tools/validate-project.mjs --lint
+
+{
+  "root": "/mnt/data/ng-work/new-generation-main",
+  "html": 13,
+  "js": 22,
+  "errors": 0,
+  "warnings": 0,
+  "mode": "lint"
+}
+
+================================================================================
+npm run test:simulation
+================================================================================
+
+> new-generation-tournament@1.26.16 test:simulation
+> node tools/test-simulation.mjs
+
+[NG-Simulation] {
+  operationId: 'sim_mqp4uklk_cd5fpno',
+  stage: 'error',
+  message: 'Conferma la sostituzione dei dati del torneo.',
+  durationMs: 0
+}
+[NG-Simulation] {
+  operationId: 'sim_mqp4uklm_93pqqjs',
+  stage: 'start',
+  teamMode: 'generated',
+  format: 'knockout',
+  kings: false,
+  duration: 'one_day',
+  requestSource: 'automated-test'
+}
+[NG-Simulation] {
+  operationId: 'sim_mqp4uklm_93pqqjs',
+  stage: 'commit',
+  teams: 8,
+  players: 40,
+  format: 'knockout',
+  startDate: '2026-06-21',
+  endDate: '2026-06-21',
+  matches: 7,
+  events: 36,
+  winner: 'Blue Sharks',
+  durationMs: 175
+}
+[NG-Simulation] {
+  operationId: 'sim_mqp4ukqj_w15qg6h',
+  stage: 'start',
+  teamMode: 'generated',
+  format: 'knockout',
+  kings: false,
+  duration: 'one_day',
+  requestSource: 'automated-test'
+}
+[NG-Simulation] { operationId: 'sim_mqp4ukqj_w15qg6h', stage: 'rollback-start' }
+[NG-Simulation] { operationId: 'sim_mqp4ukqj_w15qg6h', stage: 'rollback-complete' }
+[NG-Simulation] {
+  operationId: 'sim_mqp4ukqj_w15qg6h',
+  stage: 'error',
+  message: 'forced remote failure È stato eseguito il rollback completo.',
+  durationMs: 173
+}
+{
+  "ok": true,
+  "generatedCases": 16,
+  "formats": [
+    "league",
+    "knockout",
+    "groups_knockout",
+    "league_knockout"
+  ],
+  "existingTeams": true,
+  "eventChronology": true,
+  "buildFailureIsolation": true,
+  "finalConfirmationGuard": true,
+  "doubleStart": true,
+  "rollback": true
+}
+
+================================================================================
+npm run test:photos
+================================================================================
+
+> new-generation-tournament@1.26.16 test:photos
+> node tools/test-photo-system.mjs
+
+[Foto] {
+  scope: 'team-photos',
+  event: 'request-ok',
+  method: 'GET',
+  phase: 'gallery-read',
+  status: 200,
+  durationMs: 2
+}
+[photos] PASS · GET pubblico senza Authorization e senza preflight superflua
+[Foto] {
+  scope: 'team-photos',
+  event: 'request-ok',
+  method: 'POST',
+  phase: 'upload',
+  status: 201,
+  durationMs: 0
+}
+[photos] PASS · upload multipart usa access token sessione e boundary del browser
+[photos] PASS · chiave pubblicabile non viene usata al posto della sessione
+[photos] PASS · errore di rete/CORS classificato senza Failed to fetch grezzo
+[photos] PASS · validazione rifiuta formato e firma binaria incoerenti
+[photos] PASS · JPEG, PNG e WebP validi superano firma e decodifica
+[photos] PASS · limiti per file e batch vengono applicati prima della rete
+[photos] PASS · interruzione upload produce errore recuperabile distinto
+[photos] PASS · download singolo e ZIP passano dalla Edge Function Foto
+[photos] PASS · backend Foto separato da endpoint e modelli Articoli
+[photos] PASS · UI upload dichiara limiti e soli JPEG/PNG/WebP
+{
+  "root": "/mnt/data/ng-work/new-generation-main",
+  "tests": 11,
+  "results": [
+    {
+      "name": "GET pubblico senza Authorization e senza preflight superflua",
+      "result": "PASS"
+    },
+    {
+      "name": "upload multipart usa access token sessione e boundary del browser",
+      "result": "PASS"
+    },
+    {
+      "name": "chiave pubblicabile non viene usata al posto della sessione",
+      "result": "PASS"
+    },
+    {
+      "name": "errore di rete/CORS classificato senza Failed to fetch grezzo",
+      "result": "PASS"
+    },
+    {
+      "name": "validazione rifiuta formato e firma binaria incoerenti",
+      "result": "PASS"
+    },
+    {
+      "name": "JPEG, PNG e WebP validi superano firma e decodifica",
+      "result": "PASS"
+    },
+    {
+      "name": "limiti per file e batch vengono applicati prima della rete",
+      "result": "PASS"
+    },
+    {
+      "name": "interruzione upload produce errore recuperabile distinto",
+      "result": "PASS"
+    },
+    {
+      "name": "download singolo e ZIP passano dalla Edge Function Foto",
+      "result": "PASS"
+    },
+    {
+      "name": "backend Foto separato da endpoint e modelli Articoli",
+      "result": "PASS"
+    },
+    {
+      "name": "UI upload dichiara limiti e soli JPEG/PNG/WebP",
+      "result": "PASS"
+    }
+  ]
+}
+
+================================================================================
+npm run test:edge
+================================================================================
+
+> new-generation-tournament@1.26.16 test:edge
+> tsc --noEmit --target ES2022 --module ESNext --moduleResolution Bundler --lib ES2022,DOM,DOM.Iterable --skipLibCheck tools/edge-function-test-globals.d.ts supabase/functions/team-photos/index.ts
+
+================================================================================
+npm run test:articles
+================================================================================
+
+> new-generation-tournament@1.26.16 test:articles
+> node tools/test-ui-stability.mjs --articles-only
+
+[articles] PASS · lista pubblica filtra bozze e programmati
+[articles] PASS · titoli e immagini accessibili
+[articles] PASS · ricerca pubblica
+[articles] PASS · filtro categoria pubblico
+[articles] PASS · apertura dettaglio con URL stabile
+[articles] PASS · pulsante indietro e posizione lista
+[articles] PASS · dettaglio completo e formattazione sicura
+[articles] PASS · visualizzatore fotografia: zoom, Escape e ritorno focus
+[articles] PASS · refresh e URL diretto
+[articles] PASS · apertura ripetuta senza contenuto precedente
+[articles] PASS · articolo inesistente
+[articles] PASS · responsive 320px
+[articles] PASS · responsive 390px
+[articles] PASS · responsive 844px
+[articles] PASS · responsive 768px
+[articles] PASS · responsive 1440px
+[articles] PASS · elenco e modulo admin completi
+[articles] PASS · validazione obbligatori
+[articles] PASS · upload e anteprima immagine
+[articles] PASS · slug automatico e stato non salvato
+[articles] PASS · anteprima amministratore
+[articles] PASS · anteprima: Escape e ritorno focus
+[articles] PASS · creazione bozza senza perdita dati
+[articles] PASS · bozza non visibile al pubblico
+[articles] PASS · avviso modifiche non salvate
+[articles] PASS · annullamento modifica
+[articles] PASS · pubblicazione aggiorna il pubblico
+[articles] PASS · sanificazione contenuto
+[articles] PASS · rifiuto immagine troppo grande
+[articles] PASS · conferma eliminazione esplicita e interattiva
+[articles] PASS · eliminazione: Escape e ritorno focus
+[articles] PASS · eliminazione disponibile dal dettaglio admin
+[articles] PASS · annullamento eliminazione
+[articles] PASS · ID eliminazione non valido bloccato
+[articles] PASS · errore backend mantiene articolo e consente nuovo tentativo
+[articles] PASS · eliminazione e doppio click
+[articles] PASS · refresh dopo eliminazione non ripristina articolo
+[articles] PASS · admin mobile e touch
+{
+  "root": "/mnt/data/ng-work/new-generation-main",
+  "pages": 13,
+  "widths": [
+    320,
+    360,
+    375,
+    390,
+    412,
+    480,
+    768,
+    1024,
+    1280,
+    1440,
+    1920
+  ],
+  "mode": "articles",
+  "results": [
+    {
+      "test": "Articoli end-to-end: pubblico, admin, immagini, sicurezza, URL, responsive e sincronizzazione",
+      "result": "PASS",
+      "details": "[{\"name\":\"lista pubblica filtra bozze e programmati\",\"ok\":true,\"details\":\"{\\\"count\\\":2,\\\"badge\\\":\\\"2\\\",\\\"titles\\\":[\\\"Titolo molto lungo per verificare che la card editoriale rimanga leggibile senza tagliare informazioni importanti su smartphone e desktop\\\",\\\"Notizia test\\\"],\\\"draft\\\":false,\\\"scheduled\\\":false,\\\"alt\\\":\\\"Locandina verticale del torneo\\\",\\\"href\\\":\\\"#article=analisi-completa\\\",\\\"nullText\\\":false}\"},{\"name\":\"titoli e immagini accessibili\",\"ok\":true,\"details\":\"{\\\"count\\\":2,\\\"badge\\\":\\\"2\\\",\\\"titles\\\":[\\\"Titolo molto lungo per verificare che la card editoriale rimanga leggibile senza tagliare informazioni importanti su smartphone e desktop\\\",\\\"Notizia test\\\"],\\\"draft\\\":false,\\\"scheduled\\\":false,\\\"alt\\\":\\\"Locandina verticale del torneo\\\",\\\"href\\\":\\\"#article=analisi-completa\\\",\\\"nullText\\\":false}\"},{\"name\":\"ricerca pubblica\",\"ok\":true,\"details\":\"{\\\"cards\\\":1,\\\"ids\\\":[\\\"article_2\\\"]}\"},{\"name\":\"filtro categoria pubblico\",\"ok\":true,\"details\":\"{\\\"cards\\\":1,\\\"id\\\":\\\"article_2\\\"}\"},{\"name\":\"apertura dettaglio con URL stabile\",\"ok\":true,\"details\":\"{\\\"modal\\\":{\\\"exists\\\":true,\\\"open\\\":true,\\\"count\\\":1,\\\"bodyLocked\\\":true,\\\"overflow\\\":\\\"hidden\\\",\\\"activeId\\\":\\\"copyArticleLink\\\",\\\"activeText\\\":\\\"Copia link\\\",\\\"scrollY\\\":420,\\\"clientWidth\\\":1270,\\\"scrollWidth\\\":1260},\\\"detail\\\":{\\\"hash\\\":\\\"#article=notizia-test\\\",\\\"title\\\":\\\"Notizia test\\\",\\\"body\\\":\\\"\\\\n      \\\\n      ← Torna agli articoli\\\\n      \\\\n        Aggiornamenti\\\\n        Notizia test\\\\n        \\\\n        di Redazione Test20 giugno 20261 min di lettura\\\\n      \\\\n      \\\\n      \\\\n        Contenuto di prova per la stabilità della modale.\\\\n        \\\\n        Pubblicato: 20 giu 2026, 10:00\\\\n        ← Torna agli articoli\\\\n      \\\\n    \\\",\\\"dialog\\\":\\\"dialog\\\",\\\"photoSections\\\":0,\\\"mainLandmarks\\\":1}}\"},{\"name\":\"pulsante indietro e posizione lista\",\"ok\":true,\"details\":\"{\\\"scrollBefore\\\":420,\\\"scrollAfter\\\":420,\\\"hash\\\":\\\"#articles\\\"}\"},{\"name\":\"dettaglio completo e formattazione sicura\",\"ok\":true,\"details\":\"{\\\"title\\\":\\\"Titolo molto lungo per verificare che la card editoriale rimanga leggibile senza tagliare informazioni importanti su smartphone e desktop\\\",\\\"h3\\\":\\\"Analisi completa\\\",\\\"strong\\\":\\\"grassetto\\\",\\\"em\\\":\\\"corsivo\\\",\\\"link\\\":\\\"https://example.com/\\\",\\\"list\\\":2,\\\"quote\\\":\\\"Una citazione leggibile.\\\",\\\"objectFit\\\":\\\"contain\\\",\\\"caption\\\":\\\"Didascalia immagine verticale\\\",\\\"scriptCount\\\":0}\"},{\"name\":\"visualizzatore fotografia: zoom, Escape e ritorno focus\",\"ok\":true,\"details\":\"{\\\"articleViewer\\\":{\\\"open\\\":true,\\\"hidden\\\":\\\"false\\\",\\\"zoom\\\":\\\"150%\\\",\\\"focusClose\\\":true},\\\"articleViewerClosed\\\":true}\"},{\"name\":\"refresh e URL diretto\",\"ok\":true,\"details\":\"{\\\"hash\\\":\\\"#article=analisi-completa\\\",\\\"title\\\":\\\"Titolo molto lungo per verificare che la card editoriale rimanga leggibile senza tagliare informazioni importanti su smartphone e desktop\\\",\\\"cards\\\":2}\"},{\"name\":\"apertura ripetuta senza contenuto precedente\",\"ok\":true,\"details\":\"{\\\"title\\\":\\\"Notizia test\\\",\\\"old\\\":false}\"},{\"name\":\"articolo inesistente\",\"ok\":true,\"details\":\"Articolo non disponibilePotrebbe essere stato rimosso, non ancora pubblicato o l’indirizzo potrebbe essere errato.\"},{\"name\":\"responsive 320px\",\"ok\":true,\"details\":\"{\\\"width\\\":320,\\\"doc\\\":0,\\\"cardRight\\\":295,\\\"vw\\\":320,\\\"columns\\\":\\\"268px\\\",\\\"mainAreas\\\":\\\"none\\\",\\\"mediaArea\\\":\\\"auto\\\",\\\"mediaColumn\\\":\\\"auto\\\",\\\"contentArea\\\":\\\"auto\\\",\\\"contentColumn\\\":\\\"auto\\\",\\\"mediaH\\\":150.75,\\\"titleDisplay\\\":\\\"block\\\",\\\"lineClamp\\\":\\\"2\\\",\\\"touch\\\":true}\"},{\"name\":\"responsive 390px\",\"ok\":true,\"details\":\"{\\\"width\\\":390,\\\"doc\\\":0,\\\"cardRight\\\":365,\\\"vw\\\":390,\\\"columns\\\":\\\"338px\\\",\\\"mainAreas\\\":\\\"none\\\",\\\"mediaArea\\\":\\\"auto\\\",\\\"mediaColumn\\\":\\\"auto\\\",\\\"contentArea\\\":\\\"auto\\\",\\\"contentColumn\\\":\\\"auto\\\",\\\"mediaH\\\":190.125,\\\"titleDisplay\\\":\\\"block\\\",\\\"lineClamp\\\":\\\"2\\\",\\\"touch\\\":true}\"},{\"name\":\"responsive 844px\",\"ok\":true,\"details\":\"{\\\"width\\\":844,\\\"doc\\\":-10,\\\"cardRight\\\":801,\\\"vw\\\":844,\\\"columns\\\":\\\"300px 456px\\\",\\\"mainAreas\\\":\\\"none\\\",\\\"mediaArea\\\":\\\"auto\\\",\\\"mediaColumn\\\":\\\"auto\\\",\\\"contentArea\\\":\\\"auto\\\",\\\"contentColumn\\\":\\\"auto\\\",\\\"mediaH\\\":220,\\\"titleDisplay\\\":\\\"block\\\",\\\"lineClamp\\\":\\\"2\\\",\\\"touch\\\":true}\"},{\"name\":\"responsive 768px\",\"ok\":true,\"details\":\"{\\\"width\\\":768,\\\"doc\\\":-10,\\\"cardRight\\\":733,\\\"vw\\\":768,\\\"columns\\\":\\\"300px 396px\\\",\\\"mainAreas\\\":\\\"none\\\",\\\"mediaArea\\\":\\\"auto\\\",\\\"mediaColumn\\\":\\\"auto\\\",\\\"contentArea\\\":\\\"auto\\\",\\\"contentColumn\\\":\\\"auto\\\",\\\"mediaH\\\":220,\\\"titleDisplay\\\":\\\"block\\\",\\\"lineClamp\\\":\\\"2\\\",\\\"touch\\\":true}\"},{\"name\":\"responsive 1440px\",\"ok\":true,\"details\":\"{\\\"width\\\":1440,\\\"doc\\\":-10,\\\"cardRight\\\":1397,\\\"vw\\\":1440,\\\"columns\\\":\\\"300px 1052px\\\",\\\"mainAreas\\\":\\\"none\\\",\\\"mediaArea\\\":\\\"auto\\\",\\\"mediaColumn\\\":\\\"auto\\\",\\\"contentArea\\\":\\\"auto\\\",\\\"contentColumn\\\":\\\"auto\\\",\\\"mediaH\\\":300,\\\"titleDisplay\\\":\\\"block\\\",\\\"lineClamp\\\":\\\"2\\\",\\\"touch\\\":true}\"},{\"name\":\"elenco e modulo admin completi\",\"ok\":true,\"details\":\"{\\\"cards\\\":4,\\\"drafts\\\":1,\\\"scheduled\\\":1,\\\"fields\\\":true}\"},{\"name\":\"validazione obbligatori\",\"ok\":true,\"details\":\"{\\\"errors\\\":2,\\\"titleInvalid\\\":\\\"true\\\",\\\"bodyInvalid\\\":\\\"true\\\",\\\"count\\\":4}\"},{\"name\":\"upload e anteprima immagine\",\"ok\":true,\"details\":\"true\"},{\"name\":\"slug automatico e stato non salvato\",\"ok\":true,\"details\":\"{\\\"dirty\\\":\\\"true\\\",\\\"slug\\\":\\\"nuovo-articolo-end-to-end\\\"}\"},{\"name\":\"anteprima amministratore\",\"ok\":true,\"details\":\"{\\\"modal\\\":{\\\"exists\\\":true,\\\"open\\\":true,\\\"count\\\":1,\\\"bodyLocked\\\":true,\\\"overflow\\\":\\\"hidden\\\",\\\"activeId\\\":\\\"closeArticlePreviewModal\\\",\\\"activeText\\\":\\\"Chiudi\\\",\\\"scrollY\\\":0,\\\"clientWidth\\\":1270,\\\"scrollWidth\\\":1260},\\\"preview\\\":{\\\"open\\\":true,\\\"title\\\":\\\"Nuovo articolo end to end\\\",\\\"imgAlt\\\":\\\"Quadrato di prova\\\",\\\"editorial\\\":true}}\"},{\"name\":\"anteprima: Escape e ritorno focus\",\"ok\":true,\"details\":\"{\\\"closed\\\":true,\\\"unlocked\\\":true,\\\"focus\\\":true}\"},{\"name\":\"creazione bozza senza perdita dati\",\"ok\":true,\"details\":\"{\\\"id\\\":\\\"article_mqp4vwxy_vjzjph\\\",\\\"status\\\":\\\"draft\\\",\\\"image\\\":\\\"data:image/png;base64,\\\",\\\"tags\\\":[\\\"uno\\\",\\\"due\\\"],\\\"formTitle\\\":\\\"\\\"}\"},{\"name\":\"bozza non visibile al pubblico\",\"ok\":true,\"details\":\"\"},{\"name\":\"avviso modifiche non salvate\",\"ok\":true,\"details\":\"\"},{\"name\":\"annullamento modifica\",\"ok\":true,\"details\":\"\"},{\"name\":\"pubblicazione aggiorna il pubblico\",\"ok\":true,\"details\":\"\"},{\"name\":\"sanificazione contenuto\",\"ok\":true,\"details\":\"{\\\"scripts\\\":0,\\\"text\\\":\\\"\\\\n      Anteprima amministratore · strumenti di modifica separati dal contenuto pubblico\\\\n      ← Chiudi anteprima\\\\n      \\\\n        Comunicati\\\\n        Bozza riservata\\\\n        \\\\n        di Admin21 giugno 20261 min di letturaBozza\\\\n      \\\\n      \\\\n        \\\\n          Apri immagine\\\\n        \\\\n        \\\\n      \\\\n      \\\\n        <script>window.__articleXss=true</script> Testo bozza.\\\\n        \\\\n        Pubblicato: 21 giu 2026, 13:00\\\\n        ← Chiudi anteprima\\\\n      \\\\n    \\\",\\\"xss\\\":false}\"},{\"name\":\"rifiuto immagine troppo grande\",\"ok\":true,\"details\":\"L’immagine supera il limite di 12 MB.\"},{\"name\":\"conferma eliminazione esplicita e interattiva\",\"ok\":true,\"details\":\"{\\\"deleteDialog\\\":{\\\"exists\\\":true,\\\"open\\\":true,\\\"count\\\":1,\\\"bodyLocked\\\":true,\\\"overflow\\\":\\\"hidden\\\",\\\"activeId\\\":\\\"cancelDeleteArticleBtn\\\",\\\"activeText\\\":\\\"Annulla\\\",\\\"scrollY\\\":14,\\\"clientWidth\\\":1270,\\\"scrollWidth\\\":1260},\\\"deleteVisual\\\":{\\\"opacity\\\":\\\"1\\\",\\\"pointerEvents\\\":\\\"auto\\\",\\\"display\\\":\\\"grid\\\",\\\"open\\\":true,\\\"label\\\":\\\"Elimina articolo\\\"}}\"},{\"name\":\"eliminazione: Escape e ritorno focus\",\"ok\":true,\"details\":\"\"},{\"name\":\"eliminazione disponibile dal dettaglio admin\",\"ok\":true,\"details\":\"\"},{\"name\":\"annullamento eliminazione\",\"ok\":true,\"details\":\"\"},{\"name\":\"ID eliminazione non valido bloccato\",\"ok\":true,\"details\":\"{\\\"open\\\":false,\\\"message\\\":\\\"Impossibile eliminare: identificativo articolo non valido.\\\"}\"},{\"name\":\"errore backend mantiene articolo e consente nuovo tentativo\",\"ok\":true,\"details\":\"{\\\"exists\\\":true,\\\"open\\\":true,\\\"calls\\\":1,\\\"busy\\\":false}\"},{\"name\":\"eliminazione e doppio click\",\"ok\":true,\"details\":\"\"},{\"name\":\"refresh dopo eliminazione non ripristina articolo\",\"ok\":true,\"details\":\"\"},{\"name\":\"admin mobile e touch\",\"ok\":true,\"details\":\"{\\\"overflow\\\":0,\\\"actions\\\":12,\\\"large\\\":true,\\\"columns\\\":\\\"370px\\\"}\"}]"
+    },
+    {
+      "test": "Console JavaScript e richieste locali",
+      "result": "PASS",
+      "details": "{\"runtimeErrors\":[],\"localNetworkErrors\":[]}"
+    }
+  ],
+  "runtimeErrors": [],
+  "localNetworkErrors": []
+}
+
+================================================================================
+npm run test:ui
+================================================================================
+
+> new-generation-tournament@1.26.16 test:ui
+> node tools/test-ui-stability.mjs
+
+{
+  "root": "/mnt/data/ng-work/new-generation-main",
+  "pages": 13,
+  "widths": [
+    320,
+    360,
+    375,
+    390,
+    412,
+    480,
+    768,
+    1024,
+    1280,
+    1440,
+    1920
+  ],
+  "mode": "ui",
+  "results": [
+    {
+      "test": "Avvio e caricamento delle 13 pagine HTML",
+      "result": "PASS",
+      "details": "13/13 caricate; errori runtime nuovi 0; richieste locali fallite 0"
+    },
+    {
+      "test": "Responsive e overflow orizzontale",
+      "result": "PASS",
+      "details": "320px, 360px, 375px, 390px, 412px, 480px, 768px, 1024px, 1280px, 1440px, 1920px"
+    },
+    {
+      "test": "Stemmi web: niente forma dorata, contain, associazione stabile, accessibilità, caricamento e responsive",
+      "result": "PASS",
+      "details": "[{\"label\":\"pubblico primo caricamento lento / classifica\",\"wrapperCount\":26,\"withLogoCount\":23,\"fallbackCount\":3},{\"label\":\"pubblico card squadre e roster\",\"wrapperCount\":26,\"withLogoCount\":23,\"fallbackCount\":3},{\"label\":\"pubblico dettaglio squadra e modale\",\"wrapperCount\":27,\"withLogoCount\":24,\"fallbackCount\":3},{\"label\":\"pubblico card partite e calendario\",\"wrapperCount\":27,\"withLogoCount\":24,\"fallbackCount\":3},{\"label\":\"pubblico dettaglio partita e modale\",\"wrapperCount\":29,\"withLogoCount\":26,\"fallbackCount\":3},{\"label\":\"pubblico tabellone\",\"wrapperCount\":29,\"withLogoCount\":26,\"fallbackCount\":3},{\"label\":\"pubblico ricerca e filtro\",\"wrapperCount\":34,\"withLogoCount\":31,\"fallbackCount\":3},{\"label\":\"pubblico ordinamento invertito e associazione squadra-stemma\",\"wrapperCount\":26,\"withLogoCount\":23,\"fallbackCount\":3},{\"label\":\"pubblico tablet\",\"wrapperCount\":26,\"withLogoCount\":23,\"fallbackCount\":3},{\"label\":\"pubblico smartphone verticale\",\"wrapperCount\":26,\"withLogoCount\":23,\"fallbackCount\":3},{\"label\":\"pubblico smartphone orizzontale\",\"wrapperCount\":26,\"withLogoCount\":23,\"fallbackCount\":3},{\"label\":\"admin admin.html\",\"wrapperCount\":0,\"withLogoCount\":0,\"fallbackCount\":0},{\"label\":\"admin admin-teams.html\",\"wrapperCount\":6,\"withLogoCount\":5,\"fallbackCount\":1},{\"label\":\"admin admin-players.html\",\"wrapperCount\":6,\"withLogoCount\":5,\"fallbackCount\":1},{\"label\":\"admin admin-matches.html\",\"wrapperCount\":6,\"withLogoCount\":5,\"fallbackCount\":1},{\"label\":\"admin admin-groups.html\",\"wrapperCount\":0,\"withLogoCount\":0,\"fallbackCount\":0},{\"label\":\"admin admin-photos.html\",\"wrapperCount\":6,\"withLogoCount\":5,\"fallbackCount\":1},{\"label\":\"pubblico ritorno pagina / cache popolata\",\"wrapperCount\":26,\"withLogoCount\":23,\"fallbackCount\":3},{\"label\":\"pubblico refresh completo\",\"wrapperCount\":26,\"withLogoCount\":23,\"fallbackCount\":3}]"
+    },
+    {
+      "test": "Pulsante loading: dimensioni stabili e click multipli bloccati",
+      "result": "PASS",
+      "details": "{\"first\":true,\"second\":false,\"disabled\":true,\"before\":{\"w\":74.921875,\"h\":42.390625},\"during\":{\"w\":75,\"h\":43},\"after\":{\"w\":74.921875,\"h\":42.390625},\"busy\":false}"
+    },
+    {
+      "test": "Modale reset: apertura/chiusura, 10 cicli, doppio click, Escape, backdrop, focus e scroll",
+      "result": "PASS",
+      "details": "{\"focusButton\":true,\"cyclesOk\":true,\"doubleOk\":true,\"escapeOk\":true,\"backdropOk\":true,\"scrollBefore\":240,\"scrollAfter\":240,\"noShift\":true,\"geometryBefore\":{\"headerX\":24,\"headerW\":1232,\"buttonX\":1164.078125,\"buttonW\":74.921875},\"geometryOpen\":{\"headerX\":24,\"headerW\":1232,\"buttonX\":1164.078125,\"buttonW\":74.921875},\"geometryAfter\":{\"headerX\":24,\"headerW\":1232,\"buttonX\":1164.078125,\"buttonW\":74.921875},\"residual\":{\"exists\":true,\"open\":false,\"count\":1,\"bodyLocked\":false,\"overflow\":\"hidden auto\",\"activeId\":\"resetAllBtn\",\"activeText\":\"Reset\",\"scrollY\":240,\"clientWidth\":1270,\"scrollWidth\":1260}}"
+    },
+    {
+      "test": "Procedura Simula: nessun avvio anticipato, wizard completo, payload esplicito, avvio finale unico e ricaricamento",
+      "result": "PASS",
+      "details": "{\"openOk\":true,\"escapeOk\":true,\"cyclesOk\":true,\"doubleOk\":true,\"backdropOk\":true,\"wizardOk\":true,\"noEarlyStart\":true,\"initial\":{\"title\":\"Vuoi utilizzare le squadre già presenti nel sistema?\",\"steps\":5,\"generated\":true,\"existingDisabled\":true},\"beforeChoice\":{\"step\":0,\"running\":false,\"operation\":\"\"},\"afterChoice\":{\"step\":0,\"running\":false,\"operation\":\"\",\"title\":\"Vuoi utilizzare le squadre già presenti nel sistema?\"},\"afterEnter\":{\"step\":0,\"running\":false,\"operation\":\"\"},\"summaryBefore\":{\"summary\":\"Squadre8 squadre simulate con stemmi localiGiocatori40 totali · esattamente 5 per squadraFormatoEliminazione direttaKingsSì · presidente obbligatorio per ogni squadraDurataUn solo giornoDate2026-06-21Partite previste7Dati sostituitiSquadre partecipanti, roster, calendario, referti, classifiche e tabelloneDati mantenutiArticoli, personalizzazione del sito e account amministrativi\",\"disabled\":true,\"label\":\"Genera torneo simulato\",\"step\":4},\"summaryAfter\":{\"enabled\":true,\"label\":\"Genera torneo simulato\",\"kings\":true,\"payload\":{\"teamMode\":\"generated\",\"selectedTeamIds\":[],\"generatedTeamCount\":8,\"format\":\"knockout\",\"kings\":true,\"presidentMode\":\"default_per_team\",\"duration\":\"one_day\",\"replaceTournamentConfirmed\":true,\"replacePlayersConfirmed\":false,\"replaceTeamsConfirmed\":true,\"requestSource\":\"wizard-final-confirmation\"}},\"backState\":{\"step\":3,\"duration\":true},\"payloadOk\":true,\"selectionsKept\":true,\"completed\":{\"teams\":8,\"players\":40,\"matches\":7,\"winner\":\"Thunder Wolves\",\"articlesSame\":true,\"running\":false},\"completionOk\":true}"
+    },
+    {
+      "test": "Menu mobile: 10 cicli, doppio click, Escape, backdrop, focus e larghezza pagina",
+      "result": "PASS",
+      "details": "{\"escapeOk\":true,\"cyclesOk\":true,\"doubleOk\":true,\"backdropOk\":true,\"widthBefore\":390,\"widthAfter\":390,\"residual\":{\"exists\":true,\"open\":false,\"count\":1,\"bodyLocked\":false,\"overflow\":\"hidden auto\",\"activeId\":\"\",\"activeText\":\"☰Altro\",\"scrollY\":142,\"clientWidth\":390,\"scrollWidth\":390}}"
+    },
+    {
+      "test": "Filtri e modali pubbliche: apertura, Escape, backdrop e assenza residui",
+      "result": "PASS",
+      "details": "{\"filterOpen\":true,\"filterBackdrop\":true,\"filterEscape\":true,\"matchOpen\":true,\"matchBackdrop\":true,\"matchEscape\":true,\"teamOpen\":true,\"teamEscape\":true,\"articleOpen\":true,\"articleBackdrop\":true,\"residual\":0}"
+    },
+    {
+      "test": "Foto: conferma, lightbox, anteprima locale, doppio click upload e apertura pubblica da tastiera",
+      "result": "PASS",
+      "details": "{\"doubleOk\":true,\"escapeOk\":true,\"cyclesOk\":true,\"backdropOk\":true,\"lightOpen\":true,\"lightEscape\":true,\"lightCycles\":true,\"staging\":{\"panel\":true,\"name\":\"nuova foto speciale.png\",\"dimensions\":\"2×2 · 95 B · non ancora caricata\",\"confirmDisabled\":false},\"removedBeforeUpload\":true,\"upload\":{\"calls\":1,\"busy\":false,\"summary\":\"1/1 caricate · 0.1s\",\"failed\":0},\"stagingOk\":true,\"publicCard\":{\"role\":\"button\",\"tabindex\":\"0\",\"aria\":\"Apri fotografia Foto test accessibile\",\"alt\":\"Foto test accessibile\"},\"publicOpen\":{\"exists\":true,\"open\":true,\"count\":1,\"bodyLocked\":true,\"overflow\":\"hidden\",\"activeId\":\"\",\"activeText\":\"×\",\"scrollY\":14,\"clientWidth\":1270,\"scrollWidth\":1260},\"publicClosed\":{\"exists\":true,\"open\":false,\"count\":1,\"bodyLocked\":false,\"overflow\":\"hidden auto\",\"activeId\":\"\",\"activeText\":\"Recupero dati, attendere…\\n        \\n        \\n          📷\\n          Foto non disponibile\\n          Riprova\\n        \\n      \\n      \\n        photo-1.jpg\\n        ⬇\",\"scrollY\":14,\"clientWidth\":1270,\"scrollWidth\":1260},\"publicFocus\":true,\"publicKeyboardOk\":true,\"confirm\":{\"exists\":false,\"open\":false,\"count\":0,\"bodyLocked\":false,\"overflow\":\"hidden auto\",\"activeId\":\"\",\"activeText\":\"×\",\"scrollY\":727,\"clientWidth\":1270,\"scrollWidth\":1260},\"light\":{\"exists\":true,\"open\":false,\"count\":1,\"bodyLocked\":false,\"overflow\":\"hidden auto\",\"activeId\":\"\",\"activeText\":\"×\",\"scrollY\":727,\"clientWidth\":1270,\"scrollWidth\":1260}}"
+    },
+    {
+      "test": "Ridimensionamento e scroll con modale aperta",
+      "result": "PASS",
+      "details": "{\"measure\":{\"open\":true,\"left\":0,\"right\":304,\"width\":304,\"vw\":320,\"overflow\":0,\"locked\":true},\"whileOpen\":300,\"after\":{\"exists\":true,\"open\":false,\"count\":1,\"bodyLocked\":false,\"overflow\":\"hidden auto\",\"activeId\":\"\",\"activeText\":\"Campionato · Giornata 1Da giocareAurora FCVSNova United🗓️ 20 giu 2026, 18:00📍 Campo 1👤 Arbitro Test⚽ nessun marcatore🟨 nessuno🟥 nessuno\",\"scrollY\":300,\"clientWidth\":320,\"scrollWidth\":320}}"
+    },
+    {
+      "test": "Console JavaScript e richieste locali",
+      "result": "PASS",
+      "details": "{\"runtimeErrors\":[],\"localNetworkErrors\":[]}"
+    }
+  ],
+  "runtimeErrors": [],
+  "localNetworkErrors": []
+}
+
+================================================================================
+npm run build
+================================================================================
+
+> new-generation-tournament@1.26.16 build
+> node tools/build-static.mjs
+
+{
+  "root": "/mnt/data/ng-work/new-generation-main",
+  "html": 13,
+  "js": 22,
+  "errors": 0,
+  "warnings": 0,
+  "mode": "test"
+}
+{
+  "root": "/mnt/data/ng-work/new-generation-main/dist",
+  "html": 13,
+  "js": 22,
+  "errors": 0,
+  "warnings": 0,
+  "mode": "test"
+}
+Build statico creato in /mnt/data/ng-work/new-generation-main/dist

@@ -316,12 +316,17 @@
         ${subtitle?`<p class="article-detail-subtitle">${esc(subtitle)}</p>`:''}
         ${articleDetailMeta(article,{preview})}
       </header>
-      ${image?`<figure class="article-detail-media">
-        <button type="button" class="article-image-open" data-article-image-open="${esc(image)}" aria-label="Apri fotografia a dimensione intera: ${esc(title)}">
-          ${imageMarkup}<span class="article-image-open-hint" aria-hidden="true">Apri immagine</span>
-        </button>
-        ${caption?`<figcaption>${esc(caption)}</figcaption>`:''}
-      </figure>`:''}
+      ${image?`<section class="article-detail-media article-featured-photo" aria-label="Fotografia principale dell’articolo">
+        <figure class="article-featured-photo-card">
+          <div class="article-featured-photo-frame">
+            <button type="button" class="article-image-open" data-article-image-open="${esc(image)}" aria-label="Apri fotografia a dimensione intera: ${esc(title)}">
+              <span class="article-featured-photo-canvas">${imageMarkup}</span>
+              <span class="article-image-open-hint" aria-hidden="true"><span>↗</span> Apri fotografia</span>
+            </button>
+          </div>
+          ${caption?`<figcaption>${esc(caption)}</figcaption>`:''}
+        </figure>
+      </section>`:''}
       <div class="article-detail-body">
         <div class="article-full-text">${articleBodyMarkup(article?.body)}</div>
         ${tags.length?`<div class="article-tags" aria-label="Tag">${tags.map(tag=>`<span>#${esc(tag)}</span>`).join('')}</div>`:''}
@@ -388,8 +393,9 @@
   function prepareArticleDetail(root,{onBack}={}){
     if(!root)return;
     root.querySelectorAll('.article-detail-media img.article-image').forEach(img=>{
-      const figure=img.closest('.article-detail-media');
-      const classify=()=>{if(!img.naturalWidth||!img.naturalHeight)return;const ratio=img.naturalWidth/img.naturalHeight;figure?.classList.remove('is-portrait','is-square','is-landscape');figure?.classList.add(ratio<.85?'is-portrait':ratio>1.2?'is-landscape':'is-square');};
+      const section=img.closest('.article-detail-media');
+      const card=img.closest('.article-featured-photo-card')||section;
+      const classify=()=>{if(!img.naturalWidth||!img.naturalHeight)return;const ratio=img.naturalWidth/img.naturalHeight;[section,card].forEach(el=>{el?.classList.remove('is-portrait','is-square','is-landscape');el?.classList.add(ratio<.85?'is-portrait':ratio>1.2?'is-landscape':'is-square');});};
       if(img.complete)classify();else img.addEventListener('load',classify,{once:true});
     });
     if(root.dataset.articleInteractionsBound==='1')return;

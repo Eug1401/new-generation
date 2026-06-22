@@ -969,10 +969,27 @@
   window.addEventListener('ng:cloudinary-photos-updated', () => render());
 
   // -------------------- Boot --------------------
+  function healthProblemMessage(health){
+    if(!health)return '';
+    if(health.originAllowed===false)return 'Il dominio corrente non è autorizzato: aggiorna PHOTO_ALLOWED_ORIGINS nei Secrets Supabase.';
+    if(health.cloudinary?.configured===false)return 'La funzione risponde, ma Cloudinary non è configurato. Imposta CLOUDINARY_URL oppure CLOUDINARY_API_KEY e CLOUDINARY_API_SECRET nei Secrets della Edge Function.';
+    if(health.supabase?.configured===false)return 'La funzione risponde, ma la configurazione Supabase server-side è incompleta.';
+    return health.ok===false?'La funzione Foto risponde ma la configurazione backend non è completa.':'';
+  }
+
   function boot(){
     A.initGlobalActions?.();
     setupDragDrop();
-    Photos.refreshAll?.({force:true}).catch(err=>flashMsg(Photos.userMessage(err),'warn'));
+    (async()=>{
+      try{
+        const health=await Photos.healthCheck?.();
+        const problem=healthProblemMessage(health);
+        if(problem){flashMsg(problem,'error');return;}
+        await Photos.refreshAll?.({force:true});
+      }catch(err){
+        flashMsg(Photos.userMessage(err),'error');
+      }
+    })();
     render();
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

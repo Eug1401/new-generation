@@ -1,6 +1,6 @@
 // =============================================================
 // New Generation — Foto squadre via Cloudinary + Supabase Edge Function
-// v126.16-photo-network
+// v126.17-photo-network
 // =============================================================
 // Flusso esclusivo galleria Foto. Non usa endpoint, modelli o cartelle Articoli.
 // - GET pubblico senza header non semplici: niente preflight inutile.
@@ -194,6 +194,9 @@
     const url=new URL(functionUrl(action));
     Object.entries(params||{}).forEach(([key,value])=>{if(value!==undefined&&value!==null&&value!=='')url.searchParams.set(key,String(value));});
     const headers={};
+    // La chiave pubblicabile va nell'header apikey del gateway Supabase.
+    // Per le operazioni admin, Authorization contiene invece il JWT reale utente.
+    if(supabaseCfg.ANON_KEY)headers.apikey=String(supabaseCfg.ANON_KEY);
     if(admin)headers.Authorization='Bearer '+await sessionToken();
     if(body && !(body instanceof FormData) && !(body instanceof Blob) && typeof body!=='string'){
       headers['Content-Type']='application/json';
@@ -229,8 +232,9 @@
         throw new PhotoError('Caricamento interrotto.',{code:'REQUEST_ABORTED',kind:'aborted',phase,cause:error});
       }
       const mixed=window.location?.protocol==='https:'&&/^http:\/\//i.test(url.toString());
-      throw new PhotoError(mixed?'Richiesta bloccata per mixed content.':'Server Foto non raggiungibile o richiesta bloccata da CORS/preflight.',{
-        code:mixed?'MIXED_CONTENT':'NETWORK_ERROR',kind:mixed?'config':'network',phase,cause:error
+      throw new PhotoError(mixed?'Richiesta bloccata per mixed content.':'Edge Function Foto non raggiungibile o risposta bloccata prima di arrivare al frontend.',{
+        code:mixed?'MIXED_CONTENT':'NETWORK_ERROR',kind:mixed?'config':'network',phase,cause:error,
+        details:{endpoint:url.origin+url.pathname,origin:window.location?.origin||'',functionName:cfg.EDGE_FUNCTION||DEFAULT_FUNCTION}
       });
     }finally{
       controlled.cleanup();
@@ -242,7 +246,7 @@
       AUTH_REQUIRED:'Sessione scaduta: effettua nuovamente l’accesso amministratore.',
       AUTH_SERVICE_MISSING:'Autenticazione non disponibile: ricarica la pagina.',
       ORIGIN_NOT_ALLOWED:'Il dominio del sito non è autorizzato dalla configurazione CORS Foto.',
-      NETWORK_ERROR:'Server Foto non raggiungibile. Controlla connessione, CORS e disponibilità della Edge Function.',
+      NETWORK_ERROR:'Edge Function Foto non raggiungibile. Verifica che “team-photos” sia distribuita nel progetto Supabase e che PHOTO_ALLOWED_ORIGINS contenga il dominio esatto del sito.',
       MIXED_CONTENT:'Configurazione bloccata: la pagina HTTPS sta chiamando un endpoint HTTP.',
       REQUEST_TIMEOUT:'Timeout: il caricamento non è stato confermato dal backend.',
       REQUEST_ABORTED:'Caricamento interrotto.',
@@ -253,6 +257,7 @@
       CORRUPT_FILE:'Il file è corrotto o non corrisponde al formato dichiarato.',
       EMPTY_FILE:'Il file selezionato è vuoto.',
       CLOUDINARY_CONFIG:'Cloudinary non è configurato sul backend.',
+      SUPABASE_CONFIG:'La Edge Function Foto non dispone delle variabili Supabase necessarie.',
       CLOUDINARY_UPLOAD:'Cloudinary ha rifiutato il caricamento.',
       CLOUDINARY_TIMEOUT:'Cloudinary non ha risposto entro il tempo previsto.',
       DB_SAVE_FAILED:'La foto è stata annullata perché i metadati non sono stati salvati nel database.',
@@ -267,6 +272,9 @@
 
   async function apiGet(params={}){
     return apiRequest({method:'GET',params:{folder:cfg.FOLDER||DEFAULT_FOLDER,...params},phase:'gallery-read'});
+  }
+  async function healthCheck(){
+    return apiRequest({method:'GET',action:'health',timeout:12000,phase:'health'});
   }
   async function refreshAll(opts={}){
     if(cache.loading&&!opts.force)return cache.loading;
@@ -446,10 +454,11 @@
   function compressImage(file){return Promise.resolve(file);}
 
   window.NexoraPhotos={
-    version:'v126.16-photo-network',
+    version:'v126.17-photo-network',
     config:{...cfg,MAX_FILE_SIZE,MAX_BATCH_FILES,MAX_BATCH_SIZE,ALLOWED_TYPES:[...ALLOWED_TYPES]},
     PhotoError,
     status,
+    healthCheck,
     userMessage,
     invalidateCache,
     refreshAll,
