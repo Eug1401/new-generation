@@ -66,12 +66,13 @@ async function test(name,fn){
   catch(error){results.push({name,result:'FAIL',details:error.stack||String(error)});console.error(`[photos] FAIL · ${name}\n${error.stack||error}`);process.exitCode=1;}
 }
 
-await test('GET pubblico senza Authorization e senza preflight superflua',async()=>{
+await test('GET pubblico usa apikey gateway senza Authorization utente',async()=>{
   let request;
   const {Photos}=createRuntime({fetchImpl:async(url,opts)=>{request={url,opts};return new Response(JSON.stringify({ok:true,photos:[]}),{status:200,headers:{'content-type':'application/json'}});}});
   await Photos.refreshAll({force:true});
   assert.equal(request.opts.method,'GET');
   assert.equal(request.opts.headers.Authorization,undefined);
+  assert.equal(request.opts.headers.apikey,'sb_publishable_test');
   assert.equal(request.opts.headers['Content-Type'],undefined);
 });
 
@@ -84,6 +85,7 @@ await test('upload multipart usa access token sessione e boundary del browser',a
   const photo=await Photos.uploadTeamPhoto('team-a',jpegFile());
   assert.equal(request.opts.method,'POST');
   assert.equal(request.opts.headers.Authorization,'Bearer user-session-token');
+  assert.equal(request.opts.headers.apikey,'sb_publishable_test');
   assert.equal(request.opts.headers['Content-Type'],undefined);
   assert.ok(request.opts.body instanceof FormData);
   assert.ok(request.opts.body.get('file') instanceof File);
@@ -102,9 +104,22 @@ await test('errore di rete/CORS classificato senza Failed to fetch grezzo',async
   const {Photos}=createRuntime({fetchImpl:async()=>{throw new TypeError('Failed to fetch');}});
   await assert.rejects(()=>Photos.refreshAll({force:true}),error=>{
     assert.equal(error.code,'NETWORK_ERROR');
-    assert.match(Photos.userMessage(error),/Server Foto non raggiungibile/);
+    assert.match(Photos.userMessage(error),/Edge Function Foto non raggiungibile/);
     return true;
   });
+});
+
+await test('health check distingue configurazione backend senza esporre segreti',async()=>{
+  let request;
+  const {Photos}=createRuntime({fetchImpl:async(url,opts)=>{
+    request={url,opts};
+    return new Response(JSON.stringify({ok:true,service:'team-photos',originAllowed:true,cloudinary:{configured:true,cloudName:'demo',source:'CLOUDINARY_URL'},supabase:{configured:true}}),{status:200,headers:{'content-type':'application/json'}});
+  }});
+  const health=await Photos.healthCheck();
+  assert.match(request.url,/action=health/);
+  assert.equal(request.opts.headers.apikey,'sb_publishable_test');
+  assert.equal(health.cloudinary.cloudName,'demo');
+  assert.equal(JSON.stringify(health).includes('apiSecret'),false);
 });
 
 await test('validazione rifiuta formato e firma binaria incoerenti',async()=>{
@@ -164,6 +179,8 @@ await test('backend Foto separato da endpoint e modelli Articoli',async()=>{
   assert.match(edge,/MAX_ZIP_BYTES = 150/);
   assert.match(edge,/req\.method === 'OPTIONS'/);
   assert.match(edge,/ORIGIN_NOT_ALLOWED/);
+  assert.match(edge,/CLOUDINARY_URL/);
+  assert.match(edge,/action === 'health'/);
   assert.match(edge,/MAX_IMAGE_PIXELS/);
   assert.doesNotMatch(edge,/from\(['"]articles|\/articles\?|article_images/);
   assert.match(config,/verify_jwt\s*=\s*false/);
