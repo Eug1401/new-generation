@@ -3,27 +3,21 @@
   const esc=v=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
   const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
   function initials(name){return String(name||'?').split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();}
-  // v126.11 - Logo squadra: rendering basato su classe CSS
-  // I data-URL dei loghi non vengono più embeddati ogni volta nell'HTML
-  // delle card (che con 30 partite × 2 squadre × ~15KB di base64 ripetuto
-  // arrivava a ~900KB di stringa HTML da reparseare ad ogni render).
-  // Ora i data-URL vivono in UN singolo <style id="ngTeamLogos"> nel
-  // <head> con regole .ng-tl-{teamId} { background-image:url(...) }, e
-  // qui generiamo solo un riferimento alla classe.
-  // - Wrapper con dimensioni riservate (aspect-ratio dal CSS)
-  // - Iniziali del fallback SEMPRE presenti dietro: se non c'è classe
-  //   logo, le iniziali sono visibili; se c'è, il bg le copre
-  // - data-team-id per identità stabile (debug + diagnostica)
+  // v126.12 - Stemma squadra: rendering basato su classe CSS.
+  // I data-URL restano centralizzati in UN solo <style id="ngTeamLogos">:
+  // il markup delle card contiene soltanto la classe stabile della squadra.
+  // Quando lo stemma esiste non viene montato alcun fallback sopra il
+  // background-image; le iniziali sono usate solo per squadre senza stemma.
   function logo(team,big=false){
-    const bigCls=big?'big':'';
     const tid=esc(team?.id||'');
     const inits=esc(initials(team?.name));
-    const safeName=esc(team?.name||'');
+    const safeName=esc(team?.name||'squadra non definita');
     const hasLogo=Boolean(team?.logo);
-    const logoCls=hasLogo?` ng-tl-${tid}`:'';
-    return `<span class="team-logo-wrap ${bigCls}${logoCls}" data-team-id="${tid}" role="img" aria-label="Logo ${safeName}">`+
-      `<span class="team-logo-fallback ${bigCls}" aria-hidden="true"><span>${inits}</span></span>`+
-      `</span>`;
+    const classes=['team-logo-wrap'];
+    if(big) classes.push('big');
+    if(hasLogo) classes.push(`ng-tl-${tid}`);
+    const fallback=hasLogo?'':`<span class="team-logo-fallback${big?' big':''}" aria-hidden="true"><span>${inits}</span></span>`;
+    return `<span class="${classes.join(' ')}" data-team-id="${tid}" role="img" aria-label="Stemma di ${safeName}">${fallback}</span>`;
   }
 
   // Inietta/aggiorna lo <style id="ngTeamLogos"> con tutte le regole
