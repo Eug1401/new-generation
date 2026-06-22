@@ -536,9 +536,10 @@
     if(!window.NGTournamentSimulation)throw new Error('Modulo simulazione non disponibile.');
     return window.NGTournamentSimulation.run(options||{});
   }
-  function openSimulationDialog(){
+  function openSimulationDialog(event){
+    event?.preventDefault?.();
     if(!window.NGTournamentSimulation)throw new Error('Modulo simulazione non disponibile.');
-    return window.NGTournamentSimulation.open();
+    return window.NGTournamentSimulation.open(event?.currentTarget||null);
   }
 
   function initGlobalActions(){try{UI.applySiteTheme(state());}catch(e){} try{UI.injectTeamLogoStyles && UI.injectTeamLogoStyles(state());}catch(e){} const reset=UI.$('#resetAllBtn');if(reset)reset.addEventListener('click',openResetDialog);const sim=UI.$('#simulateTournamentBtn');if(sim)sim.addEventListener('click',openSimulationDialog);}

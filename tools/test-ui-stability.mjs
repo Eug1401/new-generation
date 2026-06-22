@@ -494,20 +494,28 @@ async function testArticlesEndToEnd(){
   add('rifiuto immagine troppo grande',String(invalidFile).includes('12 MB'),String(invalidFile));
 
   await click(`[data-delete-article="${created.id}"]`);let deleteDialog=await overlayState('#deleteArticleDialog');
-  add('conferma eliminazione esplicita',deleteDialog.open&&deleteDialog.bodyLocked&&(await evaluate(`document.querySelector('#deleteArticleDialogText').textContent.includes('Nuovo articolo end to end')`)),JSON.stringify(deleteDialog));
+  const deleteVisual=await evaluate(`(()=>{const el=document.querySelector('#deleteArticleDialog');const style=getComputedStyle(el);return {opacity:style.opacity,pointerEvents:style.pointerEvents,display:style.display,open:el.classList.contains('open'),label:document.querySelector('#confirmDeleteArticleBtn')?.textContent||''};})()`);
+  add('conferma eliminazione esplicita e interattiva',deleteDialog.open&&deleteDialog.bodyLocked&&deleteVisual.open&&deleteVisual.opacity==='1'&&deleteVisual.pointerEvents!=='none'&&deleteVisual.label.includes('Elimina articolo')&&(await evaluate(`document.querySelector('#deleteArticleDialogText').textContent.includes('Nuovo articolo end to end')`)),JSON.stringify({deleteDialog,deleteVisual}));
   await pressKey('Escape');
-  add('eliminazione: Escape e ritorno focus',await evaluate(`!document.querySelector('#deleteArticleDialog').classList.contains('show')&&!document.body.classList.contains('ng-overlay-open')&&document.activeElement===document.querySelector(${JSON.stringify(`[data-delete-article="${created.id}"]`)})`));
+  add('eliminazione: Escape e ritorno focus',await evaluate(`!document.querySelector('#deleteArticleDialog').classList.contains('show')&&!document.querySelector('#deleteArticleDialog').classList.contains('open')&&!document.body.classList.contains('ng-overlay-open')&&document.activeElement===document.querySelector(${JSON.stringify(`[data-delete-article="${created.id}"]`)})`));
+  await click(`[data-preview-article="${created.id}"]`);await click('#deleteArticleFromPreviewBtn');
+  add('eliminazione disponibile dal dettaglio admin',await evaluate(`document.querySelector('#articlePreviewModal').classList.contains('open')&&document.querySelector('#deleteArticleDialog').classList.contains('open')&&document.querySelector('#deleteArticleDialogText').textContent.includes('Nuovo articolo end to end')`));
+  await click('#cancelDeleteArticleBtn');await pressKey('Escape');
   await click(`[data-delete-article="${created.id}"]`);await click('#cancelDeleteArticleBtn');
   add('annullamento eliminazione',!(await overlayState('#deleteArticleDialog')).open&&await evaluate(`!!NexoraStore.selectors.articleById(NexoraStore.load('admin'),${JSON.stringify(created.id)},{includeDrafts:true})`));
+  const invalidDelete=await evaluate(`(()=>{const fake=document.createElement('button');fake.type='button';fake.dataset.deleteArticle='';document.body.appendChild(fake);fake.click();fake.remove();return {open:document.querySelector('#deleteArticleDialog').classList.contains('open'),message:document.querySelector('#articleMsg')?.textContent||''};})()`);
+  add('ID eliminazione non valido bloccato',!invalidDelete.open&&invalidDelete.message.includes('identificativo articolo non valido'),JSON.stringify(invalidDelete));
   await click(`[data-delete-article="${created.id}"]`);
-  await evaluate(`NEW_GENERATION_SUPABASE.ENABLED=true;NG_FORCE_REMOTE_SAVE=()=>Promise.reject(new Error('backend test'));`);
-  await click('#confirmDeleteArticleBtn');await waitFor(()=>evaluate(`document.querySelector('#deleteArticleDialogMsg')?.textContent.includes('ripristinato')`),{label:'delete rollback'});
-  const rollback=await evaluate(`({exists:!!NexoraStore.selectors.articleById(NexoraStore.load('admin'),${JSON.stringify(created.id)},{includeDrafts:true}),open:document.querySelector('#deleteArticleDialog').classList.contains('show')})`);
-  add('errore eliminazione ripristina articolo',rollback.exists&&rollback.open,JSON.stringify(rollback));
+  await evaluate(`NEW_GENERATION_SUPABASE.ENABLED=true;window.__deleteRemoteCalls=0;NG_FORCE_REMOTE_SAVE=()=>{window.__deleteRemoteCalls++;return Promise.resolve(false);};`);
+  await click('#confirmDeleteArticleBtn');await waitFor(()=>evaluate(`document.querySelector('#deleteArticleDialogMsg')?.textContent.includes('non ha confermato')`),{label:'delete backend false'});
+  const rollback=await evaluate(`({exists:!!NexoraStore.selectors.articleById(NexoraStore.load('admin'),${JSON.stringify(created.id)},{includeDrafts:true}),open:document.querySelector('#deleteArticleDialog').classList.contains('show'),calls:window.__deleteRemoteCalls,busy:document.querySelector('#confirmDeleteArticleBtn').disabled})`);
+  add('errore backend mantiene articolo e consente nuovo tentativo',rollback.exists&&rollback.open&&rollback.calls===1&&!rollback.busy,JSON.stringify(rollback));
   await evaluate(`NEW_GENERATION_SUPABASE.ENABLED=false;`);
   await evaluate(`(()=>{const b=document.querySelector('#confirmDeleteArticleBtn');b.click();b.click();})()`);
   await waitFor(()=>evaluate(`!NexoraStore.selectors.articleById(NexoraStore.load('admin'),${JSON.stringify(created.id)},{includeDrafts:true})&&!document.querySelector('#deleteArticleDialog').classList.contains('show')`),{label:'final delete'});
   add('eliminazione e doppio click',true);
+  await navigate('admin-articles.html');
+  add('refresh dopo eliminazione non ripristina articolo',!(await evaluate(`!!NexoraStore.selectors.articleById(NexoraStore.load('admin'),${JSON.stringify(created.id)},{includeDrafts:true})`)));
 
   await setViewport(390,844);await navigate('admin-articles.html');
   const adminMobile=await evaluate(`(()=>{const actions=[...document.querySelectorAll('.article-admin-actions .btn')];return {overflow:document.documentElement.scrollWidth-document.documentElement.clientWidth,actions:actions.length,large:actions.every(b=>b.getBoundingClientRect().height>=44),columns:getComputedStyle(document.querySelector('.article-admin-layout')).gridTemplateColumns};})()`);
@@ -518,6 +526,7 @@ async function testArticlesEndToEnd(){
 
 async function testSimulationDialog(){
   await setViewport(1280,900);await navigate('admin.html');
+  await evaluate(`window.__preWizardState=structuredClone(NexoraStore.load('admin'));`);
   await click('#simulateTournamentBtn');let st=await overlayState('#simulationDialog');
   const initial=await evaluate(`({title:document.querySelector('#simulationStepBody h3')?.textContent||'',steps:document.querySelectorAll('.simulation-stepper li').length,generated:document.querySelector('input[name="simulationTeamMode"][value="generated"]')?.checked,existingDisabled:document.querySelector('input[name="simulationTeamMode"][value="existing"]')?.disabled})`);
   const openOk=st.open&&st.bodyLocked&&st.count===1&&initial.steps===5&&initial.generated&&initial.existingDisabled&&initial.title.includes('squadre già presenti');
@@ -528,16 +537,32 @@ async function testSimulationDialog(){
   await click('#simulationDialog');st=await overlayState('#simulationDialog');const backdropOk=!st.open&&!st.bodyLocked;
 
   await click('#simulateTournamentBtn');
+  const beforeChoice=await evaluate(`({step:NGTournamentSimulation.getWizardState()?.step,running:NGTournamentSimulation.getWizardState()?.running,operation:NexoraStore.load('admin')._simulationOperationId||''})`);
+  await click('input[name="simulationTeamMode"][value="generated"]');await delay(80);
+  const afterChoice=await evaluate(`({step:NGTournamentSimulation.getWizardState()?.step,running:NGTournamentSimulation.getWizardState()?.running,operation:NexoraStore.load('admin')._simulationOperationId||'',title:document.querySelector('#simulationStepBody h3')?.textContent||''})`);
+  await evaluate(`document.querySelector('input[name="simulationTeamMode"][value="generated"]').focus()`);await pressKey('Enter');await delay(60);
+  const afterEnter=await evaluate(`({step:NGTournamentSimulation.getWizardState()?.step,running:NGTournamentSimulation.getWizardState()?.running,operation:NexoraStore.load('admin')._simulationOperationId||''})`);
+  const noEarlyStart=beforeChoice.step===0&&!beforeChoice.running&&afterChoice.step===0&&!afterChoice.running&&afterChoice.operation===beforeChoice.operation&&afterEnter.step===0&&!afterEnter.running&&afterEnter.operation===beforeChoice.operation&&afterChoice.title.includes('squadre già presenti');
   await click('#simulationNextBtn');const formatOk=await evaluate(`document.querySelector('#simulationStepBody h3')?.textContent.includes('formato')&&document.querySelectorAll('input[name="simulationFormat"]').length===4`);
   await click('input[name="simulationFormat"][value="knockout"]');await click('#simulationNextBtn');const kingsOk=await evaluate(`document.querySelector('#simulationStepBody h3')?.textContent.includes('Kings')`);
   await click('input[name="simulationKings"][value="yes"]');await click('#simulationNextBtn');const durationOk=await evaluate(`document.querySelector('#simulationStepBody h3')?.textContent.includes('un solo giorno o in più giorni')`);
   await click('input[name="simulationDuration"][value="one_day"]');await click('#simulationNextBtn');
-  const summaryBefore=await evaluate(`({summary:document.querySelector('.simulation-summary')?.textContent||'',disabled:document.querySelector('#simulationExecuteBtn')?.disabled,label:document.querySelector('#simulationExecuteBtn')?.textContent||''})`);
+  const summaryBefore=await evaluate(`({summary:document.querySelector('.simulation-summary')?.textContent||'',disabled:document.querySelector('#simulationExecuteBtn')?.disabled,label:document.querySelector('#simulationExecuteBtn')?.textContent||'',step:NGTournamentSimulation.getWizardState()?.step})`);
   await click('#simulationReplaceConfirm');await click('#simulationTeamsConfirm');
-  const summaryAfter=await evaluate(`({enabled:!document.querySelector('#simulationExecuteBtn')?.disabled,label:document.querySelector('#simulationExecuteBtn')?.textContent||'',kings:document.querySelector('.simulation-summary')?.textContent.includes('presidente obbligatorio')})`);
-  const wizardOk=formatOk&&kingsOk&&durationOk&&summaryBefore.disabled&&summaryBefore.label.includes('Genera torneo simulato')&&summaryAfter.enabled&&summaryAfter.kings;
+  const summaryAfter=await evaluate(`(()=>{const payload=NGTournamentSimulation.getFinalPayload();return {enabled:!document.querySelector('#simulationExecuteBtn')?.disabled,label:document.querySelector('#simulationExecuteBtn')?.textContent||'',kings:document.querySelector('.simulation-summary')?.textContent.includes('presidente obbligatorio'),payload};})()`);
+  await click('#simulationBackBtn');const backState=await evaluate(`({step:NGTournamentSimulation.getWizardState()?.step,duration:document.querySelector('input[name="simulationDuration"][value="one_day"]')?.checked})`);
+  await click('#simulationNextBtn');
+  const selectionsKept=backState.step===3&&backState.duration===true;
+  const payloadOk=summaryAfter.payload?.teamMode==='generated'&&summaryAfter.payload?.generatedTeamCount===8&&summaryAfter.payload?.format==='knockout'&&summaryAfter.payload?.kings===true&&summaryAfter.payload?.presidentMode==='default_per_team'&&summaryAfter.payload?.duration==='one_day'&&summaryAfter.payload?.replaceTournamentConfirmed===true&&summaryAfter.payload?.replaceTeamsConfirmed===true&&summaryAfter.payload?.requestSource==='wizard-final-confirmation';
+  await click('#simulationReplaceConfirm');await click('#simulationTeamsConfirm');
+  await evaluate(`(()=>{const b=document.querySelector('#simulationExecuteBtn');b.click();b.click();})()`);
+  await waitFor(()=>evaluate(`!!document.querySelector('.simulation-success')`),{label:'wizard final execution',timeout:15000});
+  const completed=await evaluate(`(()=>{const s=NexoraStore.load('admin');return {teams:s.teams.length,players:s.teams.reduce((n,t)=>n+(t.players||[]).length,0),matches:s.matches.length,winner:s._simulationSummary?.winnerName||'',articlesSame:JSON.stringify(s.articles||[])===JSON.stringify(window.__preWizardState.articles||[]),running:NGTournamentSimulation.getWizardState()?.running};})()`);
+  const completionOk=completed.teams===8&&completed.players===40&&completed.matches===7&&Boolean(completed.winner)&&completed.articlesSame&&completed.running===false;
   await click('#cancelSimulationBtn');
-  record('Procedura Simula: wizard 5 passaggi, conferme, doppio click, Escape, backdrop e focus',openOk&&escapeOk&&cyclesOk&&doubleOk&&backdropOk&&wizardOk,JSON.stringify({openOk,escapeOk,cyclesOk,doubleOk,backdropOk,wizardOk,initial,summaryBefore,summaryAfter}));
+  await evaluate(`(()=>{NexoraStore.save('admin',window.__preWizardState);NexoraStore.save('public',window.__preWizardState);delete window.__preWizardState;})()`);
+  const wizardOk=noEarlyStart&&formatOk&&kingsOk&&durationOk&&summaryBefore.step===4&&summaryBefore.disabled&&summaryBefore.label.includes('Genera torneo simulato')&&summaryAfter.enabled&&summaryAfter.kings&&payloadOk&&selectionsKept&&completionOk;
+  record('Procedura Simula: nessun avvio anticipato, wizard completo, payload esplicito, avvio finale unico e ricaricamento',openOk&&escapeOk&&cyclesOk&&doubleOk&&backdropOk&&wizardOk,JSON.stringify({openOk,escapeOk,cyclesOk,doubleOk,backdropOk,wizardOk,noEarlyStart,initial,beforeChoice,afterChoice,afterEnter,summaryBefore,summaryAfter,backState,payloadOk,selectionsKept,completed,completionOk}));
 }
 async function testPhotoConfirmAndLightbox(){
   await setViewport(1280,900);await navigate('admin-photos.html');

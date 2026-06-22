@@ -34,6 +34,7 @@
   let wizard=null;
   let running=false;
   let activeOperationId='';
+  let dialogTrigger=null;
 
   function simulationOwner(){
     try{
@@ -78,22 +79,37 @@
   }
 
   function normalizeOptions(raw={}){
+    const teamMode=raw.teamMode==='existing'?'existing':'generated';
+    const kings=Boolean(raw.kings);
     return {
-      teamMode:raw.teamMode==='existing'?'existing':'generated',
+      teamMode,
       selectedTeamIds:unique(Array.isArray(raw.selectedTeamIds)?raw.selectedTeamIds.map(String):[]),
+      generatedTeamCount:Number(raw.generatedTeamCount||8),
       format:FORMATS.includes(raw.format)?raw.format:'groups_knockout',
-      kings:Boolean(raw.kings),
-      duration:raw.duration==='one_day'?'one_day':'multi_day'
+      kings,
+      presidentMode:kings?(raw.presidentMode==='default_per_team'?'default_per_team':'default_per_team'):'none',
+      duration:raw.duration==='one_day'?'one_day':'multi_day',
+      replaceTournamentConfirmed:Boolean(raw.replaceTournamentConfirmed),
+      replacePlayersConfirmed:Boolean(raw.replacePlayersConfirmed),
+      replaceTeamsConfirmed:Boolean(raw.replaceTeamsConfirmed),
+      requestSource:String(raw.requestSource||'internal')
     };
   }
 
-  function validateOptions(source,raw){
+  function validateOptions(source,raw,{requireConfirmations=false}={}){
     const options=normalizeOptions(raw);
+    if(options.generatedTeamCount!==8)return {ok:false,message:'La simulazione supporta esattamente 8 squadre.'};
     if(options.teamMode==='existing'){
       if((source.teams||[]).length<8)return {ok:false,message:'Servono almeno 8 squadre esistenti. Puoi scegliere “Genera 8 squadre di prova”.'};
       if(options.selectedTeamIds.length!==8)return {ok:false,message:'Seleziona esattamente 8 squadre esistenti.'};
       const known=new Set((source.teams||[]).map(t=>String(t.id)));
       if(options.selectedTeamIds.some(id=>!known.has(id)))return {ok:false,message:'Una delle squadre selezionate non esiste più. Riapri la procedura.'};
+    }
+    if(options.kings&&options.presidentMode!=='default_per_team')return {ok:false,message:'Configura il presidente di default per il formato Kings.'};
+    if(requireConfirmations){
+      if(!options.replaceTournamentConfirmed)return {ok:false,message:'Conferma la sostituzione dei dati del torneo.'};
+      if(options.teamMode==='existing'&&!options.replacePlayersConfirmed)return {ok:false,message:'Conferma la sostituzione dei giocatori delle squadre selezionate.'};
+      if(options.teamMode==='generated'&&!options.replaceTeamsConfirmed)return {ok:false,message:'Conferma la creazione e sostituzione con 8 squadre simulate.'};
     }
     return {ok:true,options};
   }
@@ -483,9 +499,9 @@
     const source=clone(A.state());
     const beforeArticles=safeJson(source.articles||[]);
     try{
-      const checked=validateOptions(source,rawOptions);
+      const checked=validateOptions(source,rawOptions,{requireConfirmations:true});
       if(!checked.ok)throw new Error(checked.message);
-      simulationLog(opId,'start',{teamMode:checked.options.teamMode,format:checked.options.format,kings:checked.options.kings,duration:checked.options.duration});
+      simulationLog(opId,'start',{teamMode:checked.options.teamMode,format:checked.options.format,kings:checked.options.kings,duration:checked.options.duration,requestSource:checked.options.requestSource});
       const result=await buildSimulationWithProgress(source,checked.options,opId,onProgress);
       if(safeJson(result.state.articles||[])!==beforeArticles)throw new Error('Protezione articoli fallita.');
       await commitSimulation(result,onProgress);
@@ -586,7 +602,30 @@
     updateButtons();
   }
   function showMessage(text,type='error'){const box=dialog.querySelector('#simulationDialogMsg');box.innerHTML=text?`<div class="message ${type}">${UI.esc(text)}</div>`:'';}
-  function close(){if(!dialog||wizard?.running)return;dialog.classList.remove('show');}
+  function close(){
+    if(!dialog||wizard?.running)return;
+    dialog.classList.remove('show');
+    document.body.classList.remove('ng-overlay-open');
+    const trigger=dialogTrigger;dialogTrigger=null;
+    requestAnimationFrame(()=>{if(trigger&&document.contains(trigger))trigger.focus?.({preventScroll:true});});
+  }
+
+  function finalPayload(){
+    const o=wizard.options;
+    return {
+      teamMode:o.teamMode,
+      selectedTeamIds:o.teamMode==='existing'?[...o.selectedTeamIds]:[],
+      generatedTeamCount:8,
+      format:o.format,
+      kings:Boolean(o.kings),
+      presidentMode:o.kings?'default_per_team':'none',
+      duration:o.duration,
+      replaceTournamentConfirmed:Boolean(dialog.querySelector('#simulationReplaceConfirm')?.checked),
+      replacePlayersConfirmed:o.teamMode==='existing'&&Boolean(dialog.querySelector('#simulationRosterConfirm')?.checked),
+      replaceTeamsConfirmed:o.teamMode==='generated'&&Boolean(dialog.querySelector('#simulationTeamsConfirm')?.checked),
+      requestSource:'wizard-final-confirmation'
+    };
+  }
 
   function renderRunningProgress(){
     dialog.querySelector('#simulationStepper').innerHTML='';
@@ -607,24 +646,33 @@
     });
   }
   function renderSuccess(result){
+    wizard.running=false;
     const summary=result.state._simulationSummary;
     dialog.querySelector('#simulationStepBody').innerHTML=`<div class="simulation-success"><span class="simulation-success-icon">✓</span><span class="pill">Simulazione completata</span><h3>${UI.esc(summary.winnerName)} vince il torneo</h3><p>Il torneo è stato verificato e pubblicato nelle interfacce admin e utente.</p><div class="simulation-summary compact"><div><dt>Squadre</dt><dd>${summary.teams}</dd></div><div><dt>Giocatori</dt><dd>${summary.players}</dd></div><div><dt>Partite</dt><dd>${summary.matches}</dd></div><div><dt>Gol</dt><dd>${summary.goals}</dd></div><div><dt>Gialli / Rossi</dt><dd>${summary.yellow} / ${summary.red}</dd></div><div><dt>Periodo</dt><dd>${UI.esc(summary.startDate===summary.endDate?summary.startDate:`${summary.startDate} → ${summary.endDate}`)}</dd></div></div></div>`;
     dialog.querySelector('#simulationDialogMsg').innerHTML='';
     const cancel=dialog.querySelector('#cancelSimulationBtn');cancel.disabled=false;cancel.textContent='Chiudi';
   }
 
-  async function execute(){
+  async function execute(event){
+    event?.preventDefault();event?.stopPropagation();
+    if(!wizard||wizard.step!==4){showMessage('Completa tutti i passaggi prima di avviare la simulazione.','warn');return;}
+    if(wizard.running)return;
     const validation=validateCurrentStep();if(validation){showMessage(validation);return;}
-    wizard.running=true;showMessage('');renderRunningProgress();
+    const payload=finalPayload();
+    const backendValidation=validateOptions(A.state(),payload,{requireConfirmations:true});
+    if(!backendValidation.ok){showMessage(backendValidation.message,'warn');return;}
+    wizard.running=true;wizard.lastPayload=clone(payload);showMessage('');renderRunningProgress();
     try{
-      const result=await run(wizard.options,updateRunningProgress);
+      const result=await run(payload,updateRunningProgress);
       renderSuccess(result);
     }catch(err){
       console.error(err);
       wizard.running=false;
+      wizard.step=4;
+      renderStep();
+      showMessage(`Simulazione non completata: ${err.message||err}. Le scelte sono state conservate; conferma nuovamente e riprova.`,'error');
       dialog.querySelector('#cancelSimulationBtn').disabled=false;
       dialog.querySelector('#cancelSimulationBtn').textContent='Chiudi';
-      dialog.querySelector('#simulationStepBody').insertAdjacentHTML('beforeend',`<div class="message error"><strong>Simulazione non completata.</strong><br>${UI.esc(err.message||err)}</div>`);
     }
   }
 
@@ -635,20 +683,29 @@
     dialog.innerHTML=`<div class="ng-modal card pad simulation-modal simulation-wizard" role="dialog" aria-modal="true" aria-labelledby="simulationDialogTitle" tabindex="-1"><header class="simulation-wizard-head"><div><span class="pill">Test ecosistema</span><h2 id="simulationDialogTitle">Simula torneo</h2></div><button class="btn small" id="cancelSimulationBtn" type="button" aria-label="Chiudi procedura">Chiudi</button></header><div id="simulationStepper"></div><div id="simulationStepBody"></div><div id="simulationDialogMsg" aria-live="polite"></div><footer class="simulation-wizard-actions"><button class="btn" id="simulationBackBtn" type="button">Indietro</button><span></span><button class="btn" id="simulationNextBtn" type="button">Continua</button><button class="btn primary" id="simulationExecuteBtn" type="button">Genera torneo simulato</button></footer></div>`;
     document.body.appendChild(dialog);
     dialog.addEventListener('change',handleChange);
-    dialog.querySelector('#cancelSimulationBtn').addEventListener('click',close);
-    dialog.querySelector('#simulationBackBtn').addEventListener('click',()=>{if(wizard.running)return;wizard.step=Math.max(0,wizard.step-1);showMessage('');renderStep();});
-    dialog.querySelector('#simulationNextBtn').addEventListener('click',()=>{if(wizard.running)return;const error=validateCurrentStep();if(error){showMessage(error,'warn');return;}wizard.step=Math.min(4,wizard.step+1);showMessage('');renderStep();});
+    dialog.addEventListener('submit',event=>event.preventDefault());
+    dialog.addEventListener('keydown',event=>{
+      if(event.key==='Escape'&&!wizard?.running){event.preventDefault();close();return;}
+      if(event.key==='Enter'&&event.target.matches('input[type="radio"],input[type="checkbox"]'))event.preventDefault();
+    });
+    dialog.querySelector('#cancelSimulationBtn').addEventListener('click',event=>{event.preventDefault();close();});
+    dialog.querySelector('#simulationBackBtn').addEventListener('click',event=>{event.preventDefault();if(wizard.running)return;wizard.step=Math.max(0,wizard.step-1);showMessage('');renderStep();});
+    dialog.querySelector('#simulationNextBtn').addEventListener('click',event=>{event.preventDefault();if(wizard.running)return;const error=validateCurrentStep();if(error){showMessage(error,'warn');return;}wizard.step=Math.min(4,wizard.step+1);showMessage('');renderStep();});
     dialog.querySelector('#simulationExecuteBtn').addEventListener('click',execute);
     dialog.addEventListener('click',event=>{if(event.target===dialog&&!wizard?.running)close();});
     return dialog;
   }
 
-  function open(){
+  function open(trigger=null){
     ensureDialog();
+    if(dialog.classList.contains('show'))return;
+    dialogTrigger=trigger||document.activeElement;
     wizard=initialWizard();
     dialog.querySelector('#cancelSimulationBtn').textContent='Chiudi';
     showMessage('');renderStep();
     dialog.classList.add('show');
+    document.body.classList.add('ng-overlay-open');
+    requestAnimationFrame(()=>dialog.querySelector('input:checked:not(:disabled),button:not([hidden])')?.focus());
   }
 
 
@@ -658,5 +715,5 @@
     event.returnValue='';
   });
 
-  window.NGTournamentSimulation={open,run,buildSimulation,validateSimulation,estimate,normalizeOptions,FORMAT_META,TEAM_BLUEPRINTS};
+  window.NGTournamentSimulation={open,run,buildSimulation,validateSimulation,estimate,normalizeOptions,FORMAT_META,TEAM_BLUEPRINTS,getWizardState:()=>wizard?clone(wizard):null,getFinalPayload:()=>wizard&&wizard.step===4?clone(finalPayload()):null};
 })();

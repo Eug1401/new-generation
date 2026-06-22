@@ -43,6 +43,15 @@ const makeExistingState=()=>{
 
 const formats=['league','knockout','groups_knockout','league_knockout'];
 const results=[];
+const confirmedRunOptions=options=>({
+  ...options,
+  generatedTeamCount:8,
+  presidentMode:options.kings?'default_per_team':'none',
+  replaceTournamentConfirmed:true,
+  replacePlayersConfirmed:options.teamMode==='existing',
+  replaceTeamsConfirmed:options.teamMode!=='existing',
+  requestSource:'automated-test'
+});
 for(const format of formats){
   for(const duration of ['one_day','multi_day']){
     for(const kings of [false,true]){
@@ -106,10 +115,15 @@ assert.throws(()=>sim.buildSimulation(pristine,{teamMode:'generated',format:'kno
 store.autoResolveKnockout=originalResolve;
 assert.equal(JSON.stringify(pristine),pristineJson);
 
+// Il motore rifiuta avvii esterni privi delle conferme finali del wizard.
+const beforeUnconfirmed=JSON.stringify(store.load('admin'));
+await assert.rejects(sim.run({teamMode:'generated',format:'knockout',kings:false,duration:'one_day'}),/Conferma la sostituzione/i);
+assert.equal(JSON.stringify(store.load('admin')),beforeUnconfirmed);
+
 // Commit locale completo e prevenzione di due avvii contemporanei.
 store.save('admin',store.normalizeState({...store.emptyState(),articles:[{id:'keep',title:'Keep',body:'Body',status:'published'}]}));
-const first=sim.run({teamMode:'generated',format:'knockout',kings:false,duration:'one_day'});
-const second=sim.run({teamMode:'generated',format:'league',kings:false,duration:'multi_day'}).then(()=>false,err=>/già in corso/.test(String(err.message||err)));
+const first=sim.run(confirmedRunOptions({teamMode:'generated',format:'knockout',kings:false,duration:'one_day'}));
+const second=sim.run(confirmedRunOptions({teamMode:'generated',format:'league',kings:false,duration:'multi_day'})).then(()=>false,err=>/già in corso/.test(String(err.message||err)));
 assert.equal(await second,true);
 const committed=await first;
 assert.equal(store.load('admin')._simulationOperationId,committed.operationId);
@@ -124,7 +138,7 @@ context.NG_SUPABASE_CLIENT={};
 context.NG_FORCE_REMOTE_SAVE=async state=>{if(state._simulationOperationId)throw new Error('forced remote failure');return true;};
 context.NG_FLUSH_REMOTE_SAVE=async()=>true;
 let rollbackError='';
-try{await sim.run({teamMode:'generated',format:'knockout',kings:false,duration:'one_day'});}catch(err){rollbackError=String(err.message||err);}
+try{await sim.run(confirmedRunOptions({teamMode:'generated',format:'knockout',kings:false,duration:'one_day'}));}catch(err){rollbackError=String(err.message||err);}
 assert.match(rollbackError,/rollback completo/i);
 assert.equal(store.load('admin').teams[0].id,'safe_team');
 assert.equal(store.load('admin').articles[0].id,'safe_article');
@@ -134,4 +148,4 @@ delete context.NG_SUPABASE_CLIENT;
 delete context.NG_FORCE_REMOTE_SAVE;
 delete context.NG_FLUSH_REMOTE_SAVE;
 
-console.log(JSON.stringify({ok:true,generatedCases:results.length,formats,existingTeams:true,eventChronology:true,buildFailureIsolation:true,doubleStart:true,rollback:true},null,2));
+console.log(JSON.stringify({ok:true,generatedCases:results.length,formats,existingTeams:true,eventChronology:true,buildFailureIsolation:true,finalConfirmationGuard:true,doubleStart:true,rollback:true},null,2));

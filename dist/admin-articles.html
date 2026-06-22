@@ -10,7 +10,7 @@
   <link rel="dns-prefetch" href="https://mcksxqtgibkazxnkdfra.supabase.co">
   <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
   <title>New Generation · Articoli</title>
-  <link rel="stylesheet" href="assets/css/styles.css?v=v125-ui-stable">
+  <link rel="stylesheet" href="assets/css/styles.css?v=v126-15-hotfix">
 </head>
 <body>
   <a class="skip-link" href="#main-content">Vai al contenuto principale</a>
@@ -116,7 +116,7 @@
 
   <div class="modal article-preview-modal" id="articlePreviewModal" role="dialog" aria-modal="true" aria-labelledby="articlePreviewModalTitle">
     <div class="modal-content article-modal-content">
-      <div class="article-modal-toolbar"><div><span class="article-kicker">Anteprima</span><h2 id="articlePreviewModalTitle">Anteprima articolo</h2></div><button class="btn danger article-modal-close" id="closeArticlePreviewModal" type="button">Chiudi</button></div>
+      <div class="article-modal-toolbar"><div><span class="article-kicker">Anteprima</span><h2 id="articlePreviewModalTitle">Anteprima articolo</h2></div><div class="row-actions"><button class="btn danger" id="deleteArticleFromPreviewBtn" type="button" hidden>Elimina articolo</button><button class="btn article-modal-close" id="closeArticlePreviewModal" type="button">Chiudi</button></div></div>
       <div id="articlePreviewModalBody"></div>
     </div>
   </div>
@@ -127,17 +127,17 @@
       <h2 id="deleteArticleDialogTitle">Eliminare l’articolo?</h2>
       <p id="deleteArticleDialogText">Questa operazione è irreversibile.</p>
       <div id="deleteArticleDialogMsg" aria-live="assertive"></div>
-      <div class="row-actions"><button class="btn" id="cancelDeleteArticleBtn" type="button">Annulla</button><button class="btn danger" id="confirmDeleteArticleBtn" type="button">Elimina definitivamente</button></div>
+      <div class="row-actions"><button class="btn" id="cancelDeleteArticleBtn" type="button">Annulla</button><button class="btn danger" id="confirmDeleteArticleBtn" type="button">Elimina articolo</button></div>
     </div>
   </div>
 
   <script defer src="assets/js/store.js?v=v125-ui-stable"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script defer src="assets/js/supabase-config.js?v=v125-ui-stable"></script>
-  <script defer src="assets/js/supabase-sync.js?v=v125-ui-stable"></script>
+  <script defer src="assets/js/supabase-sync.js?v=v126-15-sync"></script>
   <script defer src="assets/js/ui.js?v=v125-ui-stable"></script>
   <script defer src="assets/js/ux-a11y.js?v=v125-ui-stable"></script>
-  <script defer src="assets/js/admin-common.js?v=v125-ui-stable"></script><script defer src="assets/js/admin-simulation.js?v=v126-simulation"></script>
-  <script defer src="assets/js/admin-articles.js?v=v125-ui-stable"></script>
+  <script defer src="assets/js/admin-common.js?v=v126-15-common"></script><script defer src="assets/js/admin-simulation.js?v=v126-15-wizard"></script>
+  <script defer src="assets/js/admin-articles.js?v=v126-15-delete"></script>
 </body>
 </html>

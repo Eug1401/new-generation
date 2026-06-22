@@ -6698,7 +6698,8 @@ a.article-card-main{cursor:pointer;}
 
 .article-delete-card{width:min(520px,calc(100vw - 28px));}
 #deleteArticleDialog[hidden]{display:none!important;}
-#deleteArticleDialog.show{display:grid!important;}
+#deleteArticleDialog.show,#deleteArticleDialog.open{display:grid!important;opacity:1;pointer-events:auto;}
+#deleteArticleDialog.show .ng-confirm-card,#deleteArticleDialog.open .ng-confirm-card{transform:scale(1) translateY(0);}
 .article-delete-card h2{margin:10px 0 6px;}
 .article-delete-card .row-actions{justify-content:flex-end;margin-top:18px;}
 

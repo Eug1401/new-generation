@@ -46,6 +46,7 @@
   let realtimeChannel = null;
   let realtimeState = 'off'; // 'off' | 'connecting' | 'on' | 'reconnecting'
   let pendingRemoteRevision = 0; // hoisted: usato da flushRemoteSave/scheduleRemoteSave
+  let suppressNextAdminRemoteSave = false;
   // Stato init-public: tracciamo se siamo riusciti almeno una volta a leggere
   // i dati online. Serve per non sovrascrivere la cache locale con un null e
   // per sapere se l'errore visualizzato è "bootstrap" (mai connesso) o "deriva".
@@ -338,6 +339,8 @@
 
   // Patch dello store: commit locale immediato, broadcast HOT-PATH istantaneo + sync remoto in parallelo.
   store.save = function(mode, state){
+    const skipRemote = mode === 'admin' && suppressNextAdminRemoteSave;
+    if(skipRemote) suppressNextAdminRemoteSave = false;
     const result = originalSave(mode, state);
     if(isConfigured && mode === 'admin'){
       // Assegna una revisione monotona unica per questo save: condivisa tra broadcast e DB upsert.
@@ -345,14 +348,26 @@
       const rev = Date.now();
       // Marca lastLocalRevision: scarta automaticamente eventuali poll/eventi vecchi.
       markLocalRevision(rev);
-      // 1. BROADCAST IMMEDIATO (HOT-PATH): ~50ms a tutti i client connessi
+      // 1. BROADCAST IMMEDIATO (HOT-PATH): ~50ms a tutti i client connessi.
       try{ broadcastState(result, rev); }catch(_){}
-      // 2. SAVE SU DB IN PARALLELO: per persistenza + cold-path postgres_changes.
-      //    Per stati con partite live → flush immediato (no debounce).
-      const immediate = isCriticalState(result);
-      window.NG_LAST_REMOTE_SAVE = scheduleRemoteSave(result, {source:'store', immediate, revision: rev}).catch(err=>{ console.warn('Sync remoto non completato', err); return false; });
+      // 2. SAVE SU DB IN PARALLELO, salvo quando lo stesso stato è già stato
+      // confermato dal backend tramite NG_FORCE_REMOTE_SAVE.
+      if(skipRemote){
+        window.NG_LAST_REMOTE_SAVE = Promise.resolve(true);
+      }else{
+        const immediate = isCriticalState(result);
+        window.NG_LAST_REMOTE_SAVE = scheduleRemoteSave(result, {source:'store', immediate, revision: rev}).catch(err=>{ console.warn('Sync remoto non completato', err); return false; });
+      }
     }
     return result;
+  };
+
+  // Commit locale/broadcast senza una seconda richiesta remota. Va usato solo
+  // dopo che NG_FORCE_REMOTE_SAVE ha già confermato esattamente lo stesso stato.
+  window.NG_SAVE_LOCAL_AFTER_REMOTE = function(state){
+    suppressNextAdminRemoteSave = true;
+    try{return store.save('admin', state);}
+    finally{suppressNextAdminRemoteSave = false;}
   };
 
   window.NG_FORCE_REMOTE_SAVE = async function(state){
@@ -373,6 +388,16 @@
     if(!isConfigured || !isAdmin || !client) return true;
     const remote = await fetchRemote();
     return Boolean(remote && remote._simulationOperationId === operationId);
+  };
+
+
+  // Verifica forte per le eliminazioni editoriali: il frontend considera
+  // conclusa l'operazione soltanto quando il record remoto non contiene più l'ID.
+  window.NG_VERIFY_REMOTE_ARTICLE_ABSENT = async function(articleId){
+    if(!isConfigured || !isAdmin || !client) return true;
+    const remote = await fetchRemote();
+    const id = String(articleId || '');
+    return Boolean(remote && !(remote.articles || []).some(article=>String(article?.id || '') === id));
   };
 
   function flushWithTimeout(ms=3500){

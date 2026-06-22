@@ -11,6 +11,7 @@
   let deleteArticleId='';
   let deleteArticleTrigger=null;
   let previewTrigger=null;
+  let previewArticleId='';
   let suppressDirty=false;
 
   function allArticles(){return store.selectors.allArticles(Admin.state());}
@@ -215,14 +216,16 @@
   }
   async function waitForRemote(state,{timeout=10000}={}){
     const cfg=window.NEW_GENERATION_SUPABASE||{};
-    if(!cfg.ENABLED||typeof window.NG_FORCE_REMOTE_SAVE!=='function')return {online:false,ok:true};
+    if(!cfg.ENABLED)return {online:false,ok:true};
+    if(typeof window.NG_FORCE_REMOTE_SAVE!=='function')throw new Error('Servizio di sincronizzazione non disponibile. Ricarica la pagina e riprova.');
     let timer;
     try{
       const result=await Promise.race([
         window.NG_FORCE_REMOTE_SAVE(state),
         new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('La sincronizzazione online non ha risposto in tempo.')),timeout);})
       ]);
-      return {online:true,ok:result!==false};
+      if(result!==true)throw new Error('Il backend non ha confermato l’operazione. Verifica la sessione amministratore e riprova.');
+      return {online:true,ok:true};
     }finally{clearTimeout(timer);}
   }
   function syncOverlayLock(){
@@ -236,27 +239,58 @@
     const modal=$('#articlePreviewModal');
     if(!modal)return;
     previewTrigger=trigger||document.activeElement;
+    previewArticleId=articleById(article?.id)?.id||'';
     $('#articlePreviewModalTitle').textContent=article.title||'Anteprima articolo';
     $('#articlePreviewModalBody').innerHTML=UI.articleDetail(article,{preview:true});
+    const remove=$('#deleteArticleFromPreviewBtn');
+    if(remove){remove.hidden=!previewArticleId;remove.dataset.deleteArticlePreview=previewArticleId;}
     modal.classList.add('open');syncOverlayLock();
     requestAnimationFrame(()=>$('#closeArticlePreviewModal')?.focus());
   }
   function closePreview(){
-    const trigger=previewTrigger;previewTrigger=null;
+    const trigger=previewTrigger;previewTrigger=null;previewArticleId='';
+    const remove=$('#deleteArticleFromPreviewBtn');if(remove){remove.hidden=true;remove.dataset.deleteArticlePreview='';}
     $('#articlePreviewModal')?.classList.remove('open');syncOverlayLock();restoreTrigger(trigger);
   }
   function openDeleteDialog(id,trigger=null){
-    const article=articleById(id);if(!article)return;
-    deleteArticleId=id;deleteArticleTrigger=trigger||document.activeElement;
+    const normalizedId=String(id||'').trim();
+    const article=articleById(normalizedId);
+    if(!normalizedId||!article){Admin.flash('#articleMsg','Impossibile eliminare: identificativo articolo non valido.','error');return false;}
+    deleteArticleId=normalizedId;deleteArticleTrigger=trigger||document.activeElement;
     const dialog=$('#deleteArticleDialog');
     $('#deleteArticleDialogText').textContent=`Stai per eliminare “${article.title}”. L’operazione è irreversibile e l’articolo verrà rimosso anche dal sito pubblico.`;
     $('#deleteArticleDialogMsg').innerHTML='';
-    dialog.hidden=false;dialog.classList.add('show');syncOverlayLock();
-    $('#cancelDeleteArticleBtn')?.focus();
+    dialog.hidden=false;dialog.classList.add('show','open');syncOverlayLock();
+    requestAnimationFrame(()=>$('#cancelDeleteArticleBtn')?.focus());
+    return true;
   }
   function closeDeleteDialog(){
     const trigger=deleteArticleTrigger;deleteArticleTrigger=null;
-    const dialog=$('#deleteArticleDialog');dialog.classList.remove('show');dialog.hidden=true;deleteArticleId='';syncOverlayLock();restoreTrigger(trigger);
+    const dialog=$('#deleteArticleDialog');dialog.classList.remove('show','open');dialog.hidden=true;dialog.removeAttribute('aria-busy');deleteArticleId='';syncOverlayLock();restoreTrigger(trigger);
+  }
+  async function deleteArticlePersisted(id){
+    const previous=Admin.state();
+    const article=store.selectors.articleById(previous,id,{includeDrafts:true});
+    if(!article)throw new Error('L’articolo non esiste più o è già stato eliminato.');
+    const next=window.structuredClone?structuredClone(previous):JSON.parse(JSON.stringify(previous));
+    next.articles=(next.articles||[]).filter(item=>String(item.id)!==String(id));
+    if(next.articles.length===(previous.articles||[]).length)throw new Error('Identificativo articolo non valido.');
+    store.alignState(next);
+    const remote=await waitForRemote(next);
+    if(remote.online&&typeof window.NG_VERIFY_REMOTE_ARTICLE_ABSENT==='function'){
+      const verified=await window.NG_VERIFY_REMOTE_ARTICLE_ABSENT(id);
+      if(!verified)throw new Error('Il backend non ha confermato la cancellazione dell’articolo.');
+    }
+    try{
+      const saved=remote.online&&typeof window.NG_SAVE_LOCAL_AFTER_REMOTE==='function'?window.NG_SAVE_LOCAL_AFTER_REMOTE(next):store.save('admin',next);
+      refreshPublicCache(saved);
+      return {article,saved,remote};
+    }catch(error){
+      if(remote.online&&typeof window.NG_FORCE_REMOTE_SAVE==='function'){
+        try{await window.NG_FORCE_REMOTE_SAVE(previous);}catch(rollbackError){console.error('[Articoli] rollback remoto non riuscito',rollbackError);}
+      }
+      throw error;
+    }
   }
   function applyFormat(type){
     const textarea=$('#articleBody');if(!textarea)return;
@@ -300,6 +334,10 @@
     openPreview({...existing,...data,id:editingId||'preview',createdAt:existing?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()},event.currentTarget);
   });
   $('#closeArticlePreviewModal')?.addEventListener('click',closePreview);
+  $('#deleteArticleFromPreviewBtn')?.addEventListener('click',event=>{
+    event.preventDefault();event.stopPropagation();
+    if(previewArticleId)openDeleteDialog(previewArticleId,event.currentTarget);
+  });
   $('#articlePreviewModal')?.addEventListener('click',event=>{if(event.target.id==='articlePreviewModal')closePreview();});
   $('#cancelEditArticleBtn')?.addEventListener('click',()=>resetForm());
   $('#articleTitle')?.addEventListener('input',()=>{if(!slugTouched)$('#articleSlug').value=store.articleSlug($('#articleTitle').value);});
@@ -347,12 +385,12 @@
   });
 
   document.addEventListener('click',event=>{
-    const edit=event.target.closest('[data-edit-article]');
-    const preview=event.target.closest('[data-preview-article]');
-    const remove=event.target.closest('[data-delete-article]');
-    if(edit)fillForm(articleById(edit.dataset.editArticle));
-    if(preview){const article=articleById(preview.dataset.previewArticle);if(article)openPreview(article,preview);}
-    if(remove)openDeleteDialog(remove.dataset.deleteArticle,remove);
+    const action=event.target.closest('[data-edit-article],[data-preview-article],[data-delete-article]');
+    if(!action)return;
+    event.preventDefault();event.stopPropagation();
+    if(action.matches('[data-edit-article]')){fillForm(articleById(action.dataset.editArticle));return;}
+    if(action.matches('[data-preview-article]')){const article=articleById(action.dataset.previewArticle);if(article)openPreview(article,action);return;}
+    openDeleteDialog(action.dataset.deleteArticle,action);
   });
   $('#cancelDeleteArticleBtn')?.addEventListener('click',closeDeleteDialog);
   $('#deleteArticleDialog')?.addEventListener('click',event=>{if(event.target.id==='deleteArticleDialog')closeDeleteDialog();});
@@ -361,25 +399,29 @@
     if($('#deleteArticleDialog')?.classList.contains('show')){event.preventDefault();closeDeleteDialog();return;}
     if($('#articlePreviewModal')?.classList.contains('open')){event.preventDefault();closePreview();}
   });
-  $('#confirmDeleteArticleBtn')?.addEventListener('click',async()=>{
-    const id=deleteArticleId,article=articleById(id);if(!id||!article)return;
+  $('#confirmDeleteArticleBtn')?.addEventListener('click',async event=>{
+    event.preventDefault();event.stopPropagation();
+    const id=String(deleteArticleId||'').trim(),article=articleById(id);
+    if(!id||!article){$('#deleteArticleDialogMsg').innerHTML='<div class="message error">Articolo non disponibile o identificativo non valido.</div>';return;}
     const button=$('#confirmDeleteArticleBtn');if(window.NGInteractive?.isButtonBusy(button))return;
     window.NGInteractive?.setButtonBusy(button,true,'Eliminazione…');
-    const previous=Admin.state();
+    $('#deleteArticleDialog')?.setAttribute('aria-busy','true');
     try{
-      const saved=Admin.commit(state=>{state.articles=(state.articles||[]).filter(item=>item.id!==id);});
-      refreshPublicCache(saved);
+      const result=await deleteArticlePersisted(id);
       render();
       if(editingId===id)resetForm({force:true});
-      try{
-        await waitForRemote(saved);
-        closeDeleteDialog();Admin.flash('#articleMsg',`Articolo “${article.title}” eliminato.`);
-      }catch(error){
-        store.save('admin',previous);refreshPublicCache(previous);render();
-        $('#deleteArticleDialogMsg').innerHTML='<div class="message error">Eliminazione non confermata dal backend. L’articolo è stato ripristinato e puoi riprovare.</div>';
-      }
-    }catch(error){$('#deleteArticleDialogMsg').innerHTML=`<div class="message error">${UI.esc(error.message||String(error))}</div>`;}
-    finally{window.NGInteractive?.setButtonBusy(button,false);}
+      const previewWasOpen=previewArticleId===id&&$('#articlePreviewModal')?.classList.contains('open');
+      closeDeleteDialog();
+      if(previewWasOpen)closePreview();
+      Admin.flash('#articleMsg',`Articolo “${result.article.title}” eliminato e sincronizzato.`);
+      console.info('[Articoli]',{action:'delete',articleId:id,remote:result.remote.online?'confirmed':'offline-local'});
+    }catch(error){
+      console.warn('[Articoli] eliminazione fallita',{articleId:id,error:String(error?.message||error)});
+      $('#deleteArticleDialogMsg').innerHTML=`<div class="message error">${UI.esc(error.message||String(error))} L’articolo non è stato rimosso e puoi riprovare.</div>`;
+    }finally{
+      $('#deleteArticleDialog')?.removeAttribute('aria-busy');
+      window.NGInteractive?.setButtonBusy(button,false);
+    }
   });
 
   window.addEventListener('beforeunload',event=>{if(!isDirty())return;event.preventDefault();event.returnValue='';});
