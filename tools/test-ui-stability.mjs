@@ -10,7 +10,7 @@ const here=path.dirname(fileURLToPath(import.meta.url));
 const root=path.resolve(here,'..');
 const chromium=process.env.CHROMIUM_BIN || '/usr/bin/chromium';
 const pages=['index.html','admin.html','admin-rules.html','admin-groups.html','admin-teams.html','admin-players.html','admin-matches.html','admin-articles.html','admin-photos.html','admin-reports.html','admin-customize.html','print.html','404.html'];
-const widths=[320,360,375,390,412,480,768,1024,1280,1440,1920];
+const widths=[320,360,375,390,412,430,480,768,1024,1280,1440,1920];
 const results=[];
 const runtimeErrors=[];
 const localNetworkErrors=[];
@@ -226,6 +226,139 @@ async function testResponsive(){
   }
   record('Responsive e overflow orizzontale',failures.length===0,failures.length?failures.join('; '):widths.map(w=>`${w}px`).join(', '));
 }
+async function testArticleAndPhotoAcceptance(){
+  const targetWidths=[320,375,430,768,1024,1280,1440];
+  const articleSamples=[];
+  const photoSamples=[];
+  const failures=[];
+
+  await setViewport(1280,900);await navigate('index.html');await seedState();
+  await evaluate(`(()=>{
+    const store=NexoraStore;
+    for(const scope of ['public','admin']){
+      const state=store.load(scope);
+      const article=state.articles.find(item=>item.id==='article_1');
+      if(article)article.title='Campioni!';
+      store.save(scope,state);
+    }
+    return true;
+  })()`);
+
+  for(const width of targetWidths){
+    await setViewport(width,width<=430?780:900);await navigate('index.html');await click('[data-tab="articles"]');await click('[data-article-open="article_1"]');await delay(80);
+    const sample=await evaluate(`(()=>{
+      const root=document.querySelector('#articleModalBody .article-detail-editorial');
+      const header=root?.querySelector('.article-detail-header');
+      const heading=root?.querySelector('.article-detail-heading');
+      const title=root?.querySelector('h1');
+      const category=root?.querySelector('.article-detail-category');
+      const meta=root?.querySelector('.article-detail-meta-panel');
+      const modal=document.querySelector('.article-modal-content');
+      const rect=el=>el?.getBoundingClientRect();
+      const intersects=(a,b)=>!!(a&&b&&a.left<b.right-1&&a.right>b.left+1&&a.top<b.bottom-1&&a.bottom>b.top+1);
+      const tokenRects=[];
+      if(title?.firstChild?.nodeType===Node.TEXT_NODE){
+        const text=title.firstChild.data;
+        for(const match of text.matchAll(/\\S+/g)){
+          const range=document.createRange();range.setStart(title.firstChild,match.index);range.setEnd(title.firstChild,match.index+match[0].length);
+          tokenRects.push({token:match[0],lines:range.getClientRects().length});
+        }
+      }
+      const hr=rect(header),hgr=rect(heading),tr=rect(title),cr=rect(category),mr=rect(meta);
+      const cs=title?getComputedStyle(title):null;
+      return {
+        width:innerWidth,title:title?.textContent||'',tokenRects,
+        wordBreak:cs?.wordBreak||'',overflowWrap:cs?.overflowWrap||'',hyphens:cs?.hyphens||'',fontSize:cs?.fontSize||'',
+        docOverflow:document.documentElement.scrollWidth-document.documentElement.clientWidth,
+        modalOverflow:modal?modal.scrollWidth-modal.clientWidth:999,
+        overlap:intersects(hgr,mr),
+        contained:[hgr,tr,cr,mr].filter(Boolean).every(r=>hr&&r.left>=hr.left-1&&r.right<=hr.right+1),
+        metaRows:root?.querySelectorAll('.article-detail-meta > *').length||0
+      };
+    })()`);
+    articleSamples.push(sample);
+    const ok=sample.title==='Campioni!'&&sample.tokenRects.every(row=>row.lines===1)&&sample.wordBreak==='normal'&&['normal','break-word'].includes(sample.overflowWrap)&&sample.hyphens==='none'&&sample.docOverflow<=1&&sample.modalOverflow<=1&&!sample.overlap&&sample.contained&&sample.metaRows>=4;
+    if(!ok)failures.push(`Articolo ${width}px: ${JSON.stringify(sample)}`);
+    await click('#closeArticleModal');
+  }
+
+  for(const width of targetWidths){
+    await setViewport(width,width<=430?780:900);await navigate('index.html');await click('[data-tab="articles"]');await click('[data-article-open="article_2"]');await delay(80);
+    const sample=await evaluate(`(()=>{
+      const root=document.querySelector('#articleModalBody .article-detail-editorial');
+      const title=root?.querySelector('h1');
+      const body=root?.querySelector('.article-full-text');
+      const modal=document.querySelector('.article-modal-content');
+      const normalTokens=[];
+      if(title?.firstChild?.nodeType===Node.TEXT_NODE){
+        const text=title.firstChild.data;
+        for(const match of text.matchAll(/\\S+/g)){
+          if(match[0].length>28)continue;
+          const range=document.createRange();range.setStart(title.firstChild,match.index);range.setEnd(title.firstChild,match.index+match[0].length);
+          normalTokens.push({token:match[0],lines:range.getClientRects().length});
+        }
+      }
+      return {width:innerWidth,normalTokens,docOverflow:document.documentElement.scrollWidth-document.documentElement.clientWidth,modalOverflow:modal?modal.scrollWidth-modal.clientWidth:999,bodyOverflow:body?body.scrollWidth-body.clientWidth:999};
+    })()`);
+    articleSamples.push({...sample,case:'contenuto-lungo'});
+    const ok=sample.normalTokens.length>0&&sample.normalTokens.every(row=>row.lines===1)&&sample.docOverflow<=1&&sample.modalOverflow<=1&&sample.bodyOverflow<=1;
+    if(!ok)failures.push(`Contenuto articolo ${width}px: ${JSON.stringify(sample)}`);
+    await click('#closeArticleModal');
+  }
+
+  await setViewport(1280,900);await navigate('admin-photos.html');
+  await evaluate(`(()=>{
+    const pixel='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+    const sample={id:'acceptance-logo',path:'acceptance/logo-ufficiale.png',publicId:'acceptance/logo-ufficiale',teamId:'team_a',title:'Logo ufficiale della squadra con un titolo descrittivo molto lungo',name:'logo-ufficiale.png',originalName:'nome-file-logo-ufficiale-estremamente-lungo-per-verificare-ellissi-e-contenimento.png',description:'Descrizione molto lunga usata per verificare il ritorno a capo controllato senza invadere anteprima, informazioni o pulsanti della scheda amministrativa.',album:'Loghi ufficiali',altText:'Logo ufficiale della squadra Aurora FC',size:204800,width:1200,height:800,ts:Date.now(),thumbUrl:pixel,originalUrl:pixel,url:pixel};
+    window.NexoraPhotos.listTeamPhotos=()=>[sample];
+    window.NexoraPhotos.originalDownloadUrl=()=>pixel;
+    return true;
+  })()`);
+  await click('[data-team-pick="team_a"]');
+  await waitFor(()=>evaluate(`document.querySelector('.photo-admin-card img')?.complete===true`),{label:'card foto acceptance'});
+
+  for(const width of targetWidths){
+    await setViewport(width,width<=430?900:1000);await delay(420);
+    const sample=await evaluate(`(()=>{
+      const card=document.querySelector('.photo-admin-card');
+      const media=card?.querySelector('.photo-card-media');
+      const content=card?.querySelector('.photo-card-content');
+      const actions=card?.querySelector('.photo-card-actions');
+      const image=card?.querySelector('img');
+      const grid=document.querySelector('#photosGrid');
+      const logo=document.querySelector('.photos-team-logo-slot');
+      const copy=document.querySelector('.photos-team-copy');
+      const rect=el=>el?.getBoundingClientRect();
+      const intersects=(a,b)=>!!(a&&b&&a.left<b.right-1&&a.right>b.left+1&&a.top<b.bottom-1&&a.bottom>b.top+1);
+      const mr=rect(media),cr=rect(content),ar=rect(actions),lr=rect(logo),tr=rect(copy);
+      const buttons=[...card.querySelectorAll('.photo-card-actions .btn')];
+      return {
+        width:innerWidth,
+        docOverflow:document.documentElement.scrollWidth-document.documentElement.clientWidth,
+        cardOverflow:card?card.scrollWidth-card.clientWidth:999,
+        objectFit:image?getComputedStyle(image).objectFit:'',alt:image?.alt||'',
+        mediaBeforeContent:!!(mr&&cr&&mr.bottom<=cr.top+1),
+        mediaBeforeActions:!!(mr&&ar&&mr.bottom<=ar.top+1),
+        logoTextOverlap:intersects(lr,tr),
+        actionHeights:buttons.map(button=>Math.round(button.getBoundingClientRect().height)),
+        actionMinHeights:buttons.map(button=>getComputedStyle(button).minHeight),
+        actionTransforms:buttons.map(button=>getComputedStyle(button).transform),
+        cardTransform:getComputedStyle(card).transform,
+        deletePosition:getComputedStyle(card.querySelector('.photo-card-delete')).position,
+        columns:getComputedStyle(grid).gridTemplateColumns,
+        cards:grid.querySelectorAll('.photo-admin-card').length,
+        hasCopy:!!card.querySelector('[data-photo-copy]'),hasReplace:!!card.querySelector('[data-photo-replace]'),hasEdit:!!card.querySelector('[data-photo-edit]'),hasDelete:!!card.querySelector('[data-delete-photo]')
+      };
+    })()`);
+    photoSamples.push(sample);
+    const oneColumn=width>600||!sample.columns.trim().includes(' ');
+    const ok=sample.docOverflow<=1&&sample.cardOverflow<=1&&sample.objectFit==='contain'&&Boolean(sample.alt)&&sample.mediaBeforeContent&&sample.mediaBeforeActions&&!sample.logoTextOverlap&&sample.actionHeights.length===7&&sample.actionHeights.every(height=>height>=44)&&sample.deletePosition!=='absolute'&&sample.cards===1&&sample.hasCopy&&sample.hasReplace&&sample.hasEdit&&sample.hasDelete&&oneColumn;
+    if(!ok)failures.push(`Foto ${width}px: ${JSON.stringify(sample)}`);
+  }
+
+  record('Criteri UI Articoli/Foto alle larghezze richieste',failures.length===0,failures.length?failures.join(' | '):JSON.stringify({widths:targetWidths,articleSamples,photoSamples}));
+}
+
 async function testTeamLogoRendering(){
   const failures=[];
   const samples=[];
@@ -482,7 +615,7 @@ async function testArticlesEndToEnd(){
   await click('#articlePreviewBtn');modal=await overlayState('#articlePreviewModal');
   const preview=await evaluate(`({open:document.querySelector('#articlePreviewModal')?.classList.contains('open'),title:document.querySelector('#articlePreviewModalBody h1')?.textContent||'',imgAlt:document.querySelector('#articlePreviewModalBody img')?.alt||'',editorial:!!document.querySelector('#articlePreviewModalBody .article-detail-editorial')})`);
   add('anteprima amministratore',modal.open&&modal.bodyLocked&&preview.title==='Nuovo articolo end to end'&&preview.imgAlt==='Quadrato di prova'&&preview.editorial,JSON.stringify({modal,preview}));await pressKey('Escape');
-  const previewClosed=await waitFor(()=>evaluate(`(()=>({closed:!document.querySelector('#articlePreviewModal').classList.contains('open'),unlocked:!document.body.classList.contains('ng-overlay-open'),focus:document.activeElement===document.querySelector('#articlePreviewBtn')}))()`),{label:'chiusura anteprima amministratore'});
+  const previewClosed=await waitFor(()=>evaluate(`(()=>{const state={closed:!document.querySelector('#articlePreviewModal').classList.contains('open'),unlocked:!document.body.classList.contains('ng-overlay-open'),focus:document.activeElement===document.querySelector('#articlePreviewBtn')};return state.closed&&state.unlocked&&state.focus?state:false;})()`),{label:'chiusura anteprima amministratore'});
   add('anteprima: Escape e ritorno focus',previewClosed.closed&&previewClosed.unlocked&&previewClosed.focus,JSON.stringify(previewClosed));
   await click('#articleSubmitBtn');
   await waitFor(()=>evaluate(`NexoraStore.selectors.allArticles(NexoraStore.load('admin')).some(a=>a.title==='Nuovo articolo end to end')`),{label:'create draft article'});
@@ -678,8 +811,11 @@ async function run(){
   fixtureRoot=prepareFileFixture();baseUrl='inline://';
   await launchBrowser();
   const articlesOnly=process.argv.includes('--articles-only');
+  const acceptanceOnly=process.argv.includes('--acceptance-only');
   try{
-    if(articlesOnly){
+    if(acceptanceOnly){
+      await testArticleAndPhotoAcceptance();
+    }else if(articlesOnly){
       await testArticlesEndToEnd();
     }else{
       await testPageLoads();
@@ -700,7 +836,7 @@ async function run(){
     if(server)await new Promise(resolve=>server.close(resolve));
     try{if(fixtureRoot)fs.rmSync(fixtureRoot,{recursive:true,force:true});}catch{}
   }
-  console.log(JSON.stringify({root,pages:pages.length,widths,mode:articlesOnly?'articles':'ui',results,runtimeErrors,localNetworkErrors},null,2));
+  console.log(JSON.stringify({root,pages:pages.length,widths,mode:acceptanceOnly?'acceptance':(articlesOnly?'articles':'ui'),results,runtimeErrors,localNetworkErrors},null,2));
   if(results.some(r=>r.result==='FAIL'))process.exitCode=1;
 }
 run().catch(error=>{console.error(error.stack||error);try{browser?.kill('SIGTERM');}catch{}try{server?.close();}catch{}process.exit(1);});

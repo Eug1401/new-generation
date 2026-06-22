@@ -1,5 +1,5 @@
 // =============================================================
-// New Generation — admin-photos.js (v126.16 rete/upload affidabile)
+// New Generation — admin-photos.js (v126.18 UI Articoli/Foto)
 // =============================================================
 // Funzionalità:
 //   - Drag&drop area per upload
@@ -155,27 +155,40 @@
     const wrap = UI.$('#photosTeamList');
     if(!wrap) return;
     if(!s.teams.length){
-      wrap.innerHTML = '<div class="empty small">Aggiungi prima delle squadre nella sezione "Squadre".</div>';
+      wrap.innerHTML = '<div class="empty small">Aggiungi prima delle squadre nella sezione “Squadre”.</div>';
       return;
     }
-    // Calcolo totale foto + dimensione bucket
     const photoMap = Photos.getTeamPhotoMap ? Photos.getTeamPhotoMap(s) : (s.teamPhotos || {});
     const totalPhotos = Object.values(photoMap||{}).reduce((sum,arr)=>sum+(arr?.length||0), 0);
     const totalBytes = Object.values(photoMap||{}).flat().reduce((sum,p)=>sum+(p?.size||0), 0);
 
-    wrap.innerHTML = `<div class="team-list-summary">
-      <span class="pill">📷 ${totalPhotos} foto · ${formatSize(totalBytes)}</span>
+    wrap.innerHTML = `<div class="team-list-summary" aria-label="Riepilogo archivio">
+      <span class="pill">${totalPhotos} foto · ${formatSize(totalBytes)}</span>
     </div>
     <div class="team-pick-grid">${s.teams.map(t=>{
       const count = (photoMap?.[t.id]||[]).length;
       const active = t.id===selectedTeam ? ' active' : '';
       const hasPhotos = count > 0 ? ' has-photos' : '';
-      return `<button type="button" class="team-pick-btn${active}${hasPhotos}" data-team-pick="${UI.esc(t.id)}">
-        ${UI.logo(t,false)}
-        <span class="team-pick-name">${UI.esc(t.name)}</span>
-        <span class="team-pick-meta">${count > 0 ? count+' foto' : 'Nessuna'}</span>
+      return `<button type="button" class="team-pick-btn${active}${hasPhotos}" data-team-pick="${UI.esc(t.id)}"${t.id===selectedTeam?' aria-current="true"':''}>
+        <span class="team-pick-logo" aria-hidden="true">${UI.logo(t,false)}</span>
+        <span class="team-pick-copy"><span class="team-pick-name" title="${UI.esc(t.name)}">${UI.esc(t.name)}</span><span class="team-pick-meta">${count > 0 ? count+' foto' : 'Nessuna foto'}</span></span>
       </button>`;
     }).join('')}</div>`;
+  }
+
+  function photoLooksLikeLogo(photo){
+    const context=[photo?.album,photo?.title,photo?.name,photo?.description].filter(Boolean).join(' ');
+    return /(?:^|[\s_\-])(logo|stemma|marchio|crest)(?:$|[\s_\-])/i.test(context);
+  }
+
+  function formatPhotoDate(value){
+    const date=new Date(Number(value)||value||'');
+    if(Number.isNaN(date.getTime()))return '';
+    return new Intl.DateTimeFormat('it-IT',{day:'2-digit',month:'short',year:'numeric'}).format(date);
+  }
+
+  function photoCardSignature(photo){
+    return [photo?.path,photo?.ts,photo?.title,photo?.name,photo?.description,photo?.caption,photo?.altText,photo?.album,photo?.order,photo?.size,photo?.width,photo?.height,photo?.thumbUrl,photo?.originalUrl].map(value=>String(value??'')).join('¦');
   }
 
   // -------------------- Workspace --------------------
@@ -183,157 +196,114 @@
     const title = UI.$('#photosTitle');
     const subtitle = UI.$('#photosSubtitle');
     const count = UI.$('#photosCount');
+    const logo = UI.$('#photosTeamLogo');
     const uploadArea = UI.$('#photosUploadArea');
     const grid = UI.$('#photosGrid');
     if(!title || !uploadArea || !grid) return;
 
     if(!selectedTeam){
       title.textContent = 'Foto squadra';
-      subtitle.textContent = 'Scegli una squadra a sinistra per iniziare.';
+      subtitle.textContent = 'Scegli una squadra per iniziare.';
+      if(logo)logo.innerHTML='';
       if(count) count.textContent = '0';
       uploadArea.hidden = true;
-      grid.innerHTML = '<div class="empty">Nessuna squadra selezionata.</div>';
+      grid.innerHTML = '<div class="empty photos-empty"><div class="empty-icon" aria-hidden="true">▧</div><div>Seleziona una squadra per visualizzare l’archivio.</div></div>';
+      grid.dataset.renderKey = '';
       return;
     }
     const team = s.teams.find(t=>t.id===selectedTeam);
     if(!team) return;
     const photos = Photos.listTeamPhotos(s, team.id);
-    title.innerHTML = `${UI.logo(team,false)} ${UI.esc(team.name)}`;
+    title.textContent = team.name;
+    if(logo)logo.innerHTML=UI.logo(team,false);
     subtitle.textContent = photos.length
-      ? `${photos.length} foto · ${formatSize(photos.reduce((s,p)=>s+(p.size||0),0))}`
-      : 'Nessuna foto caricata: trascina i file qui sotto o usa il pulsante.';
+      ? `${photos.length} foto · ${formatSize(photos.reduce((sum,p)=>sum+(p.size||0),0))}`
+      : 'Nessuna immagine caricata: aggiungi la prima usando l’area sottostante.';
     if(count) count.textContent = String(photos.length);
     uploadArea.hidden = false;
 
     if(!photos.length){
-      grid.innerHTML = '<div class="empty photos-empty"><div class="empty-icon">📷</div><div>Nessuna foto caricata per questa squadra.</div><small>Carica la prima foto usando il pulsante sopra o trascinando i file nell\'area di upload.</small></div>';
-      grid.dataset.renderKey = '';
+      grid.innerHTML = '<div class="empty photos-empty"><div class="empty-icon" aria-hidden="true">▧</div><div>Nessuna immagine caricata per questa squadra.</div><small>Trascina un file nell’area di caricamento oppure scegli un’immagine dal dispositivo.</small></div>';
+      grid.dataset.renderKey = `${team.id}|empty`;
       return;
     }
 
-    // Rendering idempotente: vedi commento esteso in public.js renderPhotos.
-    // Riduce drasticamente il flicker e le richieste HTTP duplicate quando
-    // arrivano update remoti che non toccano le foto.
-    const renderKey = team.id + '|' + photos.map(p=>p.path).join(',') + '|sel:' + Array.from(selectedPhotos).sort().join(',');
+    const renderKey = team.id + '|' + photos.map(photoCardSignature).join('§') + '|sel:' + Array.from(selectedPhotos).sort().join(',');
     if(grid.dataset.renderKey === renderKey){
-      const byPath = new Map();
-      grid.querySelectorAll('.photo-thumb[data-photo-path]').forEach(el => byPath.set(el.dataset.photoPath, el));
-      photos.forEach((p, i) => {
-        const el = byPath.get(p.path);
-        if(!el) return;
-        el.dataset.photoIndex = i;
-        const img = el.querySelector('img[data-src]');
-        const nextSrc = p.thumbUrl || p.url || '';
-        const nextFallback = p.originalUrl || p.url || '';
-        if(img){
-          img.dataset.photoOpen = i;
-          const changed = img.dataset.src !== nextSrc || img.dataset.fallbackSrc !== nextFallback;
-          if(changed){
-            img.dataset.src = nextSrc;
-            img.dataset.fallbackSrc = nextFallback;
-            img.dataset.previewSrc = nextSrc;
-            img.dataset.originalSrc = nextFallback;
-            img.dataset.photoVersion = String(p.ts || p.path || i);
-          }
-          attachSmartImageRetry(img, {force: changed || el.classList.contains('is-broken')});
-        }
-      });
+      grid.querySelectorAll('img[data-src]').forEach(img=>attachSmartImageRetry(img));
       return;
-    }
-
-    const prevKey = grid.dataset.renderKey || '';
-    const prevTeamId = prevKey.split('|')[0];
-    const sameTeam = prevTeamId === team.id && prevKey !== '';
-    const existingByPath = new Map();
-    if(sameTeam){
-      grid.querySelectorAll('.photo-thumb[data-photo-path]').forEach(el => {
-        existingByPath.set(el.dataset.photoPath, el);
-      });
     }
 
     function buildAdminThumb(p, i){
       const isSelected = selectedPhotos.has(p.path);
+      const isLogo = photoLooksLikeLogo(p);
       const loadStrategy = i < 6 ? 'loading="eager" fetchpriority="high"' : 'loading="lazy"';
-      const imgSrc = UI.esc(p.thumbUrl||p.url);
-      const fallbackSrc = UI.esc(p.originalUrl||p.url);
+      const imgSrc = UI.esc(p.thumbUrl||p.url||p.originalUrl||'');
+      const fallbackSrc = UI.esc(p.originalUrl||p.url||p.thumbUrl||'');
       const thumbPathAttr = p.thumbPath ? ` data-thumb-path="${UI.esc(p.thumbPath)}"` : '';
+      const displayName=String(p.title||p.name||`Immagine ${i+1}`);
+      const fileName=String(p.originalName||p.name||'File senza nome');
+      const description=String(p.description||p.caption||'Nessuna descrizione inserita.');
+      const altText=String(p.altText||p.title||p.name||`Immagine ${i+1} della squadra ${team.name}`);
+      const dimensions=p.width&&p.height?`${p.width} × ${p.height}`:'Dimensioni non disponibili';
+      const uploaded=formatPhotoDate(p.ts||p.createdAt||p.updatedAt);
+      const displayUrl=String(p.originalUrl||p.url||p.path||'URL non disponibile');
       const fig = document.createElement('figure');
-      fig.className = 'photo-thumb admin is-loading' + (isSelected ? ' is-selected' : '');
+      fig.className = `photo-thumb admin photo-admin-card is-loading${isSelected?' is-selected':''}${isLogo?' is-logo':''}`;
       fig.dataset.photoPath = p.path;
       fig.dataset.photoIndex = i;
       fig.style.setProperty('--enter-delay', Math.min(i*12, 150) + 'ms');
       fig.innerHTML = `
-        <div class="photo-img-wrap">
-          <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" data-photo-managed="1" data-src="${imgSrc}" data-fallback-src="${fallbackSrc}" data-preview-src="${imgSrc}" data-original-src="${fallbackSrc}" data-photo-version="${UI.esc(String(p.ts||p.path||i))}"${thumbPathAttr} data-retries="0" alt="" ${loadStrategy} decoding="async" data-photo-open="${i}" />
+        <div class="photo-card-media">
+          <button type="button" class="photo-preview-button" data-photo-open="${i}" aria-label="Apri anteprima: ${UI.esc(displayName)}">
+            <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" data-photo-managed="1" data-src="${imgSrc}" data-fallback-src="${fallbackSrc}" data-preview-src="${imgSrc}" data-original-src="${fallbackSrc}" data-photo-version="${UI.esc(String(p.ts||p.path||i))}"${thumbPathAttr} data-retries="0" alt="${UI.esc(altText)}" ${loadStrategy} decoding="async" />
+          </button>
           <div class="photo-status photo-status-loading" aria-hidden="true">
             <span class="photo-status-dots"><span></span><span></span><span></span></span>
-            <span class="photo-status-text">Recupero dati, attendere…</span>
+            <span class="photo-status-text">Caricamento anteprima…</span>
           </div>
-          <div class="photo-status photo-status-error" aria-hidden="true">
-            <span class="photo-status-icon">📷</span>
-            <span class="photo-status-text">Foto non disponibile</span>
-            <button type="button" class="photo-status-retry" data-photo-retry aria-label="Riprova caricamento">Riprova</button>
-          </div>
-          <div class="photo-overlay">
-            <button type="button" class="photo-action-btn photo-zoom" data-photo-open="${i}" aria-label="Visualizza foto originale" title="Visualizza">🔍</button>
-            <button type="button" class="photo-action-btn photo-select" data-photo-select="${UI.esc(p.path)}" aria-label="Seleziona" title="Seleziona">${isSelected?'✓':'○'}</button>
-            <button type="button" class="photo-action-btn" data-photo-edit="${UI.esc(p.path)}" aria-label="Modifica metadati" title="Modifica metadati">✎</button>
-            <button type="button" class="photo-action-btn" data-photo-replace="${UI.esc(p.path)}" aria-label="Sostituisci originale" title="Sostituisci originale">↻</button>
-            <a class="photo-action-btn" href="${UI.esc(Photos.originalDownloadUrl(p))}" download="${UI.esc(p.name)}" data-admin-photo-download aria-label="Scarica originale" title="Scarica originale">⬇</a>
+          <div class="photo-status photo-status-error" role="status">
+            <span class="photo-status-icon" aria-hidden="true">▧</span>
+            <span class="photo-status-text">Anteprima non disponibile</span>
+            <button type="button" class="photo-status-retry" data-photo-retry>Riprova</button>
           </div>
         </div>
-        <figcaption>
-          <span class="photo-name" title="${UI.esc(p.name)}">${UI.esc(p.title||p.name)}</span>
-          <small>${p.width&&p.height?`${p.width}×${p.height} · `:''}${formatSize(p.size)}</small>
-        </figcaption>
-        <button type="button" class="photo-delete-btn" data-delete-photo="${UI.esc(p.path)}" aria-label="Elimina foto" title="Elimina">×</button>`;
+        <figcaption class="photo-card-content">
+          <div class="photo-card-heading">
+            <div class="photo-card-title-wrap">
+              <strong class="photo-name" title="${UI.esc(displayName)}">${UI.esc(displayName)}</strong>
+              <span class="photo-kind-badge">${isLogo?'Logo':'Foto'}</span>
+            </div>
+            ${isSelected?'<span class="photo-selected-badge">Selezionata</span>':''}
+          </div>
+          <p class="photo-card-description" title="${UI.esc(description)}">${UI.esc(description)}</p>
+          <dl class="photo-file-info">
+            <div><dt>File</dt><dd title="${UI.esc(fileName)}">${UI.esc(fileName)}</dd></div>
+            <div><dt>Dimensioni</dt><dd>${UI.esc(dimensions)}</dd></div>
+            <div><dt>Peso</dt><dd>${formatSize(p.size)}</dd></div>
+            ${uploaded?`<div><dt>Caricata</dt><dd>${UI.esc(uploaded)}</dd></div>`:''}
+          </dl>
+          <div class="photo-url-row">
+            <span>URL</span>
+            <code title="${UI.esc(displayUrl)}">${UI.esc(displayUrl)}</code>
+          </div>
+          <div class="photo-card-actions" role="group" aria-label="Azioni per ${UI.esc(displayName)}">
+            <button type="button" class="btn small" data-photo-open="${i}">Anteprima</button>
+            <button type="button" class="btn small${isSelected?' primary':''}" data-photo-select="${UI.esc(p.path)}">${isSelected?'Deseleziona':'Seleziona'}</button>
+            <button type="button" class="btn small" data-photo-edit="${UI.esc(p.path)}">Modifica</button>
+            <button type="button" class="btn small" data-photo-replace="${UI.esc(p.path)}">Sostituisci</button>
+            <button type="button" class="btn small" data-photo-copy="${UI.esc(p.path)}">Copia URL</button>
+            <a class="btn small" href="${UI.esc(Photos.originalDownloadUrl(p))}" download="${UI.esc(fileName)}" data-admin-photo-download>Scarica</a>
+            <button type="button" class="btn small danger photo-card-delete" data-delete-photo="${UI.esc(p.path)}">Elimina</button>
+          </div>
+        </figcaption>`;
       return fig;
     }
 
-    if(!sameTeam || existingByPath.size === 0){
-      const frag = document.createDocumentFragment();
-      photos.forEach((p,i) => frag.appendChild(buildAdminThumb(p, i)));
-      grid.innerHTML = '';
-      grid.appendChild(frag);
-    } else {
-      // Diff in-place SENZA innerHTML='' (preserva nodi e img in caricamento)
-      existingByPath.forEach((el, path) => {
-        if(!photos.find(p => p.path === path)) el.remove();
-      });
-      photos.forEach((p, i) => {
-        let el = existingByPath.get(p.path);
-        const refNode = grid.children[i] || null;
-        if(el){
-          if(refNode !== el) grid.insertBefore(el, refNode);
-          el.dataset.photoIndex = i;
-          const img = el.querySelector('img[data-src]');
-          const nextSrc = p.thumbUrl || p.url || '';
-          const nextFallback = p.originalUrl || p.url || '';
-          if(img){
-            img.dataset.photoOpen = i;
-            const changed = img.dataset.src !== nextSrc || img.dataset.fallbackSrc !== nextFallback;
-            if(changed){
-              img.dataset.src = nextSrc;
-              img.dataset.fallbackSrc = nextFallback;
-              img.dataset.previewSrc = nextSrc;
-              img.dataset.originalSrc = nextFallback;
-              img.dataset.photoVersion = String(p.ts || p.path || i);
-            }
-            attachSmartImageRetry(img, {force: changed || el.classList.contains('is-broken')});
-          }
-          // Aggiorna stato selezione senza distruggere
-          const isSelected = selectedPhotos.has(p.path);
-          el.classList.toggle('is-selected', isSelected);
-          const selBtn = el.querySelector('[data-photo-select]');
-          if(selBtn) selBtn.textContent = isSelected ? '✓' : '○';
-        } else {
-          el = buildAdminThumb(p, i);
-          grid.insertBefore(el, refNode);
-        }
-      });
-    }
+    const frag = document.createDocumentFragment();
+    photos.forEach((photo,index)=>frag.appendChild(buildAdminThumb(photo,index)));
+    grid.replaceChildren(frag);
     grid.dataset.renderKey = renderKey;
-    // Smart retry per immagini lente/errori transitori
     grid.querySelectorAll('img[data-src]').forEach(img => attachSmartImageRetry(img));
   }
 
@@ -388,6 +358,15 @@
       const files=Array.from(event.dataTransfer?.files||[]);
       if(!selectedTeam){flashMsg('Seleziona prima una squadra.','warn');return;}
       uploadFiles(files).catch(error=>flashMsg(Photos.userMessage(error),'error'));
+    });
+    dropZone.addEventListener('click',event=>{
+      if(event.target.closest('button')||uploadInProgress)return;
+      UI.$('#photosFileInput')?.click();
+    });
+    dropZone.addEventListener('keydown',event=>{
+      if(event.target.closest('button')||uploadInProgress||!['Enter',' '].includes(event.key))return;
+      event.preventDefault();
+      UI.$('#photosFileInput')?.click();
     });
   }
 
@@ -702,6 +681,30 @@
     return Photos.listTeamPhotos(A.state(),selectedTeam).find(photo=>[photo.path,photo.publicId,photo.id].includes(path));
   }
 
+  async function writeClipboard(text){
+    const value=String(text||'').trim();
+    if(!value)throw new Error('URL non disponibile.');
+    if(navigator.clipboard?.writeText){
+      try{await navigator.clipboard.writeText(value);return;}
+      catch(_){/* fallback compatibile con contesti non sicuri */}
+    }
+    const field=document.createElement('textarea');
+    field.value=value;field.setAttribute('readonly','');field.style.position='fixed';field.style.opacity='0';
+    document.body.appendChild(field);field.select();
+    const copied=document.execCommand?.('copy');field.remove();
+    if(!copied)throw new Error('Impossibile copiare automaticamente l’URL.');
+  }
+
+  async function copyPhotoUrl(path,trigger){
+    const photo=photoByPath(path);
+    if(!photo){flashMsg('Immagine non trovata.','error');return;}
+    const url=photo.originalUrl||photo.url||photo.largeUrl||Photos.originalDownloadUrl(photo);
+    if(trigger)trigger.disabled=true;
+    try{await writeClipboard(url);flashMsg('URL originale copiato negli appunti.','ok');}
+    catch(error){flashMsg(error.message||'Impossibile copiare l’URL.','error');}
+    finally{if(trigger)trigger.disabled=false;}
+  }
+
   function ensurePhotoEditor(){
     if(UI.$('#photoMetadataModal'))return;
     const modal=document.createElement('div');
@@ -877,6 +880,8 @@
     if(editBtn){e.preventDefault();e.stopPropagation();openPhotoEditor(editBtn.dataset.photoEdit,editBtn);return;}
     const replaceBtn=e.target.closest('[data-photo-replace]');
     if(replaceBtn){e.preventDefault();e.stopPropagation();replacePhoto(replaceBtn.dataset.photoReplace,replaceBtn);return;}
+    const copyBtn=e.target.closest('[data-photo-copy]');
+    if(copyBtn){e.preventDefault();e.stopPropagation();copyPhotoUrl(copyBtn.dataset.photoCopy,copyBtn);return;}
     if(e.target.closest('[data-close-photo-editor]')){e.preventDefault();closePhotoEditor();return;}
     const selectBtn = e.target.closest('[data-photo-select]');
     if(selectBtn){
