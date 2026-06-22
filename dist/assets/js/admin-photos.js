@@ -1,10 +1,10 @@
 // =============================================================
-// New Generation — admin-photos.js (v91 UI ottimizzata)
+// New Generation — admin-photos.js (v126.16 rete/upload affidabile)
 // =============================================================
 // Funzionalità:
 //   - Drag&drop area per upload
 //   - Preview con thumbnail prima dell'upload
-//   - Compressione client con barra di progresso per ogni file
+//   - Originali invariati con stato per ogni file e retry selettivo
 //   - Grid con selezione multipla e eliminazione batch
 //   - Lightbox full-screen con navigazione frecce
 //   - Mobile-first responsive
@@ -19,6 +19,14 @@
   let selectedTeam = '';
   let selectedPhotos = new Set();       // path delle foto selezionate (batch delete)
   let lightboxIndex = -1;               // indice della foto aperta nel lightbox
+  let lastLightboxTrigger = null;
+  let uploadInProgress = false;
+  let stagedFiles = [];
+  let activeJobsRef = [];
+  let failedJobs = [];
+  const activeUploadControllers = new Map();
+  let editingPhotoPath = '';
+  let editorTrigger = null;
 
   // Loader robusto immagini foto (desktop + mobile + refresh realtime)
   // ------------------------------------------------------------
@@ -60,6 +68,7 @@
   function confirmDialog(opts){
     if(document.querySelector('.ng-confirm-overlay')) return Promise.resolve(false);
     return new Promise(resolve => {
+      const previousFocus=document.activeElement;
       const overlay = document.createElement('div');
       const titleId = `ng-confirm-title-${Date.now()}-${Math.random().toString(36).slice(2,7)}`;
       overlay.className = 'ng-confirm-overlay';
@@ -77,6 +86,7 @@
       overlay.getBoundingClientRect();
       overlay.setAttribute('aria-hidden','false');
       overlay.classList.add('open');
+      requestAnimationFrame(()=>overlay.querySelector('.ng-confirm-cancel')?.focus());
       let settled = false, removed = false;
       function finishRemoval(){
         if(removed)return;
@@ -97,15 +107,27 @@
           Promise.allSettled(animations.map(animation=>animation.finished)).then(()=>{clearTimeout(fallback);finishRemoval();});
         });
       }
+      function onKeydown(event){
+        if(event.key==='Escape'){event.preventDefault();close(false);return;}
+        if(event.key!=='Tab')return;
+        const focusable=[...overlay.querySelectorAll('button:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])')].filter(el=>!el.hidden&&el.getClientRects().length);
+        if(!focusable.length)return;
+        const first=focusable[0],last=focusable[focusable.length-1];
+        if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
+        else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
+      }
       function close(result){
         if(settled) return;
         settled = true;
+        document.removeEventListener('keydown',onKeydown);
         overlay.classList.add('is-closing');
         overlay.classList.remove('open');
         overlay.setAttribute('aria-hidden','true');
         removeAfterTransition();
+        requestAnimationFrame(()=>previousFocus&&document.contains(previousFocus)&&previousFocus.focus?.({preventScroll:true}));
         resolve(result);
       }
+      document.addEventListener('keydown',onKeydown);
       overlay.addEventListener('click', e=>{
         if(e.target === overlay || e.target.closest('.ng-confirm-cancel')) close(false);
         else if(e.target.closest('.ng-confirm-ok')) close(true);
@@ -253,13 +275,16 @@
             <button type="button" class="photo-status-retry" data-photo-retry aria-label="Riprova caricamento">Riprova</button>
           </div>
           <div class="photo-overlay">
-            <button type="button" class="photo-action-btn photo-zoom" data-photo-open="${i}" aria-label="Visualizza" title="Visualizza">🔍</button>
+            <button type="button" class="photo-action-btn photo-zoom" data-photo-open="${i}" aria-label="Visualizza foto originale" title="Visualizza">🔍</button>
             <button type="button" class="photo-action-btn photo-select" data-photo-select="${UI.esc(p.path)}" aria-label="Seleziona" title="Seleziona">${isSelected?'✓':'○'}</button>
+            <button type="button" class="photo-action-btn" data-photo-edit="${UI.esc(p.path)}" aria-label="Modifica metadati" title="Modifica metadati">✎</button>
+            <button type="button" class="photo-action-btn" data-photo-replace="${UI.esc(p.path)}" aria-label="Sostituisci originale" title="Sostituisci originale">↻</button>
+            <a class="photo-action-btn" href="${UI.esc(Photos.originalDownloadUrl(p))}" download="${UI.esc(p.name)}" data-admin-photo-download aria-label="Scarica originale" title="Scarica originale">⬇</a>
           </div>
         </div>
         <figcaption>
-          <span class="photo-name" title="${UI.esc(p.name)}">${UI.esc(p.name)}</span>
-          <small>${formatSize(p.size)}</small>
+          <span class="photo-name" title="${UI.esc(p.name)}">${UI.esc(p.title||p.name)}</span>
+          <small>${p.width&&p.height?`${p.width}×${p.height} · `:''}${formatSize(p.size)}</small>
         </figcaption>
         <button type="button" class="photo-delete-btn" data-delete-photo="${UI.esc(p.path)}" aria-label="Elimina foto" title="Elimina">×</button>`;
       return fig;
@@ -330,6 +355,7 @@
     bar.innerHTML = `<div class="bulk-info"><strong>${selectedPhotos.size}</strong> foto selezionate</div>
       <div class="bulk-actions">
         <button type="button" class="btn small" id="photosBulkDeselect">Deseleziona tutte</button>
+        <button type="button" class="btn small primary" id="photosBulkDownload">⬇ ZIP originali</button>
         <button type="button" class="btn small danger" id="photosBulkDelete">🗑 Elimina selezionate</button>
       </div>`;
   }
@@ -341,98 +367,108 @@
     return (bytes/1024/1024).toFixed(2)+' MB';
   }
 
-  // -------------------- Drag & drop --------------------
+  // -------------------- Drag & drop + staging --------------------
   function setupDragDrop(){
     const dropZone = UI.$('#photosDropZone');
     if(!dropZone || dropZone.dataset.bound === '1') return;
     dropZone.dataset.bound = '1';
-    ['dragenter','dragover'].forEach(ev=>{
-      dropZone.addEventListener(ev, e=>{ e.preventDefault(); e.stopPropagation(); dropZone.classList.add('is-drag-over'); });
-    });
-    ['dragleave','drop'].forEach(ev=>{
-      dropZone.addEventListener(ev, e=>{ e.preventDefault(); e.stopPropagation(); dropZone.classList.remove('is-drag-over'); });
-    });
-    dropZone.addEventListener('drop', e=>{
-      const files = Array.from(e.dataTransfer?.files || []).filter(f=>f.type.startsWith('image/'));
-      if(files.length && selectedTeam) uploadFiles(files);
-      else if(!selectedTeam) flashMsg('Seleziona prima una squadra.', 'warn');
-    });
-  }
-
-  // -------------------- Upload --------------------
-  // -------------------- Upload --------------------
-  // STAGING → CONFIRM → BATCH UPLOAD
-  // Quando l'utente seleziona/dropa file, NON parte subito l'upload.
-  // Si apre uno "staging panel" con thumbnail grandi cliccabili e bottone
-  // Cancel × per ogni foto. L'utente può rivedere e poi confermare con
-  // "Carica N foto", oppure annullare tutto.
-  //
-  // Upload parallelo a 5 vie. Compressione su Web Worker pool (off-main-thread).
-  // Pipeline overlap: mentre l'upload 1 è in rete, parte già la compressione del 2.
-  const UPLOAD_CONCURRENCY = 5;   // upload paralleli (sweet spot per Supabase)
-  let activeUploadController = null;
-  let stagedFiles = [];           // file in staging (in attesa di conferma)
-
-  function uploadFiles(rawFiles){
-    if(!selectedTeam){ flashMsg('Seleziona prima una squadra.', 'warn'); return; }
-    if(!rawFiles || !rawFiles.length) return;
-
-    // 1. FILTRO E VALIDAZIONE
-    const s = A.state();
-    const photoMap = Photos.getTeamPhotoMap ? Photos.getTeamPhotoMap(s) : (s.teamPhotos || {});
-    const existingNames = new Set((photoMap?.[selectedTeam]||[]).map(p => p.name));
-    const MAX_FILE_SIZE = 10 * 1024 * 1024;
-
-    let skippedDup = 0, skippedBig = 0, skippedType = 0;
-    const validFiles = [];
-    rawFiles.forEach(file => {
-      if(!file.type.startsWith('image/')){ skippedType++; return; }
-      if(file.size > MAX_FILE_SIZE){ skippedBig++; return; }
-      if(existingNames.has(file.name)){ skippedDup++; return; }
-      validFiles.push(file);
-    });
-
-    if(!validFiles.length){
-      const skipMsg = [];
-      if(skippedDup) skipMsg.push(`${skippedDup} duplicate`);
-      if(skippedBig) skipMsg.push(`${skippedBig} oltre 10MB`);
-      if(skippedType) skipMsg.push(`${skippedType} non-immagini`);
-      flashMsg('Nessun file da caricare' + (skipMsg.length ? ' (' + skipMsg.join(', ') + ')' : '') + '.', 'warn');
-      return;
-    }
-
-    // 2. AGGIUNGI ALLO STAGING (cumulativo se si fa più drop in fila)
-    validFiles.forEach((file, i) => {
-      stagedFiles.push({
-        id: 'staged_' + Date.now() + '_' + i + '_' + Math.random().toString(36).slice(2,6),
-        file,
-        blobUrl: URL.createObjectURL(file)
+    ['dragenter','dragover'].forEach(eventName=>{
+      dropZone.addEventListener(eventName,event=>{
+        event.preventDefault();event.stopPropagation();
+        if(!uploadInProgress)dropZone.classList.add('is-drag-over');
       });
     });
-
-    renderStagingPanel({skippedDup, skippedBig, skippedType});
+    ['dragleave','drop'].forEach(eventName=>{
+      dropZone.addEventListener(eventName,event=>{
+        event.preventDefault();event.stopPropagation();dropZone.classList.remove('is-drag-over');
+      });
+    });
+    dropZone.addEventListener('drop',event=>{
+      if(uploadInProgress){flashMsg('Attendi il completamento del batch corrente.','warn');return;}
+      const files=Array.from(event.dataTransfer?.files||[]);
+      if(!selectedTeam){flashMsg('Seleziona prima una squadra.','warn');return;}
+      uploadFiles(files).catch(error=>flashMsg(Photos.userMessage(error),'error'));
+    });
   }
 
-  function renderStagingPanel(skipMeta){
-    const progressEl = UI.$('#photosUploadProgress');
-    if(!progressEl) return;
-    if(!stagedFiles.length){
-      progressEl.innerHTML = '';
-      return;
-    }
-    const totalSize = stagedFiles.reduce((s,j)=>s+j.file.size, 0);
-    const skipCount = (skipMeta?.skippedDup||0)+(skipMeta?.skippedBig||0)+(skipMeta?.skippedType||0);
-    const skipParts = [];
-    if(skipMeta?.skippedDup) skipParts.push(skipMeta.skippedDup+' duplicate');
-    if(skipMeta?.skippedBig) skipParts.push(skipMeta.skippedBig+' >10MB');
-    if(skipMeta?.skippedType) skipParts.push(skipMeta.skippedType+' non-immagini');
+  const UPLOAD_CONCURRENCY = 3;
 
-    progressEl.innerHTML = `
-      <div class="upload-panel staging-panel">
+  function fileFingerprint(file){
+    return [String(file?.name||'').toLocaleLowerCase('it'),Number(file?.size||0),Number(file?.lastModified||0)].join('|');
+  }
+
+  function setUploadUiBusy(busy){
+    uploadInProgress=Boolean(busy);
+    const input=UI.$('#photosFileInput');if(input)input.disabled=uploadInProgress;
+    const drop=UI.$('#photosDropZone');
+    if(drop){drop.classList.toggle('is-busy',uploadInProgress);drop.setAttribute('aria-busy',String(uploadInProgress));}
+    const confirm=UI.$('#photosStagingConfirmBtn');if(confirm)confirm.disabled=uploadInProgress;
+    const add=UI.$('#photosStagingAddBtn');if(add)add.disabled=uploadInProgress;
+  }
+
+  async function uploadFiles(rawFiles){
+    if(!selectedTeam){flashMsg('Seleziona prima una squadra.','warn');return;}
+    if(uploadInProgress){flashMsg('È già in corso un caricamento.','warn');return;}
+    const incoming=Array.from(rawFiles||[]).filter(Boolean);
+    if(!incoming.length)return;
+
+    const limits=Photos.config||{};
+    const maxFiles=Number(limits.MAX_BATCH_FILES||20);
+    const maxBatchSize=Number(limits.MAX_BATCH_SIZE||80*1024*1024);
+    if(stagedFiles.length+incoming.length>maxFiles){
+      flashMsg(`Puoi preparare al massimo ${maxFiles} foto per batch.`,'error');return;
+    }
+    const totalBytes=stagedFiles.reduce((sum,item)=>sum+item.file.size,0)+incoming.reduce((sum,file)=>sum+(file.size||0),0);
+    if(totalBytes>maxBatchSize){flashMsg('Il batch supera il limite totale di 80 MB.','error');return;}
+
+    const state=A.state();
+    const existing=Photos.listTeamPhotos(state,selectedTeam);
+    const knownNames=new Set(existing.map(photo=>String(photo.originalName||photo.name||'').toLocaleLowerCase('it')));
+    const knownFingerprints=new Set(stagedFiles.map(item=>fileFingerprint(item.file)));
+    const unique=[];
+    let duplicateCount=0;
+    incoming.forEach(file=>{
+      const fingerprint=fileFingerprint(file);
+      const sameName=knownNames.has(String(file.name||'').toLocaleLowerCase('it'));
+      if(knownFingerprints.has(fingerprint)||sameName){duplicateCount++;return;}
+      knownFingerprints.add(fingerprint);unique.push(file);
+    });
+    if(!unique.length){flashMsg('Nessun file nuovo da aggiungere: i file selezionati sono duplicati.','warn');return;}
+
+    flashMsg(`Validazione di ${unique.length} ${unique.length===1?'foto':'foto'} in corso…`,'info');
+    const results=await Photos.validateBatch(unique);
+    const invalid=results.filter(result=>!result.ok);
+    results.filter(result=>result.ok).forEach(result=>{
+      stagedFiles.push({
+        id:'staged_'+Date.now()+'_'+Math.random().toString(36).slice(2,8),
+        file:result.file,
+        meta:result.meta,
+        blobUrl:URL.createObjectURL(result.file)
+      });
+    });
+    const input=UI.$('#photosFileInput');if(input)input.value='';
+    renderStagingPanel({duplicateCount,invalid});
+    if(invalid.length||duplicateCount){
+      const first=invalid[0]?.error;
+      const parts=[];
+      if(duplicateCount)parts.push(`${duplicateCount} duplicate`);
+      if(invalid.length)parts.push(`${invalid.length} non valide${first?`: ${Photos.userMessage(first)}`:''}`);
+      flashMsg(`Selezione parziale: ${parts.join(' · ')}.`,'warn');
+    }else flashMsg(`${results.length} ${results.length===1?'foto pronta':'foto pronte'} per l’upload.`,'ok');
+  }
+
+  function renderStagingPanel(summary={}){
+    const progressEl=UI.$('#photosUploadProgress');
+    if(!progressEl)return;
+    if(!stagedFiles.length){progressEl.innerHTML='';return;}
+    const totalSize=stagedFiles.reduce((sum,item)=>sum+item.file.size,0);
+    const ignored=(summary.duplicateCount||0)+(summary.invalid?.length||0);
+    progressEl.innerHTML=`
+      <div class="upload-panel staging-panel" aria-label="Anteprima locale foto selezionate">
         <div class="upload-panel-head">
           <div class="upload-panel-info">
-            <strong>${stagedFiles.length}</strong> ${stagedFiles.length===1?'foto':'foto'} da caricare · <span>${formatSize(totalSize)}</span>
-            ${skipCount ? `<small class="upload-panel-skipped" title="${UI.esc(skipParts.join(', '))}">${skipCount} ignorate</small>` : ''}
+            <strong>${stagedFiles.length}</strong> ${stagedFiles.length===1?'foto pronta':'foto pronte'} · <span>${formatSize(totalSize)}</span>
+            ${ignored?`<small class="upload-panel-skipped">${ignored} ignorate</small>`:''}
           </div>
           <div class="upload-panel-actions">
             <button type="button" class="btn small" id="photosStagingClearBtn">Svuota</button>
@@ -440,200 +476,174 @@
             <button type="button" class="btn small primary" id="photosStagingConfirmBtn">⬆ Carica ${stagedFiles.length}</button>
           </div>
         </div>
+        <p class="upload-panel-rules">JPEG, PNG o WebP · massimo 10 MB per file · massimo 20 file / 80 MB per batch.</p>
         <div class="staging-grid">
-          ${stagedFiles.map(j => `
-            <figure class="staging-thumb" data-staging-id="${j.id}">
-              <div class="staging-thumb-img"><img src="${j.blobUrl}" alt="" loading="lazy" /></div>
+          ${stagedFiles.map(item=>`
+            <figure class="staging-thumb" data-staging-id="${item.id}">
+              <div class="staging-thumb-img"><img src="${item.blobUrl}" alt="Anteprima locale di ${UI.esc(item.file.name)}" loading="lazy"></div>
               <figcaption>
-                <span class="staging-thumb-name" title="${UI.esc(j.file.name)}">${UI.esc(j.file.name)}</span>
-                <small>${formatSize(j.file.size)}</small>
+                <span class="staging-thumb-name" title="${UI.esc(item.file.name)}">${UI.esc(item.file.name)}</span>
+                <small>${item.meta?.width||0}×${item.meta?.height||0} · ${formatSize(item.file.size)} · non ancora caricata</small>
               </figcaption>
-              <button type="button" class="staging-thumb-remove" data-remove-staged="${j.id}" aria-label="Rimuovi" title="Rimuovi">×</button>
-            </figure>
-          `).join('')}
+              <button type="button" class="staging-thumb-remove" data-remove-staged="${item.id}" aria-label="Rimuovi ${UI.esc(item.file.name)}" title="Rimuovi">×</button>
+            </figure>`).join('')}
         </div>
       </div>`;
   }
 
   function removeStagedFile(id){
-    const idx = stagedFiles.findIndex(j => j.id === id);
-    if(idx === -1) return;
-    const job = stagedFiles[idx];
-    if(job.blobUrl) URL.revokeObjectURL(job.blobUrl);
-    stagedFiles.splice(idx, 1);
-    if(!stagedFiles.length){
-      const progressEl = UI.$('#photosUploadProgress');
-      if(progressEl) progressEl.innerHTML = '';
-    } else {
-      renderStagingPanel();
-    }
+    if(uploadInProgress)return;
+    const index=stagedFiles.findIndex(item=>item.id===id);
+    if(index<0)return;
+    const [item]=stagedFiles.splice(index,1);
+    if(item.blobUrl)URL.revokeObjectURL(item.blobUrl);
+    renderStagingPanel();
   }
 
   function clearStaging(){
-    stagedFiles.forEach(j => { if(j.blobUrl) URL.revokeObjectURL(j.blobUrl); });
-    stagedFiles = [];
-    const progressEl = UI.$('#photosUploadProgress');
-    if(progressEl) progressEl.innerHTML = '';
+    if(uploadInProgress)return;
+    stagedFiles.forEach(item=>item.blobUrl&&URL.revokeObjectURL(item.blobUrl));
+    stagedFiles=[];
+    renderStagingPanel();
   }
 
   async function confirmAndUpload(){
-    if(!stagedFiles.length){ flashMsg('Niente da caricare.', 'warn'); return; }
-    if(!selectedTeam){ flashMsg('Seleziona prima una squadra.', 'warn'); clearStaging(); return; }
+    if(uploadInProgress)return;
+    if(!stagedFiles.length){flashMsg('Niente da caricare.','warn');return;}
+    if(!selectedTeam){flashMsg('Seleziona prima una squadra.','warn');return;}
+    const teamId=selectedTeam;
+    const jobs=stagedFiles.map(item=>({...item,teamId,status:'queued',metaResult:null,error:null}));
+    stagedFiles=[];
+    await runUploadJobs(jobs);
+  }
 
-    // Snapshot dei file in staging come job di upload
-    const jobs = stagedFiles.map(s => ({
-      id: s.id,
-      file: s.file,
-      status: 'queued',
-      blobUrl: s.blobUrl,
-      compressedBlob: null
-    }));
-    // Svuoto lo staging (i blobUrl li passa ai jobs)
-    stagedFiles = [];
-
-    activeUploadController = new AbortController();
-    const signal = activeUploadController.signal;
-    const startedAt = Date.now();
-    activeJobsRef = jobs;
+  async function runUploadJobs(jobs){
+    if(!jobs.length)return;
+    setUploadUiBusy(true);
+    failedJobs=[];
+    activeJobsRef=jobs;
     renderUploadPanel(jobs);
+    const startedAt=Date.now();
+    let cursor=0;
+    const uploaded=[];
 
-    // POOL PARALLELO con pipeline compress+upload non bloccante.
-    // Ogni worker prende un job dalla coda, lo comprime (Web Worker off-main-thread),
-    // poi lo carica su Supabase. Mentre uno carica, gli altri possono comprimere.
-    const uploadedMetas = [];
-    let cursor = 0;
     async function worker(){
-      while(cursor < jobs.length && !signal.aborted){
-        const idx = cursor++;
-        const job = jobs[idx];
-        if(job.status === 'cancelled') continue;
+      while(cursor<jobs.length){
+        const index=cursor++;
+        const job=jobs[index];
+        if(job.status==='cancelled')continue;
+        const controller=new AbortController();
+        activeUploadControllers.set(job.id,controller);
         try{
-          // Upload originale su Cloudinary tramite Edge Function Supabase.
-          // Non ricomprimiamo lato client: Cloudinary conserva l'originale e genera varianti ottimizzate via URL.
-          job.status = 'uploading';
-          updateJobRow(job, 20, 'Caricamento Cloudinary…');
-          const meta = await Photos.uploadTeamPhoto(selectedTeam, job.file);
-          job.status = 'done';
-          job.meta = meta;
-          uploadedMetas.push(meta);
-          updateJobRow(job, 100, '✓ Caricata (' + formatSize(meta.size) + ')', 'ok');
-        }catch(err){
-          if(signal.aborted){
-            job.status = 'cancelled';
-            updateJobRow(job, 100, 'Annullato', 'cancel');
-          } else {
-            job.status = 'failed';
-            updateJobRow(job, 100, '✗ ' + (err.message || 'errore sconosciuto'), 'fail');
+          job.status='uploading';
+          updateJobRow(job,20,'Invio originale al backend…');
+          const photo=await Photos.uploadTeamPhoto(job.teamId,job.file,{signal:controller.signal,altText:job.file.name});
+          job.status='done';job.metaResult=photo;uploaded.push(photo);
+          updateJobRow(job,100,`✓ Cloudinary + database (${formatSize(photo.size)})`,'ok');
+          if(job.blobUrl){URL.revokeObjectURL(job.blobUrl);job.blobUrl='';}
+        }catch(error){
+          job.error=error;
+          if(error?.code==='REQUEST_ABORTED'||controller.signal.aborted||job.status==='cancelled'){
+            job.status='cancelled';updateJobRow(job,100,'Annullato','cancel');
+          }else{
+            job.status='failed';updateJobRow(job,100,'✗ '+Photos.userMessage(error),'fail');
           }
-        } finally {
-          if(job.blobUrl){ URL.revokeObjectURL(job.blobUrl); job.blobUrl = null; }
-        }
+        }finally{activeUploadControllers.delete(job.id);}
       }
     }
-    const workers = Array.from({length: Math.min(UPLOAD_CONCURRENCY, jobs.length)}, worker);
-    await Promise.all(workers);
 
-    // Nessun commit su app_state: le foto ora vivono su Cloudinary.
-    // Aggiorno solo la cache runtime e rileggo la cartella per consistenza.
-    if(uploadedMetas.length){
-      try{ await Photos.refreshAll?.({force:true}); }catch(_){ }
+    await Promise.all(Array.from({length:Math.min(UPLOAD_CONCURRENCY,jobs.length)},worker));
+    if(uploaded.length){
+      try{await Photos.refreshAll({force:true});}catch(error){safeConsoleWarn('refresh dopo upload',error);}
     }
-
-    activeUploadController = null;
-    const ok = jobs.filter(j=>j.status==='done').length;
-    const fail = jobs.filter(j=>j.status==='failed').length;
-    const cancelled = jobs.filter(j=>j.status==='cancelled').length;
-    const elapsed = ((Date.now()-startedAt)/1000).toFixed(1);
-    const msgType = (fail || cancelled) ? 'warn' : 'ok';
-    const parts = [`${ok}/${jobs.length} caricate`];
-    if(fail) parts.push(fail + ' fallite');
-    if(cancelled) parts.push(cancelled + ' annullate');
-    parts.push(elapsed + 's');
-    flashMsg(parts.join(' · '), msgType);
-    finalizeUploadPanel();
-    const input = UI.$('#photosFileInput');
-    if(input) input.value = '';
+    failedJobs=jobs.filter(job=>job.status==='failed');
+    activeJobsRef=jobs;
+    setUploadUiBusy(false);
+    const ok=jobs.filter(job=>job.status==='done').length;
+    const fail=failedJobs.length;
+    const cancelled=jobs.filter(job=>job.status==='cancelled').length;
+    const parts=[`${ok}/${jobs.length} caricate`];
+    if(fail)parts.push(`${fail} fallite`);
+    if(cancelled)parts.push(`${cancelled} annullate`);
+    parts.push(`${((Date.now()-startedAt)/1000).toFixed(1)}s`);
+    flashMsg(parts.join(' · '),fail||cancelled?'warn':'ok');
+    finalizeUploadPanel(jobs);
     render();
   }
 
+  function safeConsoleWarn(phase,error){
+    console.warn('[Foto]',{phase,error:String(error?.message||error)});
+  }
+
+  async function retryFailedUploads(){
+    if(uploadInProgress||!failedJobs.length)return;
+    const retry=failedJobs.map(job=>({...job,status:'queued',error:null}));
+    failedJobs=[];
+    await runUploadJobs(retry);
+  }
+
   function cancelAllUploads(){
-    if(!activeUploadController) return;
-    activeUploadController.abort();
-    flashMsg('Annullamento in corso…', 'warn');
+    if(!uploadInProgress)return;
+    activeJobsRef.forEach(job=>{
+      if(job.status==='queued'){job.status='cancelled';updateJobRow(job,100,'Annullato','cancel');}
+      activeUploadControllers.get(job.id)?.abort();
+    });
+    flashMsg('Annullamento degli upload in corso…','warn');
   }
 
   function cancelSingleUpload(jobId){
-    const row = document.querySelector(`[data-job-id="${jobId}"]`);
-    if(!row) return;
-    row.classList.add('is-cancelled');
-    const status = row.querySelector('.upload-item-status');
-    if(status){ status.textContent = 'Annullato'; status.classList.add('cancel'); }
-    const fill = row.querySelector('.upload-item-fill');
-    if(fill){ fill.classList.add('cancel'); }
-    activeJobsRef.forEach(j => { if(j.id === jobId) j.status = 'cancelled'; });
+    const job=activeJobsRef.find(item=>item.id===jobId);
+    if(!job||['done','failed','cancelled'].includes(job.status))return;
+    job.status='cancelled';
+    activeUploadControllers.get(jobId)?.abort();
+    updateJobRow(job,100,'Annullato','cancel');
   }
 
-  let activeJobsRef = [];
-
   function renderUploadPanel(jobs){
-    const progressEl = UI.$('#photosUploadProgress');
-    if(!progressEl) return;
-    const totalSize = jobs.reduce((s,j)=>s+j.file.size, 0);
-    progressEl.innerHTML = `
-      <div class="upload-panel">
+    const progressEl=UI.$('#photosUploadProgress');
+    if(!progressEl)return;
+    const totalSize=jobs.reduce((sum,job)=>sum+job.file.size,0);
+    progressEl.innerHTML=`
+      <div class="upload-panel" aria-live="polite">
         <div class="upload-panel-head">
-          <div class="upload-panel-info">
-            <strong>${jobs.length}</strong> in upload · <span>${formatSize(totalSize)}</span> · Cloudinary · concurrency ${UPLOAD_CONCURRENCY}
+          <div class="upload-panel-info"><strong>${jobs.length}</strong> in upload · <span>${formatSize(totalSize)}</span> · originali Cloudinary · ${UPLOAD_CONCURRENCY} richieste parallele</div>
+          <div class="upload-panel-actions">
+            <button type="button" class="btn small primary" id="photosRetryFailedBtn" hidden>Riprova fallite</button>
+            <button type="button" class="btn small danger" id="photosCancelAllBtn">Annulla tutto</button>
           </div>
-          <button type="button" class="btn small danger" id="photosCancelAllBtn">Annulla tutto</button>
         </div>
         <div class="upload-list">
-          ${jobs.map(j => `
-            <div class="upload-item" data-job-id="${j.id}">
-              <div class="upload-item-preview"><img src="${j.blobUrl}" alt="" loading="lazy" /></div>
+          ${jobs.map(job=>`
+            <div class="upload-item" data-job-id="${job.id}">
+              <div class="upload-item-preview"><img src="${job.blobUrl}" alt="" loading="lazy"></div>
               <div class="upload-item-body">
-                <div class="upload-item-head">
-                  <span class="upload-item-name">${UI.esc(j.file.name)}</span>
-                  <span class="upload-item-size">${formatSize(j.file.size)}</span>
-                </div>
+                <div class="upload-item-head"><span class="upload-item-name">${UI.esc(job.file.name)}</span><span class="upload-item-size">${formatSize(job.file.size)}</span></div>
                 <div class="upload-item-bar"><div class="upload-item-fill" style="width:0%"></div></div>
                 <small class="upload-item-status">In coda…</small>
               </div>
-              <button type="button" class="upload-item-cancel" data-cancel-job="${j.id}" aria-label="Annulla" title="Annulla">×</button>
-            </div>
-          `).join('')}
+              <button type="button" class="upload-item-cancel" data-cancel-job="${job.id}" aria-label="Annulla ${UI.esc(job.file.name)}" title="Annulla">×</button>
+            </div>`).join('')}
         </div>
       </div>`;
   }
 
-  function updateJobRow(job, percent, status, kind){
-    const row = document.querySelector(`[data-job-id="${job.id}"]`);
-    if(!row) return;
-    const fill = row.querySelector('.upload-item-fill');
-    const statusEl = row.querySelector('.upload-item-status');
-    if(fill){
-      fill.style.width = percent + '%';
-      ['ok','fail','cancel'].forEach(c => fill.classList.toggle(c, kind === c));
-    }
-    if(statusEl){
-      statusEl.textContent = status;
-      ['ok','fail','cancel'].forEach(c => statusEl.classList.toggle(c, kind === c));
-    }
-    if(kind === 'ok' || kind === 'fail' || kind === 'cancel'){
-      const cancelBtn = row.querySelector('.upload-item-cancel');
-      if(cancelBtn) cancelBtn.style.display = 'none';
-    }
+  function updateJobRow(job,percent,status,kind){
+    const row=document.querySelector(`[data-job-id="${job.id}"]`);
+    if(!row)return;
+    const fill=row.querySelector('.upload-item-fill');
+    const statusEl=row.querySelector('.upload-item-status');
+    if(fill){fill.style.width=percent+'%';['ok','fail','cancel'].forEach(name=>fill.classList.toggle(name,kind===name));}
+    if(statusEl){statusEl.textContent=status;['ok','fail','cancel'].forEach(name=>statusEl.classList.toggle(name,kind===name));}
+    if(['ok','fail','cancel'].includes(kind))row.querySelector('.upload-item-cancel')?.setAttribute('hidden','');
   }
 
-  function finalizeUploadPanel(){
-    const head = document.querySelector('#photosCancelAllBtn');
-    if(head) head.style.display = 'none';
-    setTimeout(() => {
-      const progressEl = UI.$('#photosUploadProgress');
-      if(!progressEl) return;
-      const hasFails = progressEl.querySelector('.upload-item-status.fail');
-      if(!hasFails) progressEl.innerHTML = '';
-    }, 6000);
+  function finalizeUploadPanel(jobs){
+    const cancel=UI.$('#photosCancelAllBtn');if(cancel)cancel.hidden=true;
+    const retry=UI.$('#photosRetryFailedBtn');if(retry)retry.hidden=!failedJobs.length;
+    if(!failedJobs.length){
+      setTimeout(()=>{const panel=UI.$('#photosUploadProgress');if(panel&&!panel.querySelector('.upload-item-status.fail'))panel.innerHTML='';},6000);
+    }
+    jobs.filter(job=>job.status==='cancelled'&&job.blobUrl).forEach(job=>{URL.revokeObjectURL(job.blobUrl);job.blobUrl='';});
   }
 
   // -------------------- Delete single + bulk --------------------
@@ -645,7 +655,7 @@
       flashMsg('Foto eliminata.', 'ok');
       render();
     }catch(err){
-      flashMsg('Errore durante l\'eliminazione: '+(err.message||err), 'error');
+      flashMsg(Photos.userMessage(err), 'error');
     }
   }
 
@@ -661,120 +671,188 @@
       danger: true
     });
     if(!confirmed) return;
-    let ok = 0, fail = 0;
+    let ok = 0;
+    const failedPaths=[];
     for(const path of paths){
       try{ await Photos.deleteTeamPhoto(selectedTeam, path); ok++; }
-      catch(_){ fail++; }
+      catch(_){ failedPaths.push(path); }
     }
     try{ await Photos.refreshAll?.({force:true}); }catch(_){ }
-    selectedPhotos.clear();
-    flashMsg(`Eliminate ${ok} foto${fail?', '+fail+' falliti':''}.`, fail?'warn':'ok');
+    selectedPhotos=new Set(failedPaths);
+    flashMsg(`Eliminate ${ok} foto${failedPaths.length?', '+failedPaths.length+' non eliminate e ancora selezionate':''}.`, failedPaths.length?'warn':'ok');
     render();
   }
 
-  // -------------------- Lightbox --------------------
-  function ensureLightbox(){
-    if(UI.$('#photosLightbox')) return;
-    const lb = document.createElement('div');
-    lb.id = 'photosLightbox';
-    lb.className = 'photos-lightbox';
-    lb.setAttribute('aria-hidden','true');
-    lb.innerHTML = `
-      <button type="button" class="lightbox-close" aria-label="Chiudi">×</button>
-      <button type="button" class="lightbox-nav lightbox-prev" aria-label="Precedente">‹</button>
-      <button type="button" class="lightbox-nav lightbox-next" aria-label="Successiva">›</button>
-      <div class="lightbox-stage"><img class="lightbox-img" alt="" /></div>
-      <div class="lightbox-bar">
-        <div class="lightbox-meta"><span class="lightbox-name"></span><small class="lightbox-counter"></small></div>
-        <a class="lightbox-download btn small" download href="#">⬇ Scarica</a>
-      </div>`;
-    document.body.appendChild(lb);
-    const img = lb.querySelector('.lightbox-img');
-    let isZoomed = false;
-    function toggleZoom(){
-      isZoomed = !isZoomed;
-      img.classList.toggle('is-zoomed', isZoomed);
-    }
-    lb.addEventListener('click', e=>{
-      if(e.target.matches('.lightbox-close, .photos-lightbox, .lightbox-stage')) closeLightbox();
-      else if(e.target.matches('.lightbox-prev')) navLightbox(-1);
-      else if(e.target.matches('.lightbox-next')) navLightbox(1);
-    });
-    // Doppio-tap / doppio-click per zoom
-    let lastTap = 0;
-    img.addEventListener('click', e=>{
-      e.stopPropagation();
-      const now = Date.now();
-      if(now - lastTap < 300){ toggleZoom(); lastTap = 0; }
-      else lastTap = now;
-    });
-    // Swipe touch
-    let touchStartX = 0;
-    lb.addEventListener('touchstart', e=>{ touchStartX = e.touches[0].clientX; }, {passive:true});
-    lb.addEventListener('touchend', e=>{
-      if(isZoomed) return;
-      const dx = (e.changedTouches[0].clientX - touchStartX);
-      if(Math.abs(dx) > 50) navLightbox(dx < 0 ? 1 : -1);
-    }, {passive:true});
-    document.addEventListener('keydown', e=>{
-      if(!lb.classList.contains('open')) return;
-      if(e.key === 'ArrowLeft') navLightbox(-1);
-      else if(e.key === 'ArrowRight') navLightbox(1);
-    });
+  async function downloadBulk(){
+    const paths=[...selectedPhotos];
+    if(!paths.length)return;
+    const team=A.state().teams.find(item=>item.id===selectedTeam);
+    const photos=Photos.listTeamPhotos(A.state(),selectedTeam).filter(photo=>paths.includes(photo.path)||paths.includes(photo.publicId)||paths.includes(photo.id));
+    const button=UI.$('#photosBulkDownload');
+    if(!team||!photos.length)return;
+    if(button)button.disabled=true;
+    try{
+      await Photos.downloadSelectedAsZip(photos,team.id,team.name);
+      flashMsg(`ZIP creato con ${photos.length} originali.`,'ok');
+    }catch(error){flashMsg(Photos.userMessage(error),'error');}
+    finally{if(button)button.disabled=false;}
   }
-  function openLightbox(idx){
+
+  function photoByPath(path){
+    return Photos.listTeamPhotos(A.state(),selectedTeam).find(photo=>[photo.path,photo.publicId,photo.id].includes(path));
+  }
+
+  function ensurePhotoEditor(){
+    if(UI.$('#photoMetadataModal'))return;
+    const modal=document.createElement('div');
+    modal.id='photoMetadataModal';
+    modal.className='modal photo-metadata-modal';
+    modal.setAttribute('aria-hidden','true');
+    modal.innerHTML=`<div class="modal-content photo-metadata-content" role="dialog" aria-modal="true" aria-labelledby="photoMetadataTitle">
+      <div class="article-modal-toolbar"><div><span class="article-kicker">Galleria Foto</span><h2 id="photoMetadataTitle">Modifica metadati</h2></div><button type="button" class="btn danger" data-close-photo-editor>Chiudi</button></div>
+      <form id="photoMetadataForm" class="form-grid photo-metadata-form">
+        <div class="field-full"><label for="photoMetaTitle">Titolo</label><input id="photoMetaTitle" name="title" maxlength="160"></div>
+        <div class="field-full"><label for="photoMetaDescription">Descrizione</label><textarea id="photoMetaDescription" name="description" rows="4" maxlength="2000"></textarea></div>
+        <div class="field-full"><label for="photoMetaCaption">Didascalia</label><textarea id="photoMetaCaption" name="caption" rows="3" maxlength="1000"></textarea></div>
+        <div class="field-full"><label for="photoMetaAlt">Testo alternativo</label><input id="photoMetaAlt" name="altText" maxlength="300"></div>
+        <div><label for="photoMetaAlbum">Album / categoria</label><input id="photoMetaAlbum" name="album" maxlength="120"></div>
+        <div><label for="photoMetaOrder">Ordine</label><input id="photoMetaOrder" name="order" type="number" step="1"></div>
+        <div class="field-full photo-metadata-actions"><button type="button" class="btn" data-close-photo-editor>Annulla</button><button type="submit" class="btn primary" id="photoMetadataSave">Salva metadati</button></div>
+        <div class="field-full" id="photoMetadataMsg" aria-live="polite"></div>
+      </form>
+    </div>`;
+    document.body.appendChild(modal);
+  }
+
+  function openPhotoEditor(path,trigger){
+    const photo=photoByPath(path);if(!photo)return;
+    ensurePhotoEditor();editingPhotoPath=path;editorTrigger=trigger||null;
+    const modal=UI.$('#photoMetadataModal');
+    modal.querySelector('#photoMetaTitle').value=photo.title||'';
+    modal.querySelector('#photoMetaDescription').value=photo.description||'';
+    modal.querySelector('#photoMetaCaption').value=photo.caption||'';
+    modal.querySelector('#photoMetaAlt').value=photo.altText||photo.name||'';
+    modal.querySelector('#photoMetaAlbum').value=photo.album||'';
+    modal.querySelector('#photoMetaOrder').value=String(photo.order||0);
+    modal.querySelector('#photoMetadataMsg').innerHTML='';
+    modal.classList.add('open');modal.setAttribute('aria-hidden','false');document.body.classList.add('ng-overlay-open');
+    requestAnimationFrame(()=>modal.querySelector('#photoMetaTitle')?.focus());
+  }
+
+  function closePhotoEditor(){
+    const modal=UI.$('#photoMetadataModal');if(!modal)return;
+    modal.classList.remove('open');modal.setAttribute('aria-hidden','true');document.body.classList.remove('ng-overlay-open');
+    const trigger=editorTrigger;editingPhotoPath='';editorTrigger=null;requestAnimationFrame(()=>trigger?.focus?.());
+  }
+
+  async function savePhotoMetadata(form){
+    const button=UI.$('#photoMetadataSave');if(button)button.disabled=true;
+    const msg=UI.$('#photoMetadataMsg');
+    try{
+      const data=new FormData(form);
+      await Photos.updatePhotoMetadata(editingPhotoPath,{
+        title:data.get('title'),description:data.get('description'),caption:data.get('caption'),altText:data.get('altText'),album:data.get('album'),order:data.get('order')
+      });
+      try{await Photos.refreshAll({force:true});}catch(_){ }
+      closePhotoEditor();flashMsg('Metadati aggiornati senza ricaricare l’originale.','ok');render();
+    }catch(error){if(msg)msg.innerHTML=`<div class="message error">${UI.esc(Photos.userMessage(error))}</div>`;}
+    finally{if(button)button.disabled=false;}
+  }
+
+  async function replacePhoto(path,trigger){
+    const photo=photoByPath(path);if(!photo)return;
+    const input=document.createElement('input');input.type='file';input.accept='image/jpeg,image/png,image/webp';
+    input.addEventListener('change',async()=>{
+      const file=input.files?.[0];if(!file)return;
+      const confirmed=await confirmDialog({icon:'↻',title:'Sostituire la foto?',text:'La vecchia risorsa sarà eliminata solo dopo il salvataggio completo della nuova.',okLabel:'Sostituisci',cancelLabel:'Annulla'});
+      if(!confirmed)return;
+      if(trigger)trigger.disabled=true;
+      try{
+        await Photos.validateImageFile(file);
+        const result=await Photos.replaceTeamPhoto(selectedTeam,photo,file,{title:photo.title,description:photo.description,caption:photo.caption,altText:photo.altText,album:photo.album,order:photo.order});
+        try{await Photos.refreshAll({force:true});}catch(_){ }
+        flashMsg(result.warning||'Foto sostituita; galleria e cache aggiornate.',result.warning?'warn':'ok');render();
+      }catch(error){flashMsg(Photos.userMessage(error),'error');}
+      finally{if(trigger)trigger.disabled=false;}
+    },{once:true});
+    input.click();
+  }
+
+  // -------------------- Lightbox --------------------
+  let adminPhotoViewer=null;
+  function ensureLightbox(){
+    let lb=UI.$('#photosLightbox');
+    if(!lb){
+      lb=document.createElement('div');
+      lb.id='photosLightbox';
+      lb.className='photos-lightbox';
+      lb.setAttribute('aria-hidden','true');
+      lb.setAttribute('role','dialog');
+      lb.setAttribute('aria-modal','true');
+      lb.setAttribute('aria-label','Visualizzatore fotografie amministrazione');
+      lb.innerHTML=`
+        <button type="button" class="lightbox-close" aria-label="Chiudi visualizzatore">×</button>
+        <button type="button" class="lightbox-nav lightbox-prev" aria-label="Foto precedente">‹</button>
+        <button type="button" class="lightbox-nav lightbox-next" aria-label="Foto successiva">›</button>
+        <div class="lightbox-stage"><img class="lightbox-img" alt="" draggable="false"></div>
+        <div class="lightbox-bar">
+          <div class="lightbox-meta"><span class="lightbox-name"></span><small class="lightbox-counter"></small></div>
+          <a class="lightbox-download btn small" download href="#">⬇ Originale</a>
+        </div>`;
+      document.body.appendChild(lb);
+    }
+    if(!adminPhotoViewer){
+      adminPhotoViewer=window.NGImageViewer?.bind(lb,{
+        onClose:()=>{lightboxIndex=-1;lastLightboxTrigger=null;},
+        onPrevious:()=>navLightbox(-1),
+        onNext:()=>navLightbox(1)
+      });
+    }
+    return lb;
+  }
+  function openLightbox(idx,trigger=null){
     ensureLightbox();
-    lightboxIndex = idx;
+    lightboxIndex=idx;
+    lastLightboxTrigger=trigger||document.activeElement;
     updateLightboxContent();
-    const lb = UI.$('#photosLightbox');
-    lb.classList.add('open');
-    lb.setAttribute('aria-hidden','false');
+    adminPhotoViewer?.open(lastLightboxTrigger);
   }
   function closeLightbox(){
-    const lb = UI.$('#photosLightbox');
-    if(lb){ lb.classList.remove('open'); lb.setAttribute('aria-hidden','true'); }
-    lightboxIndex = -1;
+    if(adminPhotoViewer)adminPhotoViewer.close();
+    else {const lb=UI.$('#photosLightbox');if(lb){lb.classList.remove('open');lb.setAttribute('aria-hidden','true');}}
+    lightboxIndex=-1;
   }
   function navLightbox(delta){
-    const s = A.state();
-    const photos = Photos.listTeamPhotos(s, selectedTeam);
-    if(!photos.length) return;
-    lightboxIndex = (lightboxIndex + delta + photos.length) % photos.length;
+    const photos=Photos.listTeamPhotos(A.state(),selectedTeam);
+    if(!photos.length)return;
+    lightboxIndex=(lightboxIndex+delta+photos.length)%photos.length;
     updateLightboxContent();
   }
   function updateLightboxContent(){
-    const s = A.state();
-    const photos = Photos.listTeamPhotos(s, selectedTeam);
-    const p = photos[lightboxIndex];
-    if(!p) return closeLightbox();
-    const lb = UI.$('#photosLightbox');
-    const img = lb.querySelector('.lightbox-img');
-    const thumbSrc = p.thumbUrl || p.url;
-    const hdSrc = p.originalUrl || p.url;
-    img.src = thumbSrc;
-    img.alt = p.name;
-    if(hdSrc && hdSrc !== thumbSrc){
-      const preloader = new Image();
-      preloader.onload = () => {
-        if(lb.classList.contains('open') && img.alt === p.name){
-          img.src = hdSrc;
-        }
-      };
-      preloader.src = hdSrc;
-    }
-    lb.querySelector('.lightbox-name').textContent = p.name;
-    const sizeInfo = p.hasOriginal && p.originalSize ? formatSize(p.originalSize) + ' originale' : formatSize(p.size);
-    lb.querySelector('.lightbox-counter').textContent = `${lightboxIndex+1} / ${photos.length} · ${sizeInfo}`;
-    const dl = lb.querySelector('.lightbox-download');
-    dl.href = hdSrc;
-    dl.setAttribute('download', p.name);
+    const photos=Photos.listTeamPhotos(A.state(),selectedTeam);
+    const p=photos[lightboxIndex];
+    if(!p)return closeLightbox();
+    ensureLightbox();
+    const dimensions=p.width&&p.height?`${p.width}×${p.height} · `:'';
+    const sizeInfo=p.originalSize?formatSize(p.originalSize)+' originale':formatSize(p.size);
+    adminPhotoViewer?.setContent({
+      preview:p.thumbUrl||p.url,
+      large:p.largeUrl||p.originalUrl||p.url,
+      alt:p.altText||p.title||p.name,
+      name:p.title||p.name,
+      counter:`${lightboxIndex+1} / ${photos.length} · ${dimensions}${sizeInfo}`,
+      downloadUrl:Photos.originalDownloadUrl(p),
+      downloadName:p.originalName||p.name
+    });
   }
 
   // -------------------- Event handlers --------------------
   document.addEventListener('click', e => {
     const teamBtn = e.target.closest('[data-team-pick]');
     if(teamBtn){
-      selectedTeam = teamBtn.dataset.teamPick;
+      if(uploadInProgress){flashMsg('Completa o annulla il caricamento prima di cambiare squadra.','warn');return;}
+      if(selectedTeam!==teamBtn.dataset.teamPick&&stagedFiles.length){clearStaging();flashMsg('La selezione locale è stata svuotata per evitare upload nella squadra sbagliata.','warn');}
+      selectedTeam=teamBtn.dataset.teamPick;
       selectedPhotos.clear();
       render();
       return;
@@ -792,9 +870,14 @@
     const openBtn = e.target.closest('[data-photo-open]');
     if(openBtn){
       const idx = Number(openBtn.dataset.photoOpen);
-      if(!Number.isNaN(idx)) openLightbox(idx);
+      if(!Number.isNaN(idx)) openLightbox(idx,openBtn);
       return;
     }
+    const editBtn=e.target.closest('[data-photo-edit]');
+    if(editBtn){e.preventDefault();e.stopPropagation();openPhotoEditor(editBtn.dataset.photoEdit,editBtn);return;}
+    const replaceBtn=e.target.closest('[data-photo-replace]');
+    if(replaceBtn){e.preventDefault();e.stopPropagation();replacePhoto(replaceBtn.dataset.photoReplace,replaceBtn);return;}
+    if(e.target.closest('[data-close-photo-editor]')){e.preventDefault();closePhotoEditor();return;}
     const selectBtn = e.target.closest('[data-photo-select]');
     if(selectBtn){
       e.stopPropagation();
@@ -819,7 +902,9 @@
       return;
     }
     if(e.target.id === 'photosBulkDeselect'){ selectedPhotos.clear(); render(); return; }
+    if(e.target.id === 'photosBulkDownload'){ downloadBulk(); return; }
     if(e.target.id === 'photosBulkDelete'){ deleteBulk(); return; }
+    if(e.target.id === 'photosRetryFailedBtn'){ retryFailedUploads().catch(error=>flashMsg(Photos.userMessage(error),'error')); return; }
     if(e.target.id === 'photosCancelAllBtn'){ cancelAllUploads(); return; }
     if(e.target.id === 'photosStagingConfirmBtn'){ confirmAndUpload(); return; }
     if(e.target.id === 'photosStagingClearBtn'){ clearStaging(); return; }
@@ -834,7 +919,21 @@
     }
   });
 
+  document.addEventListener('click',e=>{if(e.target?.id==='photoMetadataModal')closePhotoEditor();});
+  document.addEventListener('keydown',e=>{
+    const modal=UI.$('#photoMetadataModal');
+    if(!modal?.classList.contains('open'))return;
+    if(e.key==='Escape'){e.preventDefault();closePhotoEditor();return;}
+    if(e.key!=='Tab')return;
+    const focusable=[...modal.querySelectorAll('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])')].filter(el=>!el.hidden&&el.getClientRects().length);
+    if(!focusable.length)return;
+    const first=focusable[0],last=focusable[focusable.length-1];
+    if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+    else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+  });
+
   document.addEventListener('submit', e => {
+    if(e.target.id==='photoMetadataForm'){e.preventDefault();savePhotoMetadata(e.target);return;}
     if(e.target.id !== 'photosUploadForm') return;
     e.preventDefault();
     const fileInput = UI.$('#photosFileInput');
@@ -846,7 +945,7 @@
   document.addEventListener('change', e => {
     if(e.target?.id === 'photosFileInput'){
       const files = Array.from(e.target.files || []);
-      if(files.length && selectedTeam) uploadFiles(files);
+      if(files.length && selectedTeam) uploadFiles(files).catch(error=>flashMsg(Photos.userMessage(error),'error'));
     }
   });
 
@@ -860,6 +959,12 @@
   }
 
   // -------------------- Realtime listener --------------------
+  window.addEventListener('pagehide',()=>{
+    stagedFiles.forEach(item=>item.blobUrl&&URL.revokeObjectURL(item.blobUrl));
+    activeJobsRef.forEach(job=>job.blobUrl&&URL.revokeObjectURL(job.blobUrl));
+    activeUploadControllers.forEach(controller=>controller.abort());
+  });
+
   window.addEventListener('ng:admin-state-loaded', () => render());
   window.addEventListener('ng:cloudinary-photos-updated', () => render());
 
@@ -867,7 +972,7 @@
   function boot(){
     A.initGlobalActions?.();
     setupDragDrop();
-    Photos.refreshAll?.({force:true}).catch(err => flashMsg('Cloudinary: '+(err.message||err), 'warn'));
+    Photos.refreshAll?.({force:true}).catch(err=>flashMsg(Photos.userMessage(err),'warn'));
     render();
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

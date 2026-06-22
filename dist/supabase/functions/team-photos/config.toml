@@ -1,0 +1,3 @@
+# La verifica JWT del gateway viene disattivata per consentire OPTIONS e letture pubbliche.
+# POST/PUT/PATCH/DELETE sono comunque protetti dentro index.ts tramite auth.getUser.
+verify_jwt = false
