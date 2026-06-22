@@ -7678,3 +7678,227 @@ a.article-card-main{cursor:pointer;}
   .photo-thumb.admin.photo-admin-card{transition:none!important;animation:none!important}
 }
 
+
+/* =====================================================================
+   v126.19 — Selettore squadre Foto: layout pulito e senza sovrapposizioni
+   ===================================================================== */
+.photos-sidebar.card.pad{
+  padding:clamp(18px,2.2vw,24px);
+  border-color:rgba(215,164,45,.3);
+  border-radius:clamp(22px,2.4vw,28px);
+  background:
+    radial-gradient(circle at 100% 0,rgba(215,164,45,.07),transparent 38%),
+    linear-gradient(180deg,rgba(255,255,255,.018),transparent 34%),
+    var(--panel);
+}
+.photos-sidebar-heading.section-title{
+  display:block;
+  margin:0;
+}
+.photos-sidebar-heading > div{min-width:0}
+.photos-sidebar-heading .article-kicker{
+  margin:0 0 11px;
+  font-size:.72rem;
+  letter-spacing:.105em;
+}
+.photos-sidebar-heading h2{
+  margin:0;
+  color:#fff8e7;
+  font-size:clamp(1.65rem,2.2vw,2rem);
+  line-height:1.08;
+  letter-spacing:-.025em;
+}
+.photos-sidebar-heading p{
+  max-width:31ch;
+  margin:10px 0 0;
+  color:#bdb7ad;
+  font-size:.96rem;
+  line-height:1.55;
+  word-break:normal;
+  overflow-wrap:break-word;
+  hyphens:none;
+}
+#photosTeamList{
+  min-width:0;
+  margin-top:18px;
+}
+.photos-sidebar .team-list-summary{
+  display:flex;
+  justify-content:flex-start;
+  min-width:0;
+  margin:0 0 12px;
+}
+.photos-sidebar .team-list-summary .pill{
+  min-height:36px;
+  max-width:100%;
+  padding:7px 12px;
+  border-color:rgba(215,164,45,.34);
+  background:rgba(215,164,45,.09);
+  box-shadow:none;
+  font-size:.76rem;
+  line-height:1;
+  white-space:normal;
+}
+.photos-sidebar .team-pick-grid{
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  gap:10px;
+  min-width:0;
+}
+.photos-sidebar .team-pick-btn{
+  position:relative;
+  display:grid;
+  grid-template-columns:52px minmax(0,1fr);
+  align-items:center;
+  gap:12px;
+  width:100%;
+  min-width:0;
+  min-height:72px;
+  padding:9px 13px 9px 9px;
+  overflow:hidden;
+  border:1px solid rgba(255,255,255,.09);
+  border-radius:16px;
+  background:rgba(255,255,255,.025);
+  box-shadow:none;
+  color:#fff8e7;
+  text-align:left;
+}
+.photos-sidebar .team-pick-btn:hover{
+  transform:none;
+  border-color:rgba(215,164,45,.42);
+  background:rgba(215,164,45,.075);
+}
+.photos-sidebar .team-pick-btn:active{transform:scale(.99)}
+.photos-sidebar .team-pick-btn:focus-visible{
+  outline:3px solid #f1d472;
+  outline-offset:3px;
+}
+.photos-sidebar .team-pick-btn.active{
+  border-color:rgba(215,164,45,.65);
+  background:linear-gradient(135deg,rgba(215,164,45,.15),rgba(215,164,45,.055));
+  box-shadow:inset 3px 0 0 #d7a42d;
+}
+.photos-sidebar .team-pick-logo{
+  display:grid;
+  place-items:center;
+  width:52px;
+  height:52px;
+  min-width:0;
+  padding:4px;
+  overflow:hidden;
+  border:1px solid rgba(255,255,255,.09);
+  border-radius:14px;
+  background:rgba(0,0,0,.25);
+}
+.photos-sidebar .team-pick-logo .team-logo-wrap,
+.photos-sidebar .team-pick-logo .team-logo,
+.photos-sidebar .team-pick-logo img{
+  width:100%!important;
+  height:100%!important;
+  min-width:0!important;
+  max-width:100%!important;
+  max-height:100%!important;
+  margin:0!important;
+  object-fit:contain!important;
+  background-size:contain!important;
+  background-position:center!important;
+  background-repeat:no-repeat!important;
+}
+.photos-sidebar .team-pick-copy{
+  display:grid;
+  align-content:center;
+  justify-items:start;
+  gap:6px;
+  min-width:0;
+}
+.photos-sidebar .team-pick-name{
+  display:block;
+  width:100%;
+  min-width:0;
+  margin:0;
+  overflow:hidden;
+  color:#fff8e7;
+  font-size:.96rem;
+  font-weight:850;
+  line-height:1.2;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.photos-sidebar .team-pick-meta{
+  display:inline-flex;
+  align-items:center;
+  width:max-content;
+  max-width:100%;
+  min-height:24px;
+  margin:0;
+  padding:4px 8px;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:999px;
+  background:rgba(255,255,255,.035);
+  color:#9d978c;
+  font-size:.63rem;
+  font-weight:850;
+  line-height:1;
+  letter-spacing:.065em;
+  text-transform:uppercase;
+  white-space:nowrap;
+  transform:none!important;
+}
+.photos-sidebar .team-pick-btn.has-photos .team-pick-meta{
+  border-color:rgba(215,164,45,.25);
+  background:rgba(215,164,45,.1);
+  color:#e9cb6d;
+}
+.photos-sidebar .team-pick-btn.active .team-pick-meta,
+.photos-sidebar .team-pick-btn.active.has-photos .team-pick-meta{
+  border-color:rgba(215,164,45,.34);
+  background:rgba(215,164,45,.14);
+  color:#f4d878;
+}
+
+@media (min-width:601px) and (max-width:860px){
+  .photos-sidebar .team-pick-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+}
+@media (max-width:600px){
+  .photos-sidebar.card.pad{
+    padding:18px;
+    border-radius:22px;
+  }
+  .photos-sidebar-heading .article-kicker{margin-bottom:10px}
+  .photos-sidebar-heading h2{font-size:1.7rem}
+  .photos-sidebar-heading p{
+    max-width:none;
+    margin-top:9px;
+    font-size:.94rem;
+  }
+  #photosTeamList{margin-top:16px}
+  .photos-sidebar .team-list-summary{margin-bottom:10px}
+  .photos-sidebar .team-list-summary .pill{min-height:34px;padding:6px 11px}
+  .photos-sidebar .team-pick-grid{grid-template-columns:minmax(0,1fr);gap:9px}
+  .photos-sidebar .team-pick-btn{
+    grid-template-columns:48px minmax(0,1fr);
+    min-height:68px;
+    gap:11px;
+    padding:9px 12px 9px 9px;
+    border-radius:15px;
+  }
+  .photos-sidebar .team-pick-logo{
+    width:48px;
+    height:48px;
+    border-radius:13px;
+  }
+}
+@media (max-width:360px){
+  .photos-sidebar.card.pad{padding:15px;border-radius:20px}
+  .photos-sidebar-heading h2{font-size:1.58rem}
+  .photos-sidebar-heading p{font-size:.9rem;line-height:1.5}
+  .photos-sidebar .team-pick-btn{
+    grid-template-columns:44px minmax(0,1fr);
+    min-height:64px;
+    gap:10px;
+  }
+  .photos-sidebar .team-pick-logo{width:44px;height:44px;padding:3px}
+  .photos-sidebar .team-pick-name{font-size:.91rem}
+}
