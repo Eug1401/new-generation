@@ -190,7 +190,7 @@
   function articleImageMarkup(article,{detail=false,eager=false}={}){
     const title=String(article?.title||'articolo');
     const src=String(article?.image||'').trim();
-    if(!src)return articlePlaceholder(title);
+    if(!src)return detail?'':articlePlaceholder(title);
     const alt=String(article?.imageAlt||'').trim()||`Immagine principale dell’articolo ${title}`;
     return `<img class="article-image" src="${esc(src)}" alt="${esc(alt)}" data-article-title="${esc(title)}" width="1280" height="800" loading="${eager?'eager':'lazy'}" decoding="async"${eager?' fetchpriority="high"':''} referrerpolicy="no-referrer">`;
   }
@@ -276,20 +276,128 @@
     }
     return `<article class="article-card sports-news-card admin-news-card" data-article-id="${esc(article?.id||'')}"><div class="article-card-main">${content}</div><div class="article-admin-actions" aria-label="Azioni articolo ${esc(title)}"><button class="btn small" type="button" data-preview-article="${esc(article?.id||'')}">Anteprima</button><button class="btn small primary" type="button" data-edit-article="${esc(article?.id||'')}">Modifica</button><button class="btn small danger" type="button" data-delete-article="${esc(article?.id||'')}">Elimina</button></div></article>`;
   }
+  function articleReadingTime(article){
+    const words=String(article?.body||'').trim().split(/\s+/).filter(Boolean).length;
+    return Math.max(1,Math.ceil(words/220));
+  }
+  function articleDetailMeta(article,{preview=false}={}){
+    const rows=[];
+    const author=String(article?.author||'').trim()||'Redazione New Generation';
+    const publishedValue=article?.publishedAt||article?.createdAt||'';
+    const updatedValue=article?.updatedAt||'';
+    const published=fmtArticleDate(publishedValue,{dateOnly:true});
+    const updated=fmtArticleDate(updatedValue,{dateOnly:true});
+    if(author)rows.push(`<span class="article-detail-author">di ${esc(author)}</span>`);
+    if(published)rows.push(`<time datetime="${esc(publishedValue)}">${esc(published)}</time>`);
+    if(updated&&updated!==published)rows.push(`<span>Aggiornato ${esc(updated)}</span>`);
+    rows.push(`<span>${articleReadingTime(article)} min di lettura</span>`);
+    if(preview)rows.push(`<span class="article-status status-${esc(article?.status||'published')}">${esc(articleStatusLabel(article?.status))}</span>`);
+    return `<div class="article-detail-meta">${rows.join('')}</div>`;
+  }
   function articleDetail(article,{preview=false}={}){
     const title=String(article?.title||'News');
     const subtitle=String(article?.subtitle||'').trim();
     const caption=String(article?.imageCaption||'').trim();
-    const tags=Array.isArray(article?.tags)?article.tags:[];
-    const created=fmtArticleDate(article?.createdAt);
-    const updated=fmtArticleDate(article?.updatedAt);
-    const published=fmtArticleDate(article?.publishedAt);
-    return `<article class="article-detail article-detail-editorial" data-article-detail="${esc(article?.id||'')}">
-      ${preview?'<div class="article-preview-banner">Anteprima amministratore · il contenuto non è necessariamente pubblico</div>':''}
-      <header class="article-detail-header">${articleMetadata(article,{admin:preview})}<h1>${esc(title)}</h1>${subtitle?`<p class="article-detail-subtitle">${esc(subtitle)}</p>`:''}</header>
-      <figure class="article-detail-media">${articleImageMarkup(article,{detail:true,eager:true})}${caption?`<figcaption>${esc(caption)}</figcaption>`:''}</figure>
-      <div class="article-detail-body"><div class="article-full-text">${articleBodyMarkup(article?.body)}</div>${tags.length?`<div class="article-tags" aria-label="Tag">${tags.map(tag=>`<span>#${esc(tag)}</span>`).join('')}</div>`:''}<footer class="article-detail-footer">${published?`<span>Pubblicato: ${esc(published)}</span>`:''}${updated&&updated!==created?`<span>Aggiornato: ${esc(updated)}</span>`:''}</footer></div>
+    const image=String(article?.image||'').trim();
+    const imageMarkup=image?articleImageMarkup(article,{detail:true,eager:true}):'';
+    const tags=Array.isArray(article?.tags)?article.tags.map(tag=>String(tag||'').trim()).filter(Boolean):[];
+    const category=String(article?.category||'Aggiornamenti').trim()||'Aggiornamenti';
+    const publishedValue=article?.publishedAt||article?.createdAt||'';
+    const updatedValue=article?.updatedAt||'';
+    const published=fmtArticleDate(publishedValue);
+    const updated=updatedValue&&updatedValue!==publishedValue?fmtArticleDate(updatedValue):'';
+    const backLabel=preview?'Chiudi anteprima':'Torna agli articoli';
+    return `<article class="article-detail article-detail-editorial${image?' has-image':' no-image'}" data-article-detail="${esc(article?.id||'')}">
+      ${preview?'<div class="article-preview-banner">Anteprima amministratore · strumenti di modifica separati dal contenuto pubblico</div>':''}
+      <nav class="article-detail-nav" aria-label="Navigazione articolo"><button type="button" class="article-back-link" data-article-back>← ${backLabel}</button></nav>
+      <header class="article-detail-header">
+        <span class="article-detail-category">${esc(category)}</span>
+        <h1>${esc(title)}</h1>
+        ${subtitle?`<p class="article-detail-subtitle">${esc(subtitle)}</p>`:''}
+        ${articleDetailMeta(article,{preview})}
+      </header>
+      ${image?`<figure class="article-detail-media">
+        <button type="button" class="article-image-open" data-article-image-open="${esc(image)}" aria-label="Apri fotografia a dimensione intera: ${esc(title)}">
+          ${imageMarkup}<span class="article-image-open-hint" aria-hidden="true">Apri immagine</span>
+        </button>
+        ${caption?`<figcaption>${esc(caption)}</figcaption>`:''}
+      </figure>`:''}
+      <div class="article-detail-body">
+        <div class="article-full-text">${articleBodyMarkup(article?.body)}</div>
+        ${tags.length?`<div class="article-tags" aria-label="Tag">${tags.map(tag=>`<span>#${esc(tag)}</span>`).join('')}</div>`:''}
+        <footer class="article-detail-footer">${published?`<span>Pubblicato: ${esc(published)}</span>`:''}${updated?`<span>Aggiornato: ${esc(updated)}</span>`:''}</footer>
+        <nav class="article-detail-end-nav" aria-label="Fine articolo"><button type="button" class="article-back-link" data-article-back>← ${backLabel}</button></nav>
+      </div>
     </article>`;
+  }
+
+  let articleViewer=null;
+  function ensureArticleImageViewer(){
+    if(articleViewer)return articleViewer;
+    const root=document.createElement('div');
+    root.className='article-image-viewer';
+    root.setAttribute('aria-hidden','true');
+    root.setAttribute('role','dialog');
+    root.setAttribute('aria-modal','true');
+    root.setAttribute('aria-label','Visualizzatore fotografia articolo');
+    root.innerHTML=`<div class="article-image-viewer-toolbar"><div class="article-image-viewer-zoom"><button type="button" data-article-viewer-out aria-label="Riduci zoom">−</button><span data-article-viewer-label>100%</span><button type="button" data-article-viewer-in aria-label="Aumenta zoom">+</button><button type="button" data-article-viewer-reset>Ripristina</button></div><button type="button" class="article-image-viewer-close" aria-label="Chiudi fotografia">×</button></div><div class="article-image-viewer-stage"><img alt="" draggable="false"></div>`;
+    document.body.appendChild(root);
+    const img=root.querySelector('img'),close=root.querySelector('.article-image-viewer-close'),stage=root.querySelector('.article-image-viewer-stage');
+    const pointers=new Map();
+    let scale=1,x=0,y=0,trigger=null,drag=null,pinchStart=null,ownsBodyLock=false;
+    const clamp=(value,min,max)=>Math.min(max,Math.max(min,value));
+    function apply(){if(scale<=1){x=0;y=0;}img.style.transform=`translate3d(${x}px,${y}px,0) scale(${scale})`;root.querySelector('[data-article-viewer-label]').textContent=Math.round(scale*100)+'%';img.classList.toggle('is-zoomed',scale>1);}
+    function setScale(next){scale=clamp(next,1,4);apply();}
+    function reset(){scale=1;x=0;y=0;drag=null;pinchStart=null;pointers.clear();apply();}
+    function hide(){root.classList.remove('open');root.setAttribute('aria-hidden','true');if(ownsBodyLock)document.body.classList.remove('ng-overlay-open');ownsBodyLock=false;reset();const target=trigger;trigger=null;requestAnimationFrame(()=>target&&document.contains(target)&&target.focus?.({preventScroll:true}));}
+    root.addEventListener('click',event=>{
+      if(event.target===root||event.target===stage||event.target.closest('.article-image-viewer-close'))hide();
+      else if(event.target.closest('[data-article-viewer-in]'))setScale(scale+.5);
+      else if(event.target.closest('[data-article-viewer-out]'))setScale(scale-.5);
+      else if(event.target.closest('[data-article-viewer-reset]'))reset();
+    });
+    stage.addEventListener('wheel',event=>{event.preventDefault();setScale(scale+(event.deltaY<0?.35:-.35));},{passive:false});
+    img.addEventListener('dblclick',()=>setScale(scale>1?1:2));
+    img.addEventListener('pointerdown',event=>{
+      pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
+      img.setPointerCapture?.(event.pointerId);
+      if(pointers.size===1&&scale>1)drag={px:event.clientX,py:event.clientY,x,y};
+      if(pointers.size===2){const values=[...pointers.values()];pinchStart={distance:Math.hypot(values[1].x-values[0].x,values[1].y-values[0].y),scale};drag=null;}
+    });
+    img.addEventListener('pointermove',event=>{
+      if(!pointers.has(event.pointerId))return;
+      pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
+      if(pointers.size===2&&pinchStart){const values=[...pointers.values()];const distance=Math.hypot(values[1].x-values[0].x,values[1].y-values[0].y);setScale(pinchStart.scale*(distance/Math.max(1,pinchStart.distance)));return;}
+      if(!drag)return;x=drag.x+event.clientX-drag.px;y=drag.y+event.clientY-drag.py;apply();
+    });
+    function pointerEnd(event){pointers.delete(event.pointerId);drag=null;if(pointers.size<2)pinchStart=null;}
+    img.addEventListener('pointerup',pointerEnd);img.addEventListener('pointercancel',pointerEnd);
+    document.addEventListener('keydown',event=>{
+      if(!root.classList.contains('open'))return;
+      if(event.key==='Tab'){
+        const focusable=[...root.querySelectorAll('button:not([disabled]),a[href],input,select,textarea,[tabindex]:not([tabindex="-1"])')].filter(el=>!el.hidden&&el.getClientRects().length);
+        if(focusable.length){const first=focusable[0],last=focusable[focusable.length-1];if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}
+      }else if(event.key==='Escape'){event.preventDefault();hide();}
+      else if(event.key==='+'||event.key==='='){event.preventDefault();setScale(scale+.5);}
+      else if(event.key==='-'){event.preventDefault();setScale(scale-.5);}
+      else if(event.key==='0'){event.preventDefault();reset();}
+    });
+    articleViewer={open(src,alt,lastTrigger){trigger=lastTrigger||document.activeElement;img.src=src;img.alt=alt||'Fotografia articolo';reset();ownsBodyLock=!document.body.classList.contains('ng-overlay-open');root.classList.add('open');root.setAttribute('aria-hidden','false');document.body.classList.add('ng-overlay-open');requestAnimationFrame(()=>close.focus());},close:hide,root};
+    return articleViewer;
+  }
+  function prepareArticleDetail(root,{onBack}={}){
+    if(!root)return;
+    root.querySelectorAll('.article-detail-media img.article-image').forEach(img=>{
+      const figure=img.closest('.article-detail-media');
+      const classify=()=>{if(!img.naturalWidth||!img.naturalHeight)return;const ratio=img.naturalWidth/img.naturalHeight;figure?.classList.remove('is-portrait','is-square','is-landscape');figure?.classList.add(ratio<.85?'is-portrait':ratio>1.2?'is-landscape':'is-square');};
+      if(img.complete)classify();else img.addEventListener('load',classify,{once:true});
+    });
+    if(root.dataset.articleInteractionsBound==='1')return;
+    root.dataset.articleInteractionsBound='1';
+    root.addEventListener('click',event=>{
+      const back=event.target.closest('[data-article-back]');if(back){event.preventDefault();onBack?.(back);return;}
+      const opener=event.target.closest('[data-article-image-open]');if(opener){event.preventDefault();const img=opener.querySelector('img');ensureArticleImageViewer().open(opener.dataset.articleImageOpen,img?.alt||'Fotografia articolo',opener);}
+    });
   }
   function articleList(articles,admin=false){
     const rows=Array.isArray(articles)?articles:[];
@@ -319,5 +427,5 @@
   function bindTabs(){document.addEventListener('click',e=>{const b=e.target.closest('[data-tab]');if(!b)return;const target=b.dataset.tab;$$('[data-tab]').forEach(x=>x.classList.remove('active'));$$('.tab-panel').forEach(x=>x.classList.remove('active'));$$(`[data-tab="${target}"]`).forEach(x=>x.classList.add('active'));$('#'+target)?.classList.add('active');document.dispatchEvent(new CustomEvent('ng:tab-changed',{detail:{tab:target}}));});}
   function bindDisclosures(){document.addEventListener('toggle',e=>{const d=e.target;if(!(d instanceof HTMLDetailsElement)||!d.open)return;const list=d.closest('.team-disclosure-list,.admin-disclosure-list,.admin-player-list');if(!list)return;list.querySelectorAll('details[open]').forEach(x=>{if(x!==d)x.open=false;});},true);}
   document.addEventListener('DOMContentLoaded',bindDisclosures);
-  window.NexoraUI={esc,$,$$,logo,injectTeamLogoStyles,siteTitle,siteSubtitle,siteLogoMarkup,applySiteTheme,fmtDate,teamOptions,playerOptions,statsGrid,standingsTable,groupStandingsSelector,groupStandingsTables,playerStatsTable,presidentStatsTable,matchStatusMeta,matchCard,matchList,teamGrid,rulesSummary,bracketMarkup,articleCard,articleDetail,articleList,articlePlaceholder,replaceBrokenArticleImage,articleBodyMarkup,articleStatusLabel,createTextPdf,bindTabs,bindDisclosures};
+  window.NexoraUI={esc,$,$$,logo,injectTeamLogoStyles,siteTitle,siteSubtitle,siteLogoMarkup,applySiteTheme,fmtDate,teamOptions,playerOptions,statsGrid,standingsTable,groupStandingsSelector,groupStandingsTables,playerStatsTable,presidentStatsTable,matchStatusMeta,matchCard,matchList,teamGrid,rulesSummary,bracketMarkup,articleCard,articleDetail,articleList,articlePlaceholder,replaceBrokenArticleImage,articleBodyMarkup,articleStatusLabel,prepareArticleDetail,ensureArticleImageViewer,createTextPdf,bindTabs,bindDisclosures};
 })();

@@ -6,7 +6,7 @@
     'select:not([disabled])','textarea:not([disabled])','[tabindex]:not([tabindex="-1"])',
     'details > summary:first-of-type','[contenteditable="true"]'
   ].join(',');
-  const overlaySelector = '.modal,.ng-modal-backdrop,.filter-sheet-modal,.mobile-nav-sheet,.ng-confirm-overlay,.photos-lightbox,.photo-lightbox,.public-photo-lightbox,.login-overlay';
+  const overlaySelector = '.modal,.ng-modal-backdrop,.filter-sheet-modal,.mobile-nav-sheet,.ng-confirm-overlay,.photos-lightbox,.photo-lightbox,.public-photo-lightbox,.article-image-viewer,.login-overlay';
   let generatedId = 0;
   const modalTriggers = new WeakMap();
   const modalOpenState = new WeakMap();

@@ -412,8 +412,8 @@ async function testArticlesEndToEnd(){
   await evaluate(`document.body.style.minHeight='2400px';window.scrollTo(0,420)`);const scrollBefore=await evaluate('window.scrollY');
   await click('[data-article-open="article_1"]');
   let modal=await overlayState('#articleModal');
-  let detail=await evaluate(`({hash:location.hash,title:document.querySelector('#articleModalTitle')?.textContent||'',body:document.querySelector('#articleModalBody')?.textContent||'',dialog:document.querySelector('#articleModal')?.getAttribute('role')||''})`);
-  add('apertura dettaglio con URL stabile',modal.open&&detail.hash==='#article=notizia-test'&&detail.title==='Notizia test'&&detail.body.includes('Contenuto di prova')&&detail.dialog==='dialog',JSON.stringify({modal,detail}));
+  let detail=await evaluate(`({hash:location.hash,title:document.querySelector('#articleModalTitle')?.textContent||'',body:document.querySelector('#articleModalBody')?.textContent||'',dialog:document.querySelector('#articleModal')?.getAttribute('role')||'',photoSections:document.querySelectorAll('#articleModalBody .article-detail-media').length,mainLandmarks:document.querySelectorAll('main').length})`);
+  add('apertura dettaglio con URL stabile',modal.open&&detail.hash==='#article=notizia-test'&&detail.title==='Notizia test'&&detail.body.includes('Contenuto di prova')&&detail.dialog==='dialog'&&detail.photoSections===0&&detail.mainLandmarks===1,JSON.stringify({modal,detail}));
   await evaluate('history.back()');await waitFor(()=>evaluate(`!document.querySelector('#articleModal')?.classList.contains('open')`),{label:'history back article'});
   await waitFor(()=>evaluate(`Math.abs(window.scrollY-${scrollBefore})<2`),{label:'restore article list scroll'});
   const scrollAfter=await evaluate('window.scrollY');
@@ -422,6 +422,12 @@ async function testArticlesEndToEnd(){
   await click('[data-article-open="article_2"]');
   detail=await evaluate(`(()=>{const root=document.querySelector('#articleModalBody');const img=root.querySelector('.article-detail-media img');return {title:root.querySelector('h1')?.textContent||'',h3:root.querySelector('.article-full-text h3')?.textContent||'',strong:root.querySelector('.article-full-text strong')?.textContent||'',em:root.querySelector('.article-full-text em')?.textContent||'',link:root.querySelector('.article-full-text a')?.href||'',list:root.querySelectorAll('.article-full-text li').length,quote:root.querySelector('blockquote')?.textContent||'',objectFit:img?getComputedStyle(img).objectFit:'',caption:root.querySelector('figcaption')?.textContent||'',scriptCount:root.querySelectorAll('script').length};})()`);
   add('dettaglio completo e formattazione sicura',detail.title.startsWith('Titolo molto lungo')&&detail.h3==='Analisi completa'&&detail.strong==='grassetto'&&detail.em==='corsivo'&&detail.link.startsWith('https://example.com')&&detail.list===2&&detail.quote.includes('citazione')&&detail.objectFit==='contain'&&detail.caption.includes('Didascalia')&&detail.scriptCount===0,JSON.stringify(detail));
+  await evaluate(`(()=>{const opener=document.querySelector('#articleModalBody [data-article-image-open]');opener.focus();opener.click();document.querySelector('.article-image-viewer [data-article-viewer-in]').click();})()`);
+  await delay(60);
+  const articleViewer=await evaluate(`(()=>{const root=document.querySelector('.article-image-viewer');return {open:root.classList.contains('open'),hidden:root.getAttribute('aria-hidden'),zoom:root.querySelector('[data-article-viewer-label]').textContent,focusClose:document.activeElement===root.querySelector('.article-image-viewer-close')};})()`);
+  await pressKey('Escape');await delay(60);
+  const articleViewerClosed=await evaluate(`!document.querySelector('.article-image-viewer').classList.contains('open')&&document.activeElement===document.querySelector('#articleModalBody [data-article-image-open]')&&document.body.classList.contains('ng-overlay-open')&&document.querySelector('#articleModal').classList.contains('open')`);
+  add('visualizzatore fotografia: zoom, Escape e ritorno focus',articleViewer.open&&articleViewer.hidden==='false'&&articleViewer.zoom==='150%'&&articleViewer.focusClose&&articleViewerClosed,JSON.stringify({articleViewer,articleViewerClosed}));
   const hashBeforeRefresh=await evaluate('location.hash');await navigate('index.html');await waitFor(()=>evaluate(`document.querySelector('#articleModal')?.classList.contains('open')`),{label:'direct article refresh'});
   const refreshed=await evaluate(`({hash:location.hash,title:document.querySelector('#articleModalBody h1')?.textContent||'',cards:document.querySelectorAll('#publicArticles .article-card').length})`);
   add('refresh e URL diretto',hashBeforeRefresh==='#article=analisi-completa'&&refreshed.hash===hashBeforeRefresh&&refreshed.title.startsWith('Titolo molto lungo'),JSON.stringify(refreshed));
@@ -463,9 +469,10 @@ async function testArticlesEndToEnd(){
   const dirty=await evaluate(`({dirty:document.querySelector('#articleFormTitle').dataset.unsaved,slug:document.querySelector('#articleSlug').value})`);
   add('slug automatico e stato non salvato',dirty.dirty==='true'&&dirty.slug==='nuovo-articolo-end-to-end',JSON.stringify(dirty));
   await click('#articlePreviewBtn');modal=await overlayState('#articlePreviewModal');
-  const preview=await evaluate(`({open:document.querySelector('#articlePreviewModal')?.classList.contains('open'),title:document.querySelector('#articlePreviewModalBody h1')?.textContent||'',imgAlt:document.querySelector('#articlePreviewModalBody img')?.alt||''})`);
-  add('anteprima amministratore',modal.open&&modal.bodyLocked&&preview.title==='Nuovo articolo end to end'&&preview.imgAlt==='Quadrato di prova',JSON.stringify({modal,preview}));await pressKey('Escape');
-  add('anteprima: Escape e ritorno focus',await evaluate(`!document.querySelector('#articlePreviewModal').classList.contains('open')&&!document.body.classList.contains('ng-overlay-open')&&document.activeElement===document.querySelector('#articlePreviewBtn')`));
+  const preview=await evaluate(`({open:document.querySelector('#articlePreviewModal')?.classList.contains('open'),title:document.querySelector('#articlePreviewModalBody h1')?.textContent||'',imgAlt:document.querySelector('#articlePreviewModalBody img')?.alt||'',editorial:!!document.querySelector('#articlePreviewModalBody .article-detail-editorial')})`);
+  add('anteprima amministratore',modal.open&&modal.bodyLocked&&preview.title==='Nuovo articolo end to end'&&preview.imgAlt==='Quadrato di prova'&&preview.editorial,JSON.stringify({modal,preview}));await pressKey('Escape');
+  const previewClosed=await waitFor(()=>evaluate(`(()=>({closed:!document.querySelector('#articlePreviewModal').classList.contains('open'),unlocked:!document.body.classList.contains('ng-overlay-open'),focus:document.activeElement===document.querySelector('#articlePreviewBtn')}))()`),{label:'chiusura anteprima amministratore'});
+  add('anteprima: Escape e ritorno focus',previewClosed.closed&&previewClosed.unlocked&&previewClosed.focus,JSON.stringify(previewClosed));
   await click('#articleSubmitBtn');
   await waitFor(()=>evaluate(`NexoraStore.selectors.allArticles(NexoraStore.load('admin')).some(a=>a.title==='Nuovo articolo end to end')`),{label:'create draft article'});
   const created=await evaluate(`(()=>{const a=NexoraStore.selectors.allArticles(NexoraStore.load('admin')).find(a=>a.title==='Nuovo articolo end to end');return {id:a?.id||'',status:a?.status||'',image:a?.image?.slice(0,22)||'',tags:a?.tags||[],formTitle:document.querySelector('#articleTitle').value};})()`);
@@ -586,7 +593,66 @@ async function testPhotoConfirmAndLightbox(){
   await pressKey('Escape');light=await overlayState('#photosLightbox');const lightEscape=!light.open&&!light.bodyLocked;
   for(let i=0;i<10;i++){await click('[data-photo-open="0"]');await pressKey('Escape');}
   light=await overlayState('#photosLightbox');const lightCycles=!light.open&&!light.bodyLocked&&light.count===1;
-  record('Conferma foto e lightbox: singola istanza, 10 cicli, Escape, backdrop, frecce e assenza residui',doubleOk&&escapeOk&&cyclesOk&&backdropOk&&lightOpen&&lightEscape&&lightCycles,JSON.stringify({doubleOk,escapeOk,cyclesOk,backdropOk,lightOpen,lightEscape,lightCycles,confirm:st,light}));
+
+  const stagingReady=await evaluate(`(async()=>{
+    window.__photoUploadCalls=0;
+    const canvas=document.createElement('canvas');canvas.width=2;canvas.height=2;
+    const ctx=canvas.getContext('2d');ctx.fillRect(0,0,2,2);
+    const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));
+    const file=new File([blob],'nuova foto speciale.png',{type:'image/png',lastModified:Date.now()});
+    window.__testPhotoFile=file;
+    const dt=new DataTransfer();dt.items.add(file);
+    const input=document.querySelector('#photosFileInput');
+    Object.defineProperty(input,'files',{value:dt.files,configurable:true});
+    input.dispatchEvent(new Event('change',{bubbles:true}));
+    return true;
+  })()`);
+  assert(stagingReady,'Impossibile preparare il file locale per il test Foto');
+  await waitFor(()=>evaluate(`!!document.querySelector('.staging-panel [data-remove-staged]')`),{label:'anteprima locale Foto'});
+  const staging=await evaluate(`({
+    panel:!!document.querySelector('.staging-panel'),
+    name:document.querySelector('.staging-thumb-name')?.textContent||'',
+    dimensions:document.querySelector('.staging-thumb small')?.textContent||'',
+    confirmDisabled:document.querySelector('#photosStagingConfirmBtn')?.disabled||false
+  })`);
+  await click('.staging-thumb-remove');
+  const removedBeforeUpload=await evaluate(`!document.querySelector('.staging-panel')&&!document.querySelector('[data-staging-id]')`);
+  await evaluate(`(()=>{const dt=new DataTransfer();dt.items.add(window.__testPhotoFile);const input=document.querySelector('#photosFileInput');Object.defineProperty(input,'files',{value:dt.files,configurable:true});input.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`);
+  await waitFor(()=>evaluate(`!!document.querySelector('.staging-panel [data-remove-staged]')`),{label:'ripristino anteprima locale Foto'});
+  await evaluate(`(()=>{
+    window.NexoraPhotos.uploadTeamPhoto=async(teamId,file)=>{
+      window.__photoUploadCalls++;
+      await new Promise(resolve=>setTimeout(resolve,120));
+      return {id:'mock-photo',publicId:'squadra/'+teamId+'/mock-photo',path:'squadra/'+teamId+'/mock-photo',teamId,name:file.name,originalName:file.name,size:file.size,width:1,height:1,mimeType:file.type,thumbUrl:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZC/gAAAAASUVORK5CYII=',originalUrl:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZC/gAAAAASUVORK5CYII='};
+    };
+    window.NexoraPhotos.refreshAll=async()=>[];
+  })()`);
+  await evaluate(`(()=>{const b=document.querySelector('#photosStagingConfirmBtn');b.click();b.click();return true;})()`);
+  await waitFor(()=>evaluate(`(window.__photoUploadCalls||0)===1 && document.querySelector('#photosFileInput')?.disabled===false`),{label:'upload Foto simulato',timeout:5000});
+  const upload=await evaluate(`({calls:window.__photoUploadCalls||0,busy:document.querySelector('#photosFileInput')?.disabled||false,summary:document.querySelector('#photosMsg')?.textContent||'',failed:document.querySelectorAll('.upload-item-status.fail').length})`);
+  const stagingOk=staging.panel&&staging.name==='nuova foto speciale.png'&&staging.dimensions.includes('2×2')&&!staging.confirmDisabled&&removedBeforeUpload&&upload.calls===1&&!upload.busy&&upload.failed===0;
+
+  await navigate('index.html');
+  await evaluate(`(()=>{
+    const store=NexoraStore;const s=store.load('public');const rows=s.teamPhotos?.team_a||[];
+    window.NexoraPhotos.status=()=>({loaded:true,loading:false,error:null});
+    window.NexoraPhotos.getTeamPhotoMap=()=>({team_a:rows});
+    window.NexoraPhotos.listTeamPhotos=()=>rows.map((p,i)=>({...p,teamId:'team_a',title:'Foto test accessibile',altText:'Foto test accessibile',thumbUrl:'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==',originalUrl:'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==',largeUrl:'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=='}));
+    window.NexoraPhotos.originalDownloadUrl=()=> 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+  })()`);
+  await click('[data-tab="photos"]');
+  await waitFor(()=>evaluate(`!!document.querySelector('[data-public-photo-open="0"]')`),{label:'foto pubblica accessibile'});
+  const publicCard=await evaluate(`(()=>{const el=document.querySelector('[data-public-photo-open="0"]');return {role:el?.getAttribute('role')||'',tabindex:el?.getAttribute('tabindex')||'',aria:el?.getAttribute('aria-label')||'',alt:el?.querySelector('img')?.alt||''};})()`);
+  await evaluate(`document.querySelector('[data-public-photo-open="0"]').focus()`);
+  await pressKey('Enter');
+  await waitFor(()=>evaluate(`document.querySelector('#publicPhotosLightbox')?.classList.contains('open')`),{label:'lightbox Foto da tastiera'});
+  const publicOpen=await overlayState('#publicPhotosLightbox');
+  await pressKey('Escape');
+  const publicClosed=await overlayState('#publicPhotosLightbox');
+  const publicFocus=await evaluate(`document.activeElement===document.querySelector('[data-public-photo-open="0"]')`);
+  const publicKeyboardOk=publicCard.role==='button'&&publicCard.tabindex==='0'&&Boolean(publicCard.aria)&&Boolean(publicCard.alt)&&publicOpen.open&&!publicClosed.open&&publicFocus;
+
+  record('Foto: conferma, lightbox, anteprima locale, doppio click upload e apertura pubblica da tastiera',doubleOk&&escapeOk&&cyclesOk&&backdropOk&&lightOpen&&lightEscape&&lightCycles&&stagingOk&&publicKeyboardOk,JSON.stringify({doubleOk,escapeOk,cyclesOk,backdropOk,lightOpen,lightEscape,lightCycles,staging,removedBeforeUpload,upload,stagingOk,publicCard,publicOpen,publicClosed,publicFocus,publicKeyboardOk,confirm:st,light}));
 }
 
 async function testResizeAndScroll(){

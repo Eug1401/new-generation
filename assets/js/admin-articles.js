@@ -241,7 +241,9 @@
     previewTrigger=trigger||document.activeElement;
     previewArticleId=articleById(article?.id)?.id||'';
     $('#articlePreviewModalTitle').textContent=article.title||'Anteprima articolo';
-    $('#articlePreviewModalBody').innerHTML=UI.articleDetail(article,{preview:true});
+    const previewBody=$('#articlePreviewModalBody');
+    previewBody.innerHTML=UI.articleDetail(article,{preview:true});
+    UI.prepareArticleDetail?.(previewBody,{onBack:()=>closePreview()});
     const remove=$('#deleteArticleFromPreviewBtn');
     if(remove){remove.hidden=!previewArticleId;remove.dataset.deleteArticlePreview=previewArticleId;}
     modal.classList.add('open');syncOverlayLock();

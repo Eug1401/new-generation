@@ -472,7 +472,7 @@
           attachSmartImageRetry(img, {force: changed || el.classList.contains('is-broken')});
         }
         const dl = el.querySelector('.photo-download-btn');
-        if(dl) dl.href = p.downloadUrl || nextFallback;
+        if(dl) dl.href = Photos.originalDownloadUrl(p);
       });
       if(dlBtn){
         dlBtn.hidden = false;
@@ -503,12 +503,15 @@
       fig.className = 'photo-thumb public is-loading';
       fig.dataset.publicPhotoOpen = i;
       fig.dataset.photoPath = p.path;
+      fig.tabIndex = 0;
+      fig.setAttribute('role','button');
+      fig.setAttribute('aria-label',`Apri fotografia ${p.title||p.name||i+1}`);
       // Solo le foto nuove (non già nel DOM) hanno l'animazione di entrata.
       // Le foto già caricate non rifanno il fade-in: percepito come "istantaneo".
       fig.style.setProperty('--enter-delay', Math.min(i*15, 180) + 'ms');
       fig.innerHTML = `
       <div class="photo-img-wrap">
-        <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" data-photo-managed="1" data-src="${imgSrc}" data-fallback-src="${fallbackSrc}" data-preview-src="${imgSrc}" data-original-src="${fallbackSrc}" data-photo-version="${UI.esc(String(p.ts||p.path||i))}"${thumbPathAttr} data-retries="0" alt="" ${loadStrategy} decoding="async" />
+        <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" data-photo-managed="1" data-src="${imgSrc}" data-fallback-src="${fallbackSrc}" data-preview-src="${imgSrc}" data-original-src="${fallbackSrc}" data-photo-version="${UI.esc(String(p.ts||p.path||i))}"${thumbPathAttr} data-retries="0" alt="${UI.esc(p.altText||p.title||p.name||'Fotografia squadra')}" ${loadStrategy} decoding="async" />
         <div class="photo-status photo-status-loading" aria-hidden="true">
           <span class="photo-status-dots"><span></span><span></span><span></span></span>
           <span class="photo-status-text">Recupero dati, attendere…</span>
@@ -521,7 +524,7 @@
       </div>
       <figcaption>
         <span class="photo-name" title="${UI.esc(p.name)}">${UI.esc(p.name)}</span>
-        <a href="${UI.esc(p.downloadUrl||p.originalUrl||p.url)}" download="${UI.esc(p.name)}" class="photo-download-btn" aria-label="Scarica foto" title="Scarica originale" data-photo-download>⬇</a>
+        <a href="${UI.esc(Photos.originalDownloadUrl(p))}" download="${UI.esc(p.originalName||p.name)}" class="photo-download-btn" aria-label="Scarica foto" title="Scarica originale" data-photo-download>⬇</a>
       </figcaption>`;
       return fig;
     }
@@ -567,7 +570,7 @@
             attachSmartImageRetry(exImg, {force: changed || el.classList.contains('is-broken')});
           }
           const dl = el.querySelector('.photo-download-btn');
-          if(dl) dl.href = p.downloadUrl || nextFallback;
+          if(dl) dl.href = Photos.originalDownloadUrl(p);
         } else {
           el = buildThumb(p, i);
           grid.insertBefore(el, refNode);
@@ -586,107 +589,83 @@
     }
   }
 
-  // Lightbox pubblico
+  // Lightbox pubblico: alta qualità, originale separato, zoom/pan e focus accessibile.
+  let publicPhotoViewer=null;
   function ensurePublicLightbox(){
-    if($('#publicPhotosLightbox')) return;
-    const lb = document.createElement('div');
-    lb.id = 'publicPhotosLightbox';
-    lb.className = 'photos-lightbox';
-    lb.setAttribute('aria-hidden','true');
-    lb.innerHTML = `
-      <button type="button" class="lightbox-close" aria-label="Chiudi">×</button>
-      <button type="button" class="lightbox-nav lightbox-prev" aria-label="Precedente">‹</button>
-      <button type="button" class="lightbox-nav lightbox-next" aria-label="Successiva">›</button>
-      <div class="lightbox-stage"><img class="lightbox-img" alt="" /></div>
-      <div class="lightbox-bar">
-        <div class="lightbox-meta"><span class="lightbox-name"></span><small class="lightbox-counter"></small></div>
-        <a class="lightbox-download btn small" download href="#">⬇ Scarica</a>
-      </div>`;
-    document.body.appendChild(lb);
-    const img = lb.querySelector('.lightbox-img');
-    let isZoomed = false;
-    function toggleZoom(){
-      isZoomed = !isZoomed;
-      img.classList.toggle('is-zoomed', isZoomed);
+    let lb=$('#publicPhotosLightbox');
+    if(!lb){
+      lb=document.createElement('div');
+      lb.id='publicPhotosLightbox';
+      lb.className='photos-lightbox';
+      lb.setAttribute('aria-hidden','true');
+      lb.setAttribute('role','dialog');
+      lb.setAttribute('aria-modal','true');
+      lb.setAttribute('aria-label','Visualizzatore fotografie');
+      lb.innerHTML=`
+        <button type="button" class="lightbox-close" aria-label="Chiudi visualizzatore">×</button>
+        <button type="button" class="lightbox-nav lightbox-prev" aria-label="Foto precedente">‹</button>
+        <button type="button" class="lightbox-nav lightbox-next" aria-label="Foto successiva">›</button>
+        <div class="lightbox-stage"><img class="lightbox-img" alt="" draggable="false"></div>
+        <div class="lightbox-bar">
+          <div class="lightbox-meta"><span class="lightbox-name"></span><small class="lightbox-counter"></small></div>
+          <a class="lightbox-download btn small" download href="#">⬇ Originale</a>
+        </div>`;
+      document.body.appendChild(lb);
     }
-    lb.addEventListener('click', e=>{
-      if(e.target.matches('.lightbox-close, .photos-lightbox, .lightbox-stage')) closePublicLightbox();
-      else if(e.target.matches('.lightbox-prev')) navPublicLightbox(-1);
-      else if(e.target.matches('.lightbox-next')) navPublicLightbox(1);
-    });
-    let lastTap = 0;
-    img.addEventListener('click', e=>{
-      e.stopPropagation();
-      const now = Date.now();
-      if(now - lastTap < 300){ toggleZoom(); lastTap = 0; }
-      else lastTap = now;
-    });
-    document.addEventListener('keydown', e=>{
-      if(!lb.classList.contains('open')) return;
-      if(e.key === 'ArrowLeft') navPublicLightbox(-1);
-      else if(e.key === 'ArrowRight') navPublicLightbox(1);
-    });
-    // Swipe gesture per mobile
-    let touchStartX = 0;
-    lb.addEventListener('touchstart', e=>{ touchStartX = e.touches[0].clientX; }, {passive:true});
-    lb.addEventListener('touchend', e=>{
-      if(isZoomed) return;
-      const dx = (e.changedTouches[0].clientX - touchStartX);
-      if(Math.abs(dx) > 50) navPublicLightbox(dx < 0 ? 1 : -1);
-    }, {passive:true});
+    if(!publicPhotoViewer){
+      publicPhotoViewer=window.NGImageViewer?.bind(lb,{
+        onClose:()=>{publicLightboxIndex=-1;},
+        onPrevious:()=>navPublicLightbox(-1),
+        onNext:()=>navPublicLightbox(1)
+      });
+    }
+    return lb;
   }
 
-  function openPublicLightbox(idx){
+  function openPublicLightbox(idx,trigger=null){
     ensurePublicLightbox();
-    publicLightboxIndex = idx;
+    publicLightboxIndex=idx;
     updatePublicLightboxContent();
-    const lb = $('#publicPhotosLightbox');
-    lb.classList.add('open');
-    lb.setAttribute('aria-hidden','false');
+    publicPhotoViewer?.open(trigger);
   }
   function closePublicLightbox(){
-    const lb = $('#publicPhotosLightbox');
-    if(lb){ lb.classList.remove('open'); lb.setAttribute('aria-hidden','true'); }
-    publicLightboxIndex = -1;
+    if(publicPhotoViewer)publicPhotoViewer.close();
+    else {const lb=$('#publicPhotosLightbox');if(lb){lb.classList.remove('open');lb.setAttribute('aria-hidden','true');}}
+    publicLightboxIndex=-1;
   }
   function navPublicLightbox(delta){
-    const photos = window.NexoraPhotos ? window.NexoraPhotos.listTeamPhotos(state, photosSelectedTeam) : [];
-    if(!photos.length) return;
-    publicLightboxIndex = (publicLightboxIndex + delta + photos.length) % photos.length;
+    const photos=window.NexoraPhotos?window.NexoraPhotos.listTeamPhotos(state,photosSelectedTeam):[];
+    if(!photos.length)return;
+    publicLightboxIndex=(publicLightboxIndex+delta+photos.length)%photos.length;
     updatePublicLightboxContent();
   }
   function updatePublicLightboxContent(){
-    const photos = window.NexoraPhotos ? window.NexoraPhotos.listTeamPhotos(state, photosSelectedTeam) : [];
-    const p = photos[publicLightboxIndex];
-    if(!p) return closePublicLightbox();
-    const lb = $('#publicPhotosLightbox');
-    const img = lb.querySelector('.lightbox-img');
-    // Progressive loading: mostro SUBITO la thumb (già in cache dalla griglia) per apertura istantanea,
-    // poi cambio in background all'originale HD appena scaricato.
-    const thumbSrc = p.thumbUrl || p.url;
-    const hdSrc = p.largeUrl || p.originalUrl || p.url;
-    img.src = thumbSrc;
-    img.alt = p.name;
-    // Preload HD: appena pronto sostituisce la thumb. Niente flicker (stessa immagine, solo più dettaglio).
-    if(hdSrc && hdSrc !== thumbSrc){
-      const preloader = new Image();
-      preloader.onload = () => {
-        // Verifico che il lightbox sia ancora aperto su questa stessa foto
-        if(lb.classList.contains('open') && img.alt === p.name){
-          img.src = hdSrc;
-        }
-      };
-      preloader.src = hdSrc;
-    }
-    lb.querySelector('.lightbox-name').textContent = p.name;
-    lb.querySelector('.lightbox-counter').textContent = `${publicLightboxIndex+1} / ${photos.length}`;
-    const dl = lb.querySelector('.lightbox-download');
-    dl.href = p.downloadUrl || p.originalUrl || hdSrc;
-    dl.setAttribute('download', p.name);
+    const Photos=window.NexoraPhotos;
+    const photos=Photos?Photos.listTeamPhotos(state,photosSelectedTeam):[];
+    const p=photos[publicLightboxIndex];
+    if(!p)return closePublicLightbox();
+    ensurePublicLightbox();
+    const dimension=p.width&&p.height?`${p.width}×${p.height} · `:'';
+    publicPhotoViewer?.setContent({
+      preview:p.thumbUrl||p.url,
+      large:p.largeUrl||p.originalUrl||p.url,
+      alt:p.altText||p.title||p.name,
+      name:p.title||p.name,
+      counter:`${publicLightboxIndex+1} / ${photos.length} · ${dimension}${formatPhotoBytes(p.originalSize||p.size)}`,
+      downloadUrl:Photos.originalDownloadUrl(p),
+      downloadName:p.originalName||p.name
+    });
+  }
+  function formatPhotoBytes(bytes){
+    const value=Number(bytes)||0;
+    if(value<1024)return value+' B';
+    if(value<1024*1024)return Math.round(value/1024)+' KB';
+    return (value/1024/1024).toFixed(2)+' MB';
   }
 
   // Click su pillole + apertura foto + click change retrocompatibile
   document.addEventListener('click', e => {
+    if(e.target.closest('[data-photo-download]')) return;
     const pill = e.target.closest('[data-photos-team]');
     if(pill){
       photosSelectedTeam = pill.dataset.photosTeam;
@@ -696,9 +675,19 @@
     const opener = e.target.closest('[data-public-photo-open]');
     if(opener){
       const idx = Number(opener.dataset.publicPhotoOpen);
-      if(!Number.isNaN(idx)) openPublicLightbox(idx);
+      if(!Number.isNaN(idx)) openPublicLightbox(idx,opener);
       return;
     }
+  });
+
+
+  document.addEventListener('keydown', e => {
+    if(e.key!=='Enter'&&e.key!==' ')return;
+    const opener=e.target.closest?.('[data-public-photo-open]');
+    if(!opener||e.target!==opener)return;
+    e.preventDefault();
+    const idx=Number(opener.dataset.publicPhotoOpen);
+    if(!Number.isNaN(idx))openPublicLightbox(idx,opener);
   });
 
   document.addEventListener('change', e => {
@@ -725,10 +714,14 @@
           setTimeout(()=>busy.setButtonBusy(btn,false),2000);
         }else btn.disabled = false;
       }catch(err){
+        const message=window.NexoraPhotos?.userMessage?.(err)||err?.message||'Download ZIP non riuscito.';
         if(busy){
           busy.setButtonBusyLabel(btn,'Errore',false,'error');
           setTimeout(()=>busy.setButtonBusy(btn,false),3000);
-        }else btn.disabled = false;
+        }else btn.disabled=false;
+        const status=$('#publicPhotosStatus')||document.createElement('div');
+        if(!status.id){status.id='publicPhotosStatus';status.setAttribute('aria-live','polite');$('#publicPhotosGrid')?.before(status);}
+        status.innerHTML=`<div class="message error">${UI.esc(message)}</div>`;
       }
     }
   });
@@ -1128,6 +1121,8 @@
     openArticleId=article.id;
     const html=UI.articleDetail(article);
     if(html!==lastArticleHtml){setHtmlStable('#articleModalBody',html);lastArticleHtml=html;}
+    const articleBody=$('#articleModalBody');
+    UI.prepareArticleDetail?.(articleBody,{onBack:()=>closeArticleModal()});
     $('#articleModalTitle').textContent=article.title||'Articolo';
     modal.classList.add('open');
     updateArticleHead(article);
@@ -1430,6 +1425,7 @@
       if(article){
         const html=UI.articleDetail(article);
         if(html!==lastArticleHtml){setHtmlStable('#articleModalBody',html);lastArticleHtml=html;}
+        UI.prepareArticleDetail?.($('#articleModalBody'),{onBack:()=>closeArticleModal()});
         $('#articleModalTitle').textContent=article.title||'Articolo';
         updateArticleHead(article);
         const expected=`#article=${encodeURIComponent(article.slug||article.id)}`;

@@ -251,5 +251,134 @@
   });
   window.addEventListener('online', () => refreshGrid(document));
 
-  window.NGPhotoEngine = { load, refreshGrid, retryFromButton, version: 'v105' };
+  window.NGPhotoEngine = { load, refreshGrid, retryFromButton, version: 'v126.16' };
+
+  // Visualizzatore condiviso da galleria pubblica, galleria admin e dettaglio articolo.
+  // Gestisce focus, Escape, zoom, pan, wheel e pinch senza modificare gli URL sorgente.
+  function bindImageViewer(root,{onClose,onPrevious,onNext}={}){
+    if(!root) return null;
+    if(root._ngViewerApi) return root._ngViewerApi;
+    const image=root.querySelector('.lightbox-img');
+    const stage=root.querySelector('.lightbox-stage');
+    const closeButton=root.querySelector('.lightbox-close');
+    const pointers=new Map();
+    let scale=1,x=0,y=0,dragStart=null,pinchStart=null,loadToken=0,lastTrigger=null;
+
+    function clamp(value,min,max){return Math.min(max,Math.max(min,value));}
+    function apply(){
+      if(!image)return;
+      if(scale<=1){x=0;y=0;}
+      image.style.transform=`translate3d(${x}px,${y}px,0) scale(${scale})`;
+      image.classList.toggle('is-zoomed',scale>1.01);
+      image.setAttribute('data-zoom',scale.toFixed(2));
+      const label=root.querySelector('[data-viewer-zoom-label]');
+      if(label)label.textContent=Math.round(scale*100)+'%';
+    }
+    function setScale(next,originX=0,originY=0){
+      const previous=scale;
+      scale=clamp(next,1,4);
+      if(previous!==scale&&previous>0&&scale>1){
+        const ratio=scale/previous;
+        x=originX-(originX-x)*ratio;
+        y=originY-(originY-y)*ratio;
+      }
+      apply();
+    }
+    function reset(){scale=1;x=0;y=0;dragStart=null;pinchStart=null;pointers.clear();apply();}
+    function ensureControls(){
+      const bar=root.querySelector('.lightbox-bar');
+      if(!bar||bar.querySelector('.lightbox-zoom-controls'))return;
+      const controls=document.createElement('div');
+      controls.className='lightbox-zoom-controls';
+      controls.setAttribute('aria-label','Controlli zoom');
+      controls.innerHTML='<button type="button" class="btn small" data-viewer-zoom-out aria-label="Riduci zoom">−</button><span data-viewer-zoom-label aria-live="polite">100%</span><button type="button" class="btn small" data-viewer-zoom-in aria-label="Aumenta zoom">+</button><button type="button" class="btn small" data-viewer-reset aria-label="Ripristina zoom">100%</button>';
+      bar.insertBefore(controls,bar.querySelector('.lightbox-download')||null);
+    }
+    ensureControls();
+
+    function open(trigger){
+      lastTrigger=trigger||document.activeElement;
+      reset();
+      root.classList.add('open');
+      root.setAttribute('aria-hidden','false');
+      document.body.classList.add('ng-overlay-open');
+      requestAnimationFrame(()=>closeButton?.focus?.());
+    }
+    function close(){
+      if(!root.classList.contains('open'))return;
+      root.classList.remove('open');
+      root.setAttribute('aria-hidden','true');
+      document.body.classList.remove('ng-overlay-open');
+      reset();
+      loadToken++;
+      const trigger=lastTrigger;lastTrigger=null;
+      requestAnimationFrame(()=>trigger&&document.contains(trigger)&&trigger.focus?.({preventScroll:true}));
+      onClose?.();
+    }
+    function setContent({preview='',large='',alt='',name='',counter='',downloadUrl='',downloadName=''}={}){
+      const token=++loadToken;
+      reset();
+      if(image){
+        image.alt=alt||name||'Fotografia';
+        image.src=preview||large||'';
+        if(large&&large!==preview){
+          const preloader=new Image();
+          preloader.onload=()=>{if(token===loadToken&&root.classList.contains('open'))image.src=large;};
+          preloader.src=large;
+        }
+      }
+      const nameEl=root.querySelector('.lightbox-name');if(nameEl)nameEl.textContent=name||'';
+      const counterEl=root.querySelector('.lightbox-counter');if(counterEl)counterEl.textContent=counter||'';
+      const download=root.querySelector('.lightbox-download');
+      if(download){download.href=downloadUrl||large||preview||'#';download.setAttribute('download',downloadName||name||'foto');}
+    }
+
+    root.addEventListener('click',event=>{
+      if(event.target.closest('[data-viewer-zoom-in]')){setScale(scale+.5);return;}
+      if(event.target.closest('[data-viewer-zoom-out]')){setScale(scale-.5);return;}
+      if(event.target.closest('[data-viewer-reset]')){reset();return;}
+      if(event.target.closest('.lightbox-close')){close();return;}
+      if(event.target.closest('.lightbox-prev')){reset();onPrevious?.();return;}
+      if(event.target.closest('.lightbox-next')){reset();onNext?.();return;}
+      if(event.target===root||(event.target===stage&&scale<=1.01))close();
+    });
+    image?.addEventListener('dblclick',event=>{event.preventDefault();setScale(scale>1?1:2,event.offsetX,event.offsetY);});
+    stage?.addEventListener('wheel',event=>{
+      if(!root.classList.contains('open'))return;
+      event.preventDefault();
+      const rect=stage.getBoundingClientRect();
+      setScale(scale+(event.deltaY<0?.35:-.35),event.clientX-rect.left-rect.width/2,event.clientY-rect.top-rect.height/2);
+    },{passive:false});
+    image?.addEventListener('pointerdown',event=>{
+      pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
+      image.setPointerCapture?.(event.pointerId);
+      if(pointers.size===1&&scale>1)dragStart={px:event.clientX,py:event.clientY,x,y};
+      if(pointers.size===2){const values=[...pointers.values()];pinchStart={distance:Math.hypot(values[1].x-values[0].x,values[1].y-values[0].y),scale};}
+    });
+    image?.addEventListener('pointermove',event=>{
+      if(!pointers.has(event.pointerId))return;
+      pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
+      if(pointers.size===2&&pinchStart){const values=[...pointers.values()];const distance=Math.hypot(values[1].x-values[0].x,values[1].y-values[0].y);setScale(pinchStart.scale*(distance/Math.max(1,pinchStart.distance)));return;}
+      if(dragStart&&scale>1){x=dragStart.x+(event.clientX-dragStart.px);y=dragStart.y+(event.clientY-dragStart.py);apply();}
+    });
+    function pointerEnd(event){pointers.delete(event.pointerId);dragStart=null;if(pointers.size<2)pinchStart=null;}
+    image?.addEventListener('pointerup',pointerEnd);image?.addEventListener('pointercancel',pointerEnd);
+    document.addEventListener('keydown',event=>{
+      if(!root.classList.contains('open'))return;
+      if(event.key==='Tab'){
+        const focusable=[...root.querySelectorAll('button:not([disabled]),a[href],input,select,textarea,[tabindex]:not([tabindex="-1"])')].filter(el=>!el.hidden&&el.getClientRects().length);
+        if(focusable.length){const first=focusable[0],last=focusable[focusable.length-1];if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}
+      }else if(event.key==='Escape'){event.preventDefault();close();}
+      else if(event.key==='ArrowLeft'){event.preventDefault();reset();onPrevious?.();}
+      else if(event.key==='ArrowRight'){event.preventDefault();reset();onNext?.();}
+      else if(event.key==='+'||event.key==='='){event.preventDefault();setScale(scale+.5);}
+      else if(event.key==='-'){event.preventDefault();setScale(scale-.5);}
+      else if(event.key==='0'){event.preventDefault();reset();}
+    });
+    const api={open,close,reset,setContent,get scale(){return scale;}};
+    root._ngViewerApi=api;
+    return api;
+  }
+
+  window.NGImageViewer={bind:bindImageViewer,version:'v126.16'};
 })();

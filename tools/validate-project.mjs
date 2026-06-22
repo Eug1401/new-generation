@@ -27,7 +27,7 @@ for(const file of htmlFiles){
   const rel=path.relative(root,file);
   const html=fs.readFileSync(file,'utf8');
   const checks=[
-    [/<!doctype html>/i,'doctype'],[/<html[^>]+lang="it"/i,'lang="it"'],[/name="viewport"/i,'viewport'],[/name="theme-color"/i,'theme-color'],[/class="skip-link"/i,'skip link'],[/<main\b/i,'main landmark'],[/assets\/css\/styles\.css\?v=[a-z0-9-]+/i,'versioned stylesheet'],[/assets\/js\/ux-a11y\.js\?v=v125-ui-stable/i,'UX accessibility runtime']
+    [/<!doctype html>/i,'doctype'],[/<html[^>]+lang="it"/i,'lang="it"'],[/name="viewport"/i,'viewport'],[/name="theme-color"/i,'theme-color'],[/class="skip-link"/i,'skip link'],[/<main\b/i,'main landmark'],[/assets\/css\/styles\.css\?v=[a-z0-9-]+/i,'versioned stylesheet'],[/assets\/js\/ux-a11y\.js\?v=[a-z0-9-]+/i,'UX accessibility runtime']
   ];
   for(const [re,label] of checks){if(!re.test(html))errors.push(`${rel}: ${label} mancante`);}
   const attr=/\b(?:src|href)="([^"]+)"/g;
