@@ -1,0 +1,1131 @@
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=CHANGES_V126_16.patch' '--exclude=FULL_MODIFIED_FILES_V126_16.md' '--exclude=IMPLEMENTATION_REPORT_V126_16.md' '--exclude=TEST_RESULTS_V126_16.txt' /mnt/data/ng-baseline/new-generation-main/.gitignore /mnt/data/ng-fix/new-generation-main/.gitignore
+--- /mnt/data/ng-baseline/new-generation-main/.gitignore	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/ng-fix/new-generation-main/.gitignore	2026-06-22 11:53:18.325319983 +0000
+@@ -0,0 +1,6 @@
++# Secrets locali: non versionare mai credenziali Cloudinary o Supabase.
++.env
++.env.*
++!.env.example
++supabase/functions/.env
++supabase/functions/.env.local
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=CHANGES_V126_16.patch' '--exclude=FULL_MODIFIED_FILES_V126_16.md' '--exclude=IMPLEMENTATION_REPORT_V126_16.md' '--exclude=TEST_RESULTS_V126_16.txt' /mnt/data/ng-baseline/new-generation-main/CHANGES_V126_17.patch /mnt/data/ng-fix/new-generation-main/CHANGES_V126_17.patch
+--- /mnt/data/ng-baseline/new-generation-main/CHANGES_V126_17.patch	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/ng-fix/new-generation-main/CHANGES_V126_17.patch	2026-06-22 11:59:21.010044079 +0000
+@@ -0,0 +1,10 @@
++diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=CHANGES_V126_16.patch' '--exclude=FULL_MODIFIED_FILES_V126_16.md' '--exclude=IMPLEMENTATION_REPORT_V126_16.md' '--exclude=TEST_RESULTS_V126_16.txt' /mnt/data/ng-baseline/new-generation-main/.gitignore /mnt/data/ng-fix/new-generation-main/.gitignore
++--- /mnt/data/ng-baseline/new-generation-main/.gitignore	1970-01-01 00:00:00.000000000 +0000
+++++ /mnt/data/ng-fix/new-generation-main/.gitignore	2026-06-22 11:53:18.325319983 +0000
++@@ -0,0 +1,6 @@
+++# Secrets locali: non versionare mai credenziali Cloudinary o Supabase.
+++.env
+++.env.*
+++!.env.example
+++supabase/functions/.env
+++supabase/functions/.env.local
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=CHANGES_V126_16.patch' '--exclude=FULL_MODIFIED_FILES_V126_16.md' '--exclude=IMPLEMENTATION_REPORT_V126_16.md' '--exclude=TEST_RESULTS_V126_16.txt' /mnt/data/ng-baseline/new-generation-main/CLOUDINARY_SUPABASE_SETUP.md /mnt/data/ng-fix/new-generation-main/CLOUDINARY_SUPABASE_SETUP.md
+--- /mnt/data/ng-baseline/new-generation-main/CLOUDINARY_SUPABASE_SETUP.md	2026-06-22 11:11:08.000000000 +0000
++++ /mnt/data/ng-fix/new-generation-main/CLOUDINARY_SUPABASE_SETUP.md	2026-06-22 11:53:18.434938793 +0000
+@@ -1,6 +1,6 @@
+-# Setup galleria Foto: Cloudinary + Supabase Edge Function (v126.16)
++# Setup galleria Foto: Cloudinary + Supabase Edge Function (v126.17)
+ 
+-La galleria Foto è un flusso autonomo rispetto alle immagini degli articoli:
++La galleria Foto è autonoma rispetto alle immagini degli articoli:
+ 
+ ```text
+ frontend Foto → team-photos → Cloudinary cartella squadra/<teamId>
+@@ -9,73 +9,99 @@
+ 
+ Gli articoli, i relativi URL immagine e il loro caricamento non vengono usati né modificati.
+ 
+-## 1. Database
++## 1. Causa dell'errore di rete
+ 
+-Esegui `SUPABASE_SETUP.sql` nel SQL Editor. La sezione v126.16 crea `public.team_photos`, che conserva `public_id`, URL originale, URL delle preview, formato, dimensioni, byte, MIME type, nome originale, titolo, descrizione, didascalia, alt, album, ordine e date.
++Il frontend chiama `https://<project-ref>.supabase.co/functions/v1/team-photos`.
++Il messaggio “Server Foto non raggiungibile” compare quando il browser non può leggere alcuna risposta HTTP: funzione non distribuita, preflight bloccata oppure origine esclusa da CORS.
+ 
+-Il browser non accede direttamente alla tabella. La Edge Function usa la service role; RLS resta attivo senza policy pubbliche.
++La versione v126.17 corregge inoltre due problemi di configurazione:
+ 
+-## 2. Secrets della Edge Function
++- invia la chiave pubblicabile nell'header `apikey` del gateway Supabase;
++- legge sia `CLOUDINARY_URL` sia le tre variabili Cloudinary separate;
++- restituisce un JSON leggibile anche quando l'origine è esclusa, così il frontend mostra `ORIGIN_NOT_ALLOWED` invece di `Failed to fetch`;
++- espone `GET ?action=health`, senza rivelare segreti.
+ 
+-Configura in Supabase:
++## 2. Sicurezza immediata
++
++Una API secret incollata in chat, log o ticket deve essere considerata esposta. Ruotala dal pannello Cloudinary prima del deploy e usa soltanto il nuovo valore nei Secrets Supabase. Non inserirla in file JavaScript, HTML, repository o ZIP consegnati agli utenti.
++
++## 3. Database
++
++Esegui `SUPABASE_SETUP.sql` nel SQL Editor. La tabella `public.team_photos` conserva metadati, URL originale e URL derivati. Il browser non accede direttamente alla tabella; la Edge Function usa la service role e RLS resta attivo.
++
++## 4. Secrets della Edge Function
++
++Puoi usare un solo secret Cloudinary completo:
+ 
+ ```env
+-CLOUDINARY_CLOUD_NAME=dc17izhac
+-CLOUDINARY_API_KEY=<api-key>
+-CLOUDINARY_API_SECRET=<api-secret>
++CLOUDINARY_URL=cloudinary://API_KEY:API_SECRET@CLOUD_NAME
+ CLOUDINARY_TEAM_FOLDER=squadra
+ CLOUDINARY_SECTION_TAG=foto-squadra
+-SUPABASE_URL=<url-progetto>
+-SUPABASE_ANON_KEY=<anon-o-legacy-anon-key>
+-SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
+-PHOTO_ALLOWED_ORIGINS=https://dominio-produzione.example,https://dominio-preview.example
++PHOTO_ALLOWED_ORIGINS=https://dominio-produzione.example,http://localhost:4173
+ ```
+ 
+-Per sviluppo aggiungi esplicitamente l'origine locale usata, per esempio `http://localhost:4173`. Non inserire mai `CLOUDINARY_API_SECRET` o `SUPABASE_SERVICE_ROLE_KEY` nel frontend.
++Oppure le variabili separate:
+ 
+-## 3. Autenticazione e CORS
++```env
++CLOUDINARY_CLOUD_NAME=your-cloud-name
++CLOUDINARY_API_KEY=your-api-key
++CLOUDINARY_API_SECRET=your-api-secret
++CLOUDINARY_TEAM_FOLDER=squadra
++CLOUDINARY_SECTION_TAG=foto-squadra
++PHOTO_ALLOWED_ORIGINS=https://dominio-produzione.example,http://localhost:4173
++```
+ 
+-`supabase/functions/team-photos/config.toml` usa `verify_jwt = false` per permettere alla preflight `OPTIONS` e alle letture pubbliche di raggiungere la funzione. La funzione valida manualmente il vero access token Supabase per `POST`, `PUT`, `PATCH` e `DELETE`.
++La stringa `CLOUDINARY_URL` non deve contenere placeholder come `<your_api_key>`.
++Il dominio in `PHOTO_ALLOWED_ORIGINS` deve corrispondere esattamente a protocollo, host e porta della pagina. Per disabilitare temporaneamente la restrizione durante la diagnosi puoi usare `PHOTO_ALLOWED_ORIGINS=*`; gli endpoint amministrativi restano protetti dal JWT utente.
+ 
+-Il frontend non usa più la chiave pubblicabile come token utente. Per le operazioni amministrative legge `session.access_token`; per il `FormData` non imposta manualmente `Content-Type`, così il browser genera il boundary corretto.
++## 5. Deploy obbligatorio
+ 
+-## 4. Deploy
++Il codice presente nello ZIP non distribuisce automaticamente la funzione remota. Esegui:
+ 
+ ```bash
+ supabase login
+-supabase link --project-ref <project-ref>
+-supabase functions deploy team-photos
++supabase link --project-ref mcksxqtgibkazxnkdfra
++supabase secrets set --env-file supabase/functions/.env
++supabase functions deploy team-photos --no-verify-jwt
+ ```
+ 
+-Verifica che il dominio pubblicato utilizzi HTTPS e che `assets/js/supabase-config.js` punti allo stesso progetto Supabase, senza URL `localhost` in produzione.
++Il file reale `supabase/functions/.env` deve restare escluso dal repository. Il progetto include soltanto `.env.example`.
+ 
+-## 5. Endpoint
++## 6. Diagnostica
+ 
+-```text
+-GET    /team-photos                         lista galleria
+-GET    /team-photos?action=detail&photoId=  dettaglio
+-GET    /team-photos?action=download&photoId= download originale
+-POST   /team-photos                         upload file/files multipart (admin)
+-POST   /team-photos?action=zip              ZIP originali selezionati
+-PATCH  /team-photos                         modifica metadati (admin)
+-PUT    /team-photos                         sostituzione sicura (admin)
+-DELETE /team-photos                         eliminazione verificata (admin)
+-OPTIONS /team-photos                        preflight senza autenticazione
++Dopo il deploy:
++
++```bash
++PHOTO_TEST_ORIGIN=https://dominio-reale.example npm run test:photo-edge-live
+ ```
+ 
+-## 6. Limiti e formati
++Il controllo distingue:
++
++- funzione 404/non distribuita;
++- timeout o DNS;
++- origine CORS errata;
++- Cloudinary non configurato;
++- secrets Supabase incompleti.
+ 
+-- JPEG, PNG, WebP;
+-- 10 MB per file;
+-- 20 file e 80 MB per batch;
+-- validazione di MIME, estensione, firma binaria e decodifica lato client;
+-- validazione di MIME, estensione e firma binaria lato funzione;
+-- upload multiplo parzialmente completabile: ogni file ha esito autonomo e le sole foto fallite possono essere riprovate.
++È disponibile anche:
+ 
+-## 7. Originali, preview e ZIP
++```text
++GET /functions/v1/team-photos?action=health
++```
+ 
+-Cloudinary conserva l'originale senza trasformazioni distruttive. La galleria usa derivate `thumb`, `medium` e `large`; download singolo e ZIP passano dalla Edge Function e contengono esclusivamente originali appartenenti alla galleria Foto. Lo ZIP non viene più costruito nel browser e non può includere immagini degli articoli.
++La risposta mostra solo flag booleani e cloud name; non restituisce API key, API secret, token o service role.
+ 
+-## 8. Diagnostica
++## 7. Endpoint
+ 
+-La funzione registra metodo, azione, status, codice errore e durata senza token o segreti. Il frontend distingue autenticazione, rete/CORS, mixed content, timeout, validazione, Cloudinary, database e ZIP incompleto.
++```text
++GET    /team-photos?action=health            diagnostica non sensibile
++GET    /team-photos                          lista galleria
++GET    /team-photos?action=detail&photoId=   dettaglio
++GET    /team-photos?action=download&photoId= originale
++POST   /team-photos                          upload multipart admin
++POST   /team-photos?action=zip               ZIP originali
++PATCH  /team-photos                          metadati admin
++PUT    /team-photos                          sostituzione admin
++DELETE /team-photos                          eliminazione admin
++OPTIONS /team-photos                         preflight
++```
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=CHANGES_V126_16.patch' '--exclude=FULL_MODIFIED_FILES_V126_16.md' '--exclude=IMPLEMENTATION_REPORT_V126_16.md' '--exclude=TEST_RESULTS_V126_16.txt' /mnt/data/ng-baseline/new-generation-main/IMPLEMENTATION_REPORT_V126_17.md /mnt/data/ng-fix/new-generation-main/IMPLEMENTATION_REPORT_V126_17.md
+--- /mnt/data/ng-baseline/new-generation-main/IMPLEMENTATION_REPORT_V126_17.md	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/ng-fix/new-generation-main/IMPLEMENTATION_REPORT_V126_17.md	2026-06-22 11:59:14.451522458 +0000
+@@ -0,0 +1,168 @@
++# Relazione intervento v126.17
++
++Data: 22 giugno 2026
++
++## 1. Risultato
++
++Sono stati applicati due interventi indipendenti:
++
++1. rielaborazione completa del dettaglio Articolo, con una vera sezione fotografica editoriale autonoma;
++2. correzione del flusso di rete della sezione Foto e aggiunta di una diagnostica esplicita per Supabase Edge Function, CORS e Cloudinary.
++
++La gestione delle immagini degli articoli non è stata collegata alla galleria Foto. Upload, storage, endpoint e modello degli Articoli restano separati.
++
++## 2. Dettaglio Articolo: problema verificato
++
++Nel progetto v126.16 il markup nuovo conviveva ancora con regole CSS storiche che impostavano il dettaglio come composizione a due colonne e applicavano `display: grid` alla sezione media. Le regole più recenti le sovrascrivevano solo in parte. In alcune larghezze la fotografia risultava quindi appoggiata nella pagina anziché integrata come blocco editoriale, e il frame poteva restringersi in modo anomalo.
++
++## 3. Nuovo impianto editoriale
++
++L'ordine del dettaglio è ora stabile:
++
++```text
++navigazione di ritorno
++categoria
++intestazione: titolo, sottotitolo, metadati
++sezione fotografica autonoma
++eventuale didascalia
++corpo editoriale
++contenuti finali e navigazione
++```
++
++La fotografia usa un pannello dedicato composto da:
++
++- sezione semantica `article-featured-photo`;
++- card fotografica indipendente;
++- canvas neutro e stabile;
++- immagine centrata con `object-fit: contain`;
++- comando “Apri fotografia” separato dall'immagine e non sovrapposto;
++- didascalia esterna al canvas.
++
++Il testo non può sovrapporsi all'immagine. Non sono presenti titoli sull'immagine, gradienti decorativi, altezze rigide con ritaglio o overflow orizzontale.
++
++### Rapporti d'aspetto
++
++- panoramica: usa la larghezza editoriale disponibile senza ritaglio;
++- verticale: card centrata con larghezza massima ridotta;
++- quadrata: dimensione equilibrata e centrata;
++- articolo senza foto: l'intera sezione non viene renderizzata.
++
++### Responsive
++
++Il layout è a colonna editoriale unica. La fotografia rimane distinta dall'intestazione e dal testo a 320, 768 e 1440 px, mantiene le proporzioni e non supera la viewport. L'anteprima amministrativa usa lo stesso renderer del dettaglio pubblico.
++
++## 4. “Server Foto non raggiungibile”: cause individuate nel codice
++
++Nel pacchetto sono state verificate tre condizioni concrete capaci di produrre il messaggio generico:
++
++1. le richieste alla Edge Function non inviavano sempre l'header `apikey` richiesto dal gateway Supabase;
++2. la funzione leggeva solo `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY` e `CLOUDINARY_API_SECRET`, ignorando un'eventuale configurazione tramite `CLOUDINARY_URL`;
++3. quando `PHOTO_ALLOWED_ORIGINS` non conteneva l'origine reale, la risposta 403 non era leggibile dal browser e veniva rappresentata come errore di rete/CORS.
++
++Il file `CLOUDINARY_URL` mostrato nella richiesta conteneva ancora un placeholder per la API key e non era quindi una stringa di configurazione utilizzabile così com'era.
++
++Non è possibile stabilire dal solo archivio quale configurazione sia attualmente pubblicata sul progetto Supabase remoto. La versione v126.17 elimina l'ambiguità tramite un health check non sensibile.
++
++## 5. Correzione frontend Foto
++
++`assets/js/photos.js` ora:
++
++- invia la chiave pubblicabile nell'header `apikey` per tutte le chiamate alla funzione;
++- usa il vero `session.access_token` solo per le operazioni amministrative;
++- non usa la chiave pubblicabile come token utente;
++- lascia al browser la generazione del boundary multipart;
++- classifica separatamente rete, CORS, origine non autorizzata, configurazione Cloudinary, configurazione Supabase, autenticazione e timeout;
++- espone `healthCheck()`.
++
++`assets/js/admin-photos.js` esegue la diagnostica prima di caricare la galleria e mostra un messaggio preciso per:
++
++- funzione non raggiungibile;
++- dominio assente da `PHOTO_ALLOWED_ORIGINS`;
++- Cloudinary non configurato;
++- secrets Supabase incompleti.
++
++## 6. Correzione Edge Function
++
++`supabase/functions/team-photos/index.ts` ora:
++
++- accetta `CLOUDINARY_URL` oppure le tre variabili Cloudinary separate;
++- rifiuta stringhe con placeholder;
++- gestisce `PHOTO_ALLOWED_ORIGINS` con normalizzazione di protocollo, host, porta e slash finale;
++- risponde alle preflight `OPTIONS` con gli header necessari;
++- mantiene il blocco applicativo 403 per origini non ammesse ma consente al browser di leggerne il JSON;
++- espone `GET ?action=health` senza restituire API key, API secret, service role o token;
++- mantiene gli endpoint amministrativi protetti dal JWT della sessione;
++- resta completamente separata dagli endpoint e dai dati Articoli.
++
++## 7. Sicurezza delle credenziali
++
++La API secret fornita nel messaggio deve essere considerata esposta e va ruotata nel pannello Cloudinary prima del deploy. Il valore non è stato copiato in JavaScript, HTML, documentazione, patch o archivio.
++
++Sono stati aggiunti:
++
++- `.gitignore` per escludere `.env` e i secrets delle funzioni;
++- `supabase/functions/.env.example` con soli placeholder;
++- controllo finale sull'albero sorgente per escludere i valori forniti nel messaggio.
++
++## 8. Attivazione sul progetto remoto
++
++La modifica locale non sostituisce automaticamente una Edge Function già pubblicata. Dopo aver ruotato il secret, creare `supabase/functions/.env` partendo da `.env.example`, quindi eseguire:
++
++```bash
++supabase login
++supabase link --project-ref mcksxqtgibkazxnkdfra
++supabase secrets set --env-file supabase/functions/.env
++supabase functions deploy team-photos --no-verify-jwt
++```
++
++Impostare `PHOTO_ALLOWED_ORIGINS` con l'origine completa del sito, per esempio `https://www.dominio.example`, includendo porta e protocollo quando presenti.
++
++Dopo il deploy:
++
++```bash
++PHOTO_TEST_ORIGIN=https://dominio-reale.example npm run test:photo-edge-live
++```
++
++oppure aprire:
++
++```text
++https://mcksxqtgibkazxnkdfra.supabase.co/functions/v1/team-photos?action=health
++```
++
++## 9. Test eseguiti
++
++Passati localmente:
++
++- validazione progetto: 13 HTML, 22 JavaScript, zero errori e zero avvisi;
++- lint;
++- 12 test specifici Foto;
++- controllo TypeScript della Edge Function;
++- suite Articoli end-to-end;
++- sezione fotografica autonoma e ordinata;
++- visualizzatore con Escape e ritorno focus;
++- dettaglio fotografico a 320, 768 e 1440 px;
++- assenza di overflow orizzontale;
++- build statica sorgente e `dist`.
++
++Il test live dal container ha prodotto `DNS non risolto per mcksxqtgibkazxnkdfra.supabase.co`. Questo descrive il limite della rete dell'ambiente di esecuzione e non dimostra lo stato della funzione pubblicata. Il deploy e i log remoti non erano disponibili in questa sessione e non vengono dichiarati come verificati.
++
++## 10. File modificati o aggiunti
++
++- `.gitignore`
++- `CLOUDINARY_SUPABASE_SETUP.md`
++- `package.json`
++- `package-lock.json`
++- pagine HTML, esclusivamente per aggiornamento cache-busting degli asset
++- `assets/css/styles.css`
++- `assets/js/ui.js`
++- `assets/js/photos.js`
++- `assets/js/admin-photos.js`
++- `supabase/functions/.env.example`
++- `supabase/functions/team-photos/index.ts`
++- `tools/check-photo-edge.mjs`
++- `tools/test-photo-system.mjs`
++- `tools/test-ui-stability.mjs`
++
++## 11. Limite residuo
++
++Per eliminare il messaggio nel sito pubblicato è obbligatorio distribuire la nuova funzione e impostare i nuovi secrets nel progetto Supabase. Senza accesso amministrativo al progetto remoto non è corretto dichiarare questa fase completata. Il codice, la diagnostica e i comandi necessari sono inclusi nell'archivio.
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=CHANGES_V126_16.patch' '--exclude=FULL_MODIFIED_FILES_V126_16.md' '--exclude=IMPLEMENTATION_REPORT_V126_16.md' '--exclude=TEST_RESULTS_V126_16.txt' /mnt/data/ng-baseline/new-generation-main/TEST_RESULTS_V126_17.txt /mnt/data/ng-fix/new-generation-main/TEST_RESULTS_V126_17.txt
+--- /mnt/data/ng-baseline/new-generation-main/TEST_RESULTS_V126_17.txt	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/ng-fix/new-generation-main/TEST_RESULTS_V126_17.txt	2026-06-22 11:59:14.459797873 +0000
+@@ -0,0 +1,56 @@
++NEW GENERATION v126.17 — RISULTATI DI VERIFICA
++Data: 22 giugno 2026
++
++PASS  npm test
++      13 file HTML, 22 file JavaScript, 0 errori, 0 avvisi.
++
++PASS  npm run lint
++      13 file HTML, 22 file JavaScript, 0 errori, 0 avvisi.
++
++PASS  npm run test:photos
++      12/12 controlli:
++      - header apikey sulle richieste pubbliche;
++      - JWT sessione sulle operazioni admin;
++      - multipart senza Content-Type manuale;
++      - classificazione rete/CORS;
++      - health check senza esposizione secrets;
++      - firme JPEG/PNG/WebP;
++      - rifiuto file incoerenti/corrotti;
++      - limiti file e batch;
++      - interruzione upload recuperabile;
++      - download originale e ZIP via Edge Function;
++      - separazione dagli Articoli;
++      - limiti e formati dichiarati nella UI.
++
++PASS  npm run test:edge
++      Controllo TypeScript della Edge Function team-photos.
++
++PASS  npm run test:articles
++      Inclusi:
++      - fotografia in sezione editoriale autonoma e ordinata;
++      - ordine intestazione → fotografia → corpo;
++      - object-fit: contain;
++      - visualizzatore, Escape e ritorno focus;
++      - dettaglio fotografico responsive 320/768/1440 px;
++      - nessun overflow orizzontale;
++      - anteprima amministrativa coerente;
++      - nessuna regressione upload immagini Articoli.
++
++PASS  npm run test:ui
++      13 pagine, 11 viewport, nessun errore runtime o richiesta locale fallita.
++
++PASS  npm run test:simulation
++      Simulazione e rollback verificati.
++
++PASS  npm run build
++      Sorgente e cartella dist validate; build statica generata.
++
++NON VERIFICABILE DALL'AMBIENTE LOCALE
++      npm run test:photo-edge-live
++      Esito del container: DNS non risolto per il dominio del progetto Supabase.
++      Il risultato non determina se la funzione remota sia pubblicata o configurata.
++      Occorre ripetere il comando da una rete con accesso Internet dopo deploy e secrets set.
++
++SICUREZZA
++      Scansione dell'albero sorgente: i valori Cloudinary forniti dall'utente non sono presenti nei file o nell'archivio.
++      La API secret esposta deve comunque essere ruotata prima del deploy.
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=CHANGES_V126_16.patch' '--exclude=FULL_MODIFIED_FILES_V126_16.md' '--exclude=IMPLEMENTATION_REPORT_V126_16.md' '--exclude=TEST_RESULTS_V126_16.txt' /mnt/data/ng-baseline/new-generation-main/admin-articles.html /mnt/data/ng-fix/new-generation-main/admin-articles.html
+--- /mnt/data/ng-baseline/new-generation-main/admin-articles.html	2026-06-22 11:22:02.000000000 +0000
++++ /mnt/data/ng-fix/new-generation-main/admin-articles.html	2026-06-22 11:53:22.972471392 +0000
+@@ -135,9 +135,9 @@
+   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+   <script defer src="assets/js/supabase-config.js?v=v125-ui-stable"></script>
+   <script defer src="assets/js/supabase-sync.js?v=v126-15-sync"></script>
+-  <script defer src="assets/js/ui.js?v=v126-16-article-detail"></script>
++  <script defer src="assets/js/ui.js?v=v126-17-article-detail"></script>
+   <script defer src="assets/js/ux-a11y.js?v=v126-16-overlay"></script>
+   <script defer src="assets/js/admin-common.js?v=v126-15-common"></script><script defer src="assets/js/admin-simulation.js?v=v126-15-wizard"></script>
+-  <script defer src="assets/js/admin-articles.js?v=v126-16-article-detail"></script>
++  <script defer src="assets/js/admin-articles.js?v=v126-17-article-detail"></script>
+ </body>
+ </html>
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=CHANGES_V126_16.patch' '--exclude=FULL_MODIFIED_FILES_V126_16.md' '--exclude=IMPLEMENTATION_REPORT_V126_16.md' '--exclude=TEST_RESULTS_V126_16.txt' /mnt/data/ng-baseline/new-generation-main/admin-photos.html /mnt/data/ng-fix/new-generation-main/admin-photos.html
+--- /mnt/data/ng-baseline/new-generation-main/admin-photos.html	2026-06-22 11:22:02.000000000 +0000
++++ /mnt/data/ng-fix/new-generation-main/admin-photos.html	2026-06-22 11:53:22.973449615 +0000
+@@ -1,4 +1,4 @@
+-<!doctype html><html lang="it" class="no-js"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#070b12"><meta name="color-scheme" content="dark"><link rel="preconnect" href="https://mcksxqtgibkazxnkdfra.supabase.co" crossorigin><link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin><link rel="preconnect" href="https://res.cloudinary.com" crossorigin><link rel="dns-prefetch" href="https://res.cloudinary.com"><link rel="dns-prefetch" href="https://mcksxqtgibkazxnkdfra.supabase.co"><link rel="dns-prefetch" href="https://cdn.jsdelivr.net"><title>New Generation · Foto squadre</title><link rel="stylesheet" href="assets/css/styles.css?v=v126-16-photo-article"></head><body><a class="skip-link" href="#main-content">Vai al contenuto principale</a><div class="shell"><header class="site-header"><div class="brand"><div data-brand-logo><div class="logo"><span></span></div></div><div><h1 data-brand-title>New Generation · Foto squadre</h1><p data-brand-subtitle>Carica e gestisci le foto di ogni squadra del torneo.</p></div></div><div class="actions"><button class="btn primary" id="simulateTournamentBtn" type="button">Simula</button><button class="btn danger" id="resetAllBtn" type="button">Reset</button></div></header><nav class="admin-nav" aria-label="Navigazione amministrazione"><a href="admin.html" class="">Dashboard</a><a href="admin-rules.html" class="">Regole &amp; calendario</a><a href="admin-groups.html" class="">Gironi</a><a href="admin-teams.html" class="">Squadre</a><a href="admin-players.html" class="">Giocatori</a><a href="admin-matches.html" class="">Partite &amp; referti</a><a href="admin-articles.html" class="">Articoli</a><a href="admin-photos.html" class="active">Foto</a><a href="admin-reports.html" class="">Report &amp; PDF</a></nav><main id="main-content" tabindex="-1">
++<!doctype html><html lang="it" class="no-js"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#070b12"><meta name="color-scheme" content="dark"><link rel="preconnect" href="https://mcksxqtgibkazxnkdfra.supabase.co" crossorigin><link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin><link rel="preconnect" href="https://res.cloudinary.com" crossorigin><link rel="dns-prefetch" href="https://res.cloudinary.com"><link rel="dns-prefetch" href="https://mcksxqtgibkazxnkdfra.supabase.co"><link rel="dns-prefetch" href="https://cdn.jsdelivr.net"><title>New Generation · Foto squadre</title><link rel="stylesheet" href="assets/css/styles.css?v=v126-17-photo-article"></head><body><a class="skip-link" href="#main-content">Vai al contenuto principale</a><div class="shell"><header class="site-header"><div class="brand"><div data-brand-logo><div class="logo"><span></span></div></div><div><h1 data-brand-title>New Generation · Foto squadre</h1><p data-brand-subtitle>Carica e gestisci le foto di ogni squadra del torneo.</p></div></div><div class="actions"><button class="btn primary" id="simulateTournamentBtn" type="button">Simula</button><button class="btn danger" id="resetAllBtn" type="button">Reset</button></div></header><nav class="admin-nav" aria-label="Navigazione amministrazione"><a href="admin.html" class="">Dashboard</a><a href="admin-rules.html" class="">Regole &amp; calendario</a><a href="admin-groups.html" class="">Gironi</a><a href="admin-teams.html" class="">Squadre</a><a href="admin-players.html" class="">Giocatori</a><a href="admin-matches.html" class="">Partite &amp; referti</a><a href="admin-articles.html" class="">Articoli</a><a href="admin-photos.html" class="active">Foto</a><a href="admin-reports.html" class="">Report &amp; PDF</a></nav><main id="main-content" tabindex="-1">
+ <div class="grid photos-admin-grid">
+   <article class="card pad span-4 photos-sidebar">
+     <div class="section-title"><div><h2>Squadre</h2><p>Seleziona una squadra per gestire le sue foto.</p></div></div>
+@@ -23,4 +23,4 @@
+     <div id="photosGrid" class="photos-grid"></div>
+   </article>
+ </div>
+-</main></div><script defer src="assets/js/store.js?v=v125-ui-stable"></script><script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script defer src="assets/js/supabase-config.js?v=v125-ui-stable"></script><script defer src="assets/js/supabase-sync.js?v=v125-ui-stable"></script><script defer src="assets/js/ui.js?v=v126-16-article-detail"></script><script defer src="assets/js/ux-a11y.js?v=v126-16-overlay"></script><script defer src="assets/js/photos.js?v=v126-16-photo-network"></script><script defer src="assets/js/photo-runtime.js?v=v126-16-viewer"></script><script defer src="assets/js/admin-common.js?v=v126-15-common"></script><script defer src="assets/js/admin-simulation.js?v=v126-15-wizard"></script><script defer src="assets/js/admin-photos.js?v=v126-16-photo-admin"></script></body></html>
++</main></div><script defer src="assets/js/store.js?v=v125-ui-stable"></script><script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script defer src="assets/js/supabase-config.js?v=v125-ui-stable"></script><script defer src="assets/js/supabase-sync.js?v=v125-ui-stable"></script><script defer src="assets/js/ui.js?v=v126-17-article-detail"></script><script defer src="assets/js/ux-a11y.js?v=v126-16-overlay"></script><script defer src="assets/js/photos.js?v=v126-17-photo-network"></script><script defer src="assets/js/photo-runtime.js?v=v126-16-viewer"></script><script defer src="assets/js/admin-common.js?v=v126-15-common"></script><script defer src="assets/js/admin-simulation.js?v=v126-15-wizard"></script><script defer src="assets/js/admin-photos.js?v=v126-17-photo-admin"></script></body></html>
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=CHANGES_V126_16.patch' '--exclude=FULL_MODIFIED_FILES_V126_16.md' '--exclude=IMPLEMENTATION_REPORT_V126_16.md' '--exclude=TEST_RESULTS_V126_16.txt' /mnt/data/ng-baseline/new-generation-main/assets/css/styles.css /mnt/data/ng-fix/new-generation-main/assets/css/styles.css
+--- /mnt/data/ng-baseline/new-generation-main/assets/css/styles.css	2026-06-22 11:18:19.000000000 +0000
++++ /mnt/data/ng-fix/new-generation-main/assets/css/styles.css	2026-06-22 11:54:55.760109345 +0000
+@@ -6954,3 +6954,224 @@
+ .photo-thumb.public[role="button"]:focus-visible{outline:3px solid #f1d472;outline-offset:4px}
+ .article-image-viewer-stage{padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}
+ @media(max-width:760px){.article-image-viewer-stage{padding-bottom:calc(8px + env(safe-area-inset-bottom,0px))}}
++
++/* v126.17 · Dettaglio articolo editoriale con fotografia principale realmente dedicata. */
++.article-modal-content{
++  width:min(1240px,100%)!important;
++  background:
++    radial-gradient(circle at 50% -10%,rgba(215,164,45,.09),transparent 34%),
++    #090804!important;
++}
++.article-detail.article-detail-editorial{
++  display:block!important;
++  grid-template-columns:none!important;
++  min-height:0!important;
++  overflow-x:clip!important;
++  background:transparent!important;
++}
++.article-detail-editorial .article-preview-banner{
++  max-width:1120px;
++  margin:18px auto 0;
++}
++.article-detail-editorial .article-detail-nav{
++  max-width:940px;
++  padding:clamp(18px,3vw,30px) clamp(20px,5vw,52px) 0;
++}
++.article-detail-editorial .article-detail-header{
++  max-width:940px!important;
++  margin:0 auto!important;
++  padding:clamp(28px,5vw,58px) clamp(20px,5vw,52px) clamp(34px,5vw,58px)!important;
++  text-align:left;
++}
++.article-detail-editorial .article-detail-header h1{
++  max-width:22ch!important;
++  margin:clamp(18px,3vw,28px) 0 0!important;
++  font-size:clamp(2.35rem,5.6vw,5.5rem)!important;
++  line-height:.96!important;
++  letter-spacing:-.058em!important;
++  text-wrap:balance;
++  overflow-wrap:anywhere;
++}
++.article-detail-editorial .article-detail-subtitle{
++  max-width:68ch!important;
++  margin-top:clamp(18px,2.5vw,26px)!important;
++  color:#d8ccb0!important;
++  font-size:clamp(1.05rem,2vw,1.35rem)!important;
++  line-height:1.55!important;
++}
++.article-detail-editorial .article-detail-meta{
++  margin-top:clamp(20px,3vw,30px)!important;
++}
++.article-detail-editorial .article-featured-photo{
++  position:relative!important;
++  width:auto!important;
++  max-width:1120px!important;
++  margin:0 auto clamp(38px,6vw,72px)!important;
++  padding:0 clamp(16px,4vw,38px)!important;
++}
++.article-detail-editorial .article-featured-photo::before{
++  content:"";
++  position:absolute;
++  left:clamp(16px,4vw,38px);
++  right:clamp(16px,4vw,38px);
++  top:-1px;
++  height:1px;
++  background:linear-gradient(90deg,transparent,rgba(240,212,119,.5),transparent);
++}
++.article-detail-editorial .article-featured-photo-card{
++  margin:0!important;
++  padding:clamp(22px,4vw,44px) 0 0;
++}
++.article-detail-editorial .article-featured-photo-frame{
++  position:relative;
++  display:grid;
++  place-items:center;
++  width:100%;
++  min-height:clamp(260px,48vw,660px);
++  padding:clamp(12px,2.8vw,28px);
++  overflow:hidden;
++  border:1px solid rgba(240,212,119,.2);
++  border-radius:clamp(18px,2.6vw,30px);
++  background:
++    linear-gradient(135deg,rgba(255,255,255,.035),transparent 42%),
++    #050504;
++  box-shadow:0 28px 80px rgba(0,0,0,.38),inset 0 1px 0 rgba(255,255,255,.045);
++}
++.article-detail-editorial .article-image-open{
++  position:relative!important;
++  display:grid!important;
++  grid-template-rows:minmax(0,1fr) auto;
++  place-items:stretch!important;
++  width:100%!important;
++  max-width:100%!important;
++  min-height:0;
++  padding:0!important;
++  overflow:hidden!important;
++  border:0!important;
++  border-radius:clamp(13px,2vw,22px)!important;
++  background:#030302!important;
++  color:#fff7df!important;
++  cursor:zoom-in;
++  box-shadow:none!important;
++}
++.article-detail-editorial .article-featured-photo-canvas{
++  display:grid;
++  place-items:center;
++  min-width:0;
++  min-height:0;
++  padding:clamp(4px,1vw,10px);
++  background:#030302;
++}
++.article-detail-editorial .article-image-open .article-image{
++  display:block!important;
++  width:auto!important;
++  height:auto!important;
++  max-width:100%!important;
++  max-height:min(72vh,760px)!important;
++  object-fit:contain!important;
++  object-position:center!important;
++  border:0!important;
++  border-radius:clamp(9px,1.4vw,16px)!important;
++  background:transparent!important;
++  box-shadow:none!important;
++}
++.article-detail-editorial .article-featured-photo-card.is-landscape .article-image-open .article-image{
++  width:100%!important;
++}
++.article-detail-editorial .article-featured-photo-card.is-portrait .article-image-open{
++  width:min(100%,680px)!important;
++  margin-inline:auto!important;
++}
++.article-detail-editorial .article-featured-photo-card.is-square .article-image-open{
++  width:min(100%,820px)!important;
++  margin-inline:auto!important;
++}
++.article-detail-editorial .article-image-open-hint{
++  position:static!important;
++  inset:auto!important;
++  display:flex!important;
++  align-items:center;
++  justify-content:center;
++  gap:8px;
++  width:100%;
++  min-height:48px;
++  padding:11px 16px!important;
++  border:0!important;
++  border-top:1px solid rgba(255,255,255,.1)!important;
++  border-radius:0!important;
++  background:rgba(255,255,255,.045)!important;
++  color:#f1d472!important;
++  font-size:.78rem!important;
++  font-weight:900!important;
++  letter-spacing:.035em;
++  text-transform:uppercase;
++  opacity:1!important;
++  backdrop-filter:none!important;
++}
++.article-detail-editorial .article-image-open:hover .article-image-open-hint{
++  background:rgba(215,164,45,.12)!important;
++}
++.article-detail-editorial .article-image-open:focus-visible{
++  outline:3px solid #f1d472!important;
++  outline-offset:6px!important;
++}
++.article-detail-editorial .article-featured-photo figcaption{
++  max-width:780px!important;
++  margin:0 auto!important;
++  padding:clamp(14px,2vw,20px) 4px 0!important;
++  color:#bdb195!important;
++  font-size:clamp(.84rem,1.3vw,.94rem)!important;
++  line-height:1.65!important;
++  text-align:center;
++  overflow-wrap:anywhere;
++}
++.article-detail-editorial .article-detail-body{
++  max-width:78ch!important;
++  margin:0 auto!important;
++  padding:0 clamp(20px,5vw,52px) clamp(42px,7vw,82px)!important;
++  gap:clamp(20px,3vw,30px)!important;
++}
++.article-detail-editorial .article-full-text{
++  font-size:clamp(1.02rem,1.45vw,1.16rem)!important;
++  line-height:1.82!important;
++}
++.article-detail-editorial.no-image .article-detail-header{
++  padding-bottom:clamp(28px,5vw,56px)!important;
++}
++.article-detail-editorial.no-image .article-detail-body{
++  padding-top:0!important;
++}
++@media(max-width:760px){
++  .article-modal-content{width:100%!important;}
++  .article-detail-editorial .article-detail-nav{padding:14px 18px 0!important;}
++  .article-detail-editorial .article-detail-header{padding:24px 18px 32px!important;}
++  .article-detail-editorial .article-detail-header h1{max-width:none!important;font-size:clamp(2rem,11vw,3.45rem)!important;line-height:1!important;}
++  .article-detail-editorial .article-featured-photo{margin-bottom:38px!important;padding-inline:10px!important;}
++  .article-detail-editorial .article-featured-photo::before{left:18px;right:18px;}
++  .article-detail-editorial .article-featured-photo-card{padding-top:22px;}
++  .article-detail-editorial .article-featured-photo-frame{min-height:220px;padding:8px;border-radius:18px;}
++  .article-detail-editorial .article-image-open{border-radius:12px!important;}
++  .article-detail-editorial .article-featured-photo-canvas{padding:3px;}
++  .article-detail-editorial .article-image-open .article-image{max-height:68vh!important;border-radius:9px!important;}
++  .article-detail-editorial .article-image-open-hint{min-height:44px;padding:9px 12px!important;font-size:.7rem!important;}
++  .article-detail-editorial .article-featured-photo figcaption{padding:13px 10px 0!important;text-align:left;}
++  .article-detail-editorial .article-detail-body{padding:0 19px 48px!important;}
++  .article-detail-editorial .article-full-text{font-size:1rem!important;line-height:1.72!important;}
++}
++@media(max-width:420px){
++  .article-detail-editorial .article-featured-photo-frame{min-height:190px;}
++  .article-detail-editorial .article-image-open-hint span{display:none;}
++}
++@media(prefers-reduced-motion:reduce){
++  .article-detail-editorial .article-image-open-hint{transition:none!important;}
++}
++
++/* v126.17.1 · Neutralizza la vecchia griglia del media nel nuovo dettaglio. */
++.article-detail-editorial .article-featured-photo{
++  display:block!important;
++  place-items:initial!important;
++}
++.article-detail-editorial .article-featured-photo-card{
++  width:100%!important;
++  max-width:none!important;
++}
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=CHANGES_V126_16.patch' '--exclude=FULL_MODIFIED_FILES_V126_16.md' '--exclude=IMPLEMENTATION_REPORT_V126_16.md' '--exclude=TEST_RESULTS_V126_16.txt' /mnt/data/ng-baseline/new-generation-main/assets/js/admin-photos.js /mnt/data/ng-fix/new-generation-main/assets/js/admin-photos.js
+--- /mnt/data/ng-baseline/new-generation-main/assets/js/admin-photos.js	2026-06-22 11:17:08.000000000 +0000
++++ /mnt/data/ng-fix/new-generation-main/assets/js/admin-photos.js	2026-06-22 11:54:24.849821238 +0000
+@@ -969,10 +969,27 @@
+   window.addEventListener('ng:cloudinary-photos-updated', () => render());
+ 
+   // -------------------- Boot --------------------
++  function healthProblemMessage(health){
++    if(!health)return '';
++    if(health.originAllowed===false)return 'Il dominio corrente non è autorizzato: aggiorna PHOTO_ALLOWED_ORIGINS nei Secrets Supabase.';
++    if(health.cloudinary?.configured===false)return 'La funzione risponde, ma Cloudinary non è configurato. Imposta CLOUDINARY_URL oppure CLOUDINARY_API_KEY e CLOUDINARY_API_SECRET nei Secrets della Edge Function.';
++    if(health.supabase?.configured===false)return 'La funzione risponde, ma la configurazione Supabase server-side è incompleta.';
++    return health.ok===false?'La funzione Foto risponde ma la configurazione backend non è completa.':'';
++  }
++
+   function boot(){
+     A.initGlobalActions?.();
+     setupDragDrop();
+-    Photos.refreshAll?.({force:true}).catch(err=>flashMsg(Photos.userMessage(err),'warn'));
++    (async()=>{
++      try{
++        const health=await Photos.healthCheck?.();
++        const problem=healthProblemMessage(health);
++        if(problem){flashMsg(problem,'error');return;}
++        await Photos.refreshAll?.({force:true});
++      }catch(err){
++        flashMsg(Photos.userMessage(err),'error');
++      }
++    })();
+     render();
+   }
+   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=CHANGES_V126_16.patch' '--exclude=FULL_MODIFIED_FILES_V126_16.md' '--exclude=IMPLEMENTATION_REPORT_V126_16.md' '--exclude=TEST_RESULTS_V126_16.txt' /mnt/data/ng-baseline/new-generation-main/assets/js/photos.js /mnt/data/ng-fix/new-generation-main/assets/js/photos.js
+--- /mnt/data/ng-baseline/new-generation-main/assets/js/photos.js	2026-06-22 11:16:18.000000000 +0000
++++ /mnt/data/ng-fix/new-generation-main/assets/js/photos.js	2026-06-22 11:52:37.098271472 +0000
+@@ -1,6 +1,6 @@
+ // =============================================================
+ // New Generation — Foto squadre via Cloudinary + Supabase Edge Function
+-// v126.16-photo-network
++// v126.17-photo-network
+ // =============================================================
+ // Flusso esclusivo galleria Foto. Non usa endpoint, modelli o cartelle Articoli.
+ // - GET pubblico senza header non semplici: niente preflight inutile.
+@@ -194,6 +194,9 @@
+     const url=new URL(functionUrl(action));
+     Object.entries(params||{}).forEach(([key,value])=>{if(value!==undefined&&value!==null&&value!=='')url.searchParams.set(key,String(value));});
+     const headers={};
++    // La chiave pubblicabile va nell'header apikey del gateway Supabase.
++    // Per le operazioni admin, Authorization contiene invece il JWT reale utente.
++    if(supabaseCfg.ANON_KEY)headers.apikey=String(supabaseCfg.ANON_KEY);
+     if(admin)headers.Authorization='Bearer '+await sessionToken();
+     if(body && !(body instanceof FormData) && !(body instanceof Blob) && typeof body!=='string'){
+       headers['Content-Type']='application/json';
+@@ -229,8 +232,9 @@
+         throw new PhotoError('Caricamento interrotto.',{code:'REQUEST_ABORTED',kind:'aborted',phase,cause:error});
+       }
+       const mixed=window.location?.protocol==='https:'&&/^http:\/\//i.test(url.toString());
+-      throw new PhotoError(mixed?'Richiesta bloccata per mixed content.':'Server Foto non raggiungibile o richiesta bloccata da CORS/preflight.',{
+-        code:mixed?'MIXED_CONTENT':'NETWORK_ERROR',kind:mixed?'config':'network',phase,cause:error
++      throw new PhotoError(mixed?'Richiesta bloccata per mixed content.':'Edge Function Foto non raggiungibile o risposta bloccata prima di arrivare al frontend.',{
++        code:mixed?'MIXED_CONTENT':'NETWORK_ERROR',kind:mixed?'config':'network',phase,cause:error,
++        details:{endpoint:url.origin+url.pathname,origin:window.location?.origin||'',functionName:cfg.EDGE_FUNCTION||DEFAULT_FUNCTION}
+       });
+     }finally{
+       controlled.cleanup();
+@@ -242,7 +246,7 @@
+       AUTH_REQUIRED:'Sessione scaduta: effettua nuovamente l’accesso amministratore.',
+       AUTH_SERVICE_MISSING:'Autenticazione non disponibile: ricarica la pagina.',
+       ORIGIN_NOT_ALLOWED:'Il dominio del sito non è autorizzato dalla configurazione CORS Foto.',
+-      NETWORK_ERROR:'Server Foto non raggiungibile. Controlla connessione, CORS e disponibilità della Edge Function.',
++      NETWORK_ERROR:'Edge Function Foto non raggiungibile. Verifica che “team-photos” sia distribuita nel progetto Supabase e che PHOTO_ALLOWED_ORIGINS contenga il dominio esatto del sito.',
+       MIXED_CONTENT:'Configurazione bloccata: la pagina HTTPS sta chiamando un endpoint HTTP.',
+       REQUEST_TIMEOUT:'Timeout: il caricamento non è stato confermato dal backend.',
+       REQUEST_ABORTED:'Caricamento interrotto.',
+@@ -253,6 +257,7 @@
+       CORRUPT_FILE:'Il file è corrotto o non corrisponde al formato dichiarato.',
+       EMPTY_FILE:'Il file selezionato è vuoto.',
+       CLOUDINARY_CONFIG:'Cloudinary non è configurato sul backend.',
++      SUPABASE_CONFIG:'La Edge Function Foto non dispone delle variabili Supabase necessarie.',
+       CLOUDINARY_UPLOAD:'Cloudinary ha rifiutato il caricamento.',
+       CLOUDINARY_TIMEOUT:'Cloudinary non ha risposto entro il tempo previsto.',
+       DB_SAVE_FAILED:'La foto è stata annullata perché i metadati non sono stati salvati nel database.',
+@@ -268,6 +273,9 @@
+   async function apiGet(params={}){
+     return apiRequest({method:'GET',params:{folder:cfg.FOLDER||DEFAULT_FOLDER,...params},phase:'gallery-read'});
+   }
++  async function healthCheck(){
++    return apiRequest({method:'GET',action:'health',timeout:12000,phase:'health'});
++  }
+   async function refreshAll(opts={}){
+     if(cache.loading&&!opts.force)return cache.loading;
+     if(cache.loaded&&!opts.force&&now()-cache.loadedAt<15000)return cache.photos;
+@@ -446,10 +454,11 @@
+   function compressImage(file){return Promise.resolve(file);}
+ 
+   window.NexoraPhotos={
+-    version:'v126.16-photo-network',
++    version:'v126.17-photo-network',
+     config:{...cfg,MAX_FILE_SIZE,MAX_BATCH_FILES,MAX_BATCH_SIZE,ALLOWED_TYPES:[...ALLOWED_TYPES]},
+     PhotoError,
+     status,
++    healthCheck,
+     userMessage,
+     invalidateCache,
+     refreshAll,
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=CHANGES_V126_16.patch' '--exclude=FULL_MODIFIED_FILES_V126_16.md' '--exclude=IMPLEMENTATION_REPORT_V126_16.md' '--exclude=TEST_RESULTS_V126_16.txt' /mnt/data/ng-baseline/new-generation-main/assets/js/ui.js /mnt/data/ng-fix/new-generation-main/assets/js/ui.js
+--- /mnt/data/ng-baseline/new-generation-main/assets/js/ui.js	2026-06-22 11:28:59.000000000 +0000
++++ /mnt/data/ng-fix/new-generation-main/assets/js/ui.js	2026-06-22 11:51:18.126716429 +0000
+@@ -316,12 +316,17 @@
+         ${subtitle?`<p class="article-detail-subtitle">${esc(subtitle)}</p>`:''}
+         ${articleDetailMeta(article,{preview})}
+       </header>
+-      ${image?`<figure class="article-detail-media">
+-        <button type="button" class="article-image-open" data-article-image-open="${esc(image)}" aria-label="Apri fotografia a dimensione intera: ${esc(title)}">
+-          ${imageMarkup}<span class="article-image-open-hint" aria-hidden="true">Apri immagine</span>
+-        </button>
+-        ${caption?`<figcaption>${esc(caption)}</figcaption>`:''}
+-      </figure>`:''}
++      ${image?`<section class="article-detail-media article-featured-photo" aria-label="Fotografia principale dell’articolo">
++        <figure class="article-featured-photo-card">
++          <div class="article-featured-photo-frame">
++            <button type="button" class="article-image-open" data-article-image-open="${esc(image)}" aria-label="Apri fotografia a dimensione intera: ${esc(title)}">
++              <span class="article-featured-photo-canvas">${imageMarkup}</span>
++              <span class="article-image-open-hint" aria-hidden="true"><span>↗</span> Apri fotografia</span>
++            </button>
++          </div>
++          ${caption?`<figcaption>${esc(caption)}</figcaption>`:''}
++        </figure>
++      </section>`:''}
+       <div class="article-detail-body">
+         <div class="article-full-text">${articleBodyMarkup(article?.body)}</div>
+         ${tags.length?`<div class="article-tags" aria-label="Tag">${tags.map(tag=>`<span>#${esc(tag)}</span>`).join('')}</div>`:''}
+@@ -388,8 +393,9 @@
+   function prepareArticleDetail(root,{onBack}={}){
+     if(!root)return;
+     root.querySelectorAll('.article-detail-media img.article-image').forEach(img=>{
+-      const figure=img.closest('.article-detail-media');
+-      const classify=()=>{if(!img.naturalWidth||!img.naturalHeight)return;const ratio=img.naturalWidth/img.naturalHeight;figure?.classList.remove('is-portrait','is-square','is-landscape');figure?.classList.add(ratio<.85?'is-portrait':ratio>1.2?'is-landscape':'is-square');};
++      const section=img.closest('.article-detail-media');
++      const card=img.closest('.article-featured-photo-card')||section;
++      const classify=()=>{if(!img.naturalWidth||!img.naturalHeight)return;const ratio=img.naturalWidth/img.naturalHeight;[section,card].forEach(el=>{el?.classList.remove('is-portrait','is-square','is-landscape');el?.classList.add(ratio<.85?'is-portrait':ratio>1.2?'is-landscape':'is-square');});};
+       if(img.complete)classify();else img.addEventListener('load',classify,{once:true});
+     });
+     if(root.dataset.articleInteractionsBound==='1')return;
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=CHANGES_V126_16.patch' '--exclude=FULL_MODIFIED_FILES_V126_16.md' '--exclude=IMPLEMENTATION_REPORT_V126_16.md' '--exclude=TEST_RESULTS_V126_16.txt' /mnt/data/ng-baseline/new-generation-main/index.html /mnt/data/ng-fix/new-generation-main/index.html
+--- /mnt/data/ng-baseline/new-generation-main/index.html	2026-06-22 11:22:02.000000000 +0000
++++ /mnt/data/ng-fix/new-generation-main/index.html	2026-06-22 11:53:22.974727130 +0000
+@@ -1 +1 @@
+-<!doctype html><html lang="it" class="no-js"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#070b12"><meta name="color-scheme" content="dark"><link rel="preconnect" href="https://mcksxqtgibkazxnkdfra.supabase.co" crossorigin><link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin><link rel="preconnect" href="https://res.cloudinary.com" crossorigin><link rel="dns-prefetch" href="https://res.cloudinary.com"><link rel="dns-prefetch" href="https://mcksxqtgibkazxnkdfra.supabase.co"><link rel="dns-prefetch" href="https://cdn.jsdelivr.net"><title>New Generation</title><link rel="stylesheet" href="assets/css/styles.css?v=v126-16-photo-article"></head><body class="public-page"><a class="skip-link" href="#main-content">Vai al contenuto principale</a><div class="shell"><header class="site-header"><div class="brand"><div data-brand-logo><div class="logo"><span></span></div></div><div><h1 data-brand-title>New Generation</h1><p data-brand-subtitle>Risultati, squadre, giocatori e dettagli partite.</p></div></div><div class="actions"><span class="pill pill-live"><span class="pill-live-dot"></span>Aggiornamento automatico</span></div></header><nav class="tabs" aria-label="Sezioni del sito"><button class="tab-btn active" data-tab="home">Panoramica</button><button class="tab-btn" data-tab="teams">Squadre</button><button class="tab-btn" data-tab="players">Giocatori</button><button class="tab-btn" data-tab="matches">Partite</button><button class="tab-btn" data-tab="bracket">Tabellone</button><button class="tab-btn" data-tab="articles">Articoli</button><button class="tab-btn" data-tab="photos">Foto</button><button class="tab-btn" data-tab="search">Ricerca</button></nav><main id="main-content" tabindex="-1"><section id="home" class="tab-panel active"><div class="grid"><article class="card pad span-7"><div class="section-title"><div><h2>Classifica squadre</h2><p>Nei tornei con gironi puoi scegliere il girone dal menu.</p></div></div><div id="publicStandingsMenu"></div><div id="publicStandings" class="table-wrap"></div></article><article class="card pad span-5"><h2>Marcatori</h2><div id="publicPlayersMini" class="table-wrap"></div></article></div></section><section id="teams" class="tab-panel"><article class="card pad"><h2>Squadre e roster</h2><div id="publicTeams" class="team-card-grid"></div></article></section><section id="players" class="tab-panel"><article class="card pad"><div class="section-title"><div><h2>Giocatori</h2><p>Senza filtro vedi la Top 10 marcatori. Se scegli una squadra vedi le statistiche complete di tutti i giocatori.</p></div></div><div class="filters"><div><label>Squadra</label><select id="publicPlayerTeamFilter"></select></div></div><div id="publicPlayers" class="table-wrap"></div></article></section><section id="matches" class="tab-panel"><article class="card pad public-matches-shell"><div class="section-title public-matches-title"><div><h2>Partite</h2><p class="muted">Scegli fase, giornata o squadra con pulsanti grandi: le partite filtrate appaiono subito sotto.</p></div></div><div id="publicMatchFilterBar" class="match-filter-toolbar" aria-label="Filtri partite"></div><div class="filters native-match-filters" aria-hidden="true"><div><label>Fase</label><select id="publicPhaseFilter" tabindex="-1"></select></div><div><label>Giornata / turno</label><select id="publicRoundFilter" tabindex="-1"></select></div><div><label>Squadra</label><select id="publicTeamFilter" tabindex="-1"></select></div></div><div id="publicMatches" class="stack public-match-list"></div></article></section><section id="bracket" class="tab-panel"><article class="card pad"><h2>Tabellone</h2><p class="muted">Per i tornei con eliminazione diretta, qui vedi il tabellone con placeholder e squadre reali appena disponibili.</p><div id="publicBracket"></div></article></section><section id="articles" class="tab-panel"><article class="card pad article-public-section"><div class="section-title"><div><span class="article-kicker">Magazine</span><h2>Articoli</h2><p>News, comunicati e approfondimenti ufficiali del torneo.</p></div><span class="pill"><strong id="publicArticleCount">0</strong>&nbsp;articoli</span></div><div class="article-public-toolbar"><label class="article-search-field"><span>Cerca negli articoli</span><input id="publicArticleSearch" type="search" placeholder="Titolo, autore, categoria o contenuto" autocomplete="off"></label><label><span>Categoria</span><select id="publicArticleCategory"><option value="all">Tutte le categorie</option></select></label><button class="btn" id="clearArticleFilters" type="button">Azzera filtri</button></div><div id="publicArticleStatus" class="article-library-summary" aria-live="polite"></div><div id="publicArticles"></div></article></section><section id="photos" class="tab-panel"><article class="card pad photos-public-card"><div class="section-title"><div><h2>Foto squadre</h2><p>Sfoglia le foto del torneo squadra per squadra. Tocca una foto per ingrandirla, oppure scaricale tutte in un file ZIP.</p></div><button class="btn primary" id="publicPhotosDownloadAllBtn" type="button" hidden>Scarica tutte ZIP</button></div><div id="publicPhotosTeamBar" class="photos-team-bar" hidden></div><select id="publicPhotosTeamFilter" hidden></select><div id="publicPhotosGrid" class="photos-grid"></div></article></section><section id="search" class="tab-panel"><article class="card pad"><h2>Ricerca</h2><input id="globalSearch" type="search" autocomplete="off" aria-label="Cerca nel torneo" placeholder="Cerca squadra, giocatore o partita..."><div id="searchResults" class="stack margin-top"></div></article></section></main></div><div class="modal" id="matchModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="matchModalTitle"><div class="modal-content public-match-modal-content"><div class="section-title match-modal-toolbar"><div class="match-modal-heading"><h2 id="matchModalTitle">Dettaglio partita</h2></div><button class="btn danger match-modal-close" id="closeModal" type="button" aria-label="Chiudi dettaglio partita">Chiudi</button></div><div id="matchModalBody"></div></div></div><script defer src="assets/js/store.js?v=v125-ui-stable"></script><script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script defer src="assets/js/supabase-config.js?v=v125-ui-stable"></script><script defer src="assets/js/supabase-sync.js?v=v125-ui-stable"></script><script defer src="assets/js/ui.js?v=v126-16-article-detail"></script><script defer src="assets/js/ux-a11y.js?v=v126-16-overlay"></script><script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script><script defer src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script><script defer src="assets/js/photos.js?v=v126-16-photo-network"></script><script defer src="assets/js/photo-runtime.js?v=v126-16-viewer"></script><script defer src="assets/js/public.js?v=v126-16-photo-article"></script></body></html>
++<!doctype html><html lang="it" class="no-js"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#070b12"><meta name="color-scheme" content="dark"><link rel="preconnect" href="https://mcksxqtgibkazxnkdfra.supabase.co" crossorigin><link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin><link rel="preconnect" href="https://res.cloudinary.com" crossorigin><link rel="dns-prefetch" href="https://res.cloudinary.com"><link rel="dns-prefetch" href="https://mcksxqtgibkazxnkdfra.supabase.co"><link rel="dns-prefetch" href="https://cdn.jsdelivr.net"><title>New Generation</title><link rel="stylesheet" href="assets/css/styles.css?v=v126-17-photo-article"></head><body class="public-page"><a class="skip-link" href="#main-content">Vai al contenuto principale</a><div class="shell"><header class="site-header"><div class="brand"><div data-brand-logo><div class="logo"><span></span></div></div><div><h1 data-brand-title>New Generation</h1><p data-brand-subtitle>Risultati, squadre, giocatori e dettagli partite.</p></div></div><div class="actions"><span class="pill pill-live"><span class="pill-live-dot"></span>Aggiornamento automatico</span></div></header><nav class="tabs" aria-label="Sezioni del sito"><button class="tab-btn active" data-tab="home">Panoramica</button><button class="tab-btn" data-tab="teams">Squadre</button><button class="tab-btn" data-tab="players">Giocatori</button><button class="tab-btn" data-tab="matches">Partite</button><button class="tab-btn" data-tab="bracket">Tabellone</button><button class="tab-btn" data-tab="articles">Articoli</button><button class="tab-btn" data-tab="photos">Foto</button><button class="tab-btn" data-tab="search">Ricerca</button></nav><main id="main-content" tabindex="-1"><section id="home" class="tab-panel active"><div class="grid"><article class="card pad span-7"><div class="section-title"><div><h2>Classifica squadre</h2><p>Nei tornei con gironi puoi scegliere il girone dal menu.</p></div></div><div id="publicStandingsMenu"></div><div id="publicStandings" class="table-wrap"></div></article><article class="card pad span-5"><h2>Marcatori</h2><div id="publicPlayersMini" class="table-wrap"></div></article></div></section><section id="teams" class="tab-panel"><article class="card pad"><h2>Squadre e roster</h2><div id="publicTeams" class="team-card-grid"></div></article></section><section id="players" class="tab-panel"><article class="card pad"><div class="section-title"><div><h2>Giocatori</h2><p>Senza filtro vedi la Top 10 marcatori. Se scegli una squadra vedi le statistiche complete di tutti i giocatori.</p></div></div><div class="filters"><div><label>Squadra</label><select id="publicPlayerTeamFilter"></select></div></div><div id="publicPlayers" class="table-wrap"></div></article></section><section id="matches" class="tab-panel"><article class="card pad public-matches-shell"><div class="section-title public-matches-title"><div><h2>Partite</h2><p class="muted">Scegli fase, giornata o squadra con pulsanti grandi: le partite filtrate appaiono subito sotto.</p></div></div><div id="publicMatchFilterBar" class="match-filter-toolbar" aria-label="Filtri partite"></div><div class="filters native-match-filters" aria-hidden="true"><div><label>Fase</label><select id="publicPhaseFilter" tabindex="-1"></select></div><div><label>Giornata / turno</label><select id="publicRoundFilter" tabindex="-1"></select></div><div><label>Squadra</label><select id="publicTeamFilter" tabindex="-1"></select></div></div><div id="publicMatches" class="stack public-match-list"></div></article></section><section id="bracket" class="tab-panel"><article class="card pad"><h2>Tabellone</h2><p class="muted">Per i tornei con eliminazione diretta, qui vedi il tabellone con placeholder e squadre reali appena disponibili.</p><div id="publicBracket"></div></article></section><section id="articles" class="tab-panel"><article class="card pad article-public-section"><div class="section-title"><div><span class="article-kicker">Magazine</span><h2>Articoli</h2><p>News, comunicati e approfondimenti ufficiali del torneo.</p></div><span class="pill"><strong id="publicArticleCount">0</strong>&nbsp;articoli</span></div><div class="article-public-toolbar"><label class="article-search-field"><span>Cerca negli articoli</span><input id="publicArticleSearch" type="search" placeholder="Titolo, autore, categoria o contenuto" autocomplete="off"></label><label><span>Categoria</span><select id="publicArticleCategory"><option value="all">Tutte le categorie</option></select></label><button class="btn" id="clearArticleFilters" type="button">Azzera filtri</button></div><div id="publicArticleStatus" class="article-library-summary" aria-live="polite"></div><div id="publicArticles"></div></article></section><section id="photos" class="tab-panel"><article class="card pad photos-public-card"><div class="section-title"><div><h2>Foto squadre</h2><p>Sfoglia le foto del torneo squadra per squadra. Tocca una foto per ingrandirla, oppure scaricale tutte in un file ZIP.</p></div><button class="btn primary" id="publicPhotosDownloadAllBtn" type="button" hidden>Scarica tutte ZIP</button></div><div id="publicPhotosTeamBar" class="photos-team-bar" hidden></div><select id="publicPhotosTeamFilter" hidden></select><div id="publicPhotosGrid" class="photos-grid"></div></article></section><section id="search" class="tab-panel"><article class="card pad"><h2>Ricerca</h2><input id="globalSearch" type="search" autocomplete="off" aria-label="Cerca nel torneo" placeholder="Cerca squadra, giocatore o partita..."><div id="searchResults" class="stack margin-top"></div></article></section></main></div><div class="modal" id="matchModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="matchModalTitle"><div class="modal-content public-match-modal-content"><div class="section-title match-modal-toolbar"><div class="match-modal-heading"><h2 id="matchModalTitle">Dettaglio partita</h2></div><button class="btn danger match-modal-close" id="closeModal" type="button" aria-label="Chiudi dettaglio partita">Chiudi</button></div><div id="matchModalBody"></div></div></div><script defer src="assets/js/store.js?v=v125-ui-stable"></script><script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script defer src="assets/js/supabase-config.js?v=v125-ui-stable"></script><script defer src="assets/js/supabase-sync.js?v=v125-ui-stable"></script><script defer src="assets/js/ui.js?v=v126-17-article-detail"></script><script defer src="assets/js/ux-a11y.js?v=v126-16-overlay"></script><script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script><script defer src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script><script defer src="assets/js/photos.js?v=v126-17-photo-network"></script><script defer src="assets/js/photo-runtime.js?v=v126-16-viewer"></script><script defer src="assets/js/public.js?v=v126-17-photo-article"></script></body></html>
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=CHANGES_V126_16.patch' '--exclude=FULL_MODIFIED_FILES_V126_16.md' '--exclude=IMPLEMENTATION_REPORT_V126_16.md' '--exclude=TEST_RESULTS_V126_16.txt' /mnt/data/ng-baseline/new-generation-main/package-lock.json /mnt/data/ng-fix/new-generation-main/package-lock.json
+--- /mnt/data/ng-baseline/new-generation-main/package-lock.json	2026-06-22 11:28:59.000000000 +0000
++++ /mnt/data/ng-fix/new-generation-main/package-lock.json	2026-06-22 11:53:23.895978044 +0000
+@@ -1,12 +1,12 @@
+ {
+   "name": "new-generation-tournament",
+-  "version": "1.26.16",
++  "version": "1.26.17",
+   "lockfileVersion": 3,
+   "requires": true,
+   "packages": {
+     "": {
+       "name": "new-generation-tournament",
+-      "version": "1.26.16"
++      "version": "1.26.17"
+     }
+   }
+ }
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=CHANGES_V126_16.patch' '--exclude=FULL_MODIFIED_FILES_V126_16.md' '--exclude=IMPLEMENTATION_REPORT_V126_16.md' '--exclude=TEST_RESULTS_V126_16.txt' /mnt/data/ng-baseline/new-generation-main/package.json /mnt/data/ng-fix/new-generation-main/package.json
+--- /mnt/data/ng-baseline/new-generation-main/package.json	2026-06-22 11:13:16.000000000 +0000
++++ /mnt/data/ng-fix/new-generation-main/package.json	2026-06-22 11:53:18.416640494 +0000
+@@ -1,6 +1,6 @@
+ {
+   "name": "new-generation-tournament",
+-  "version": "1.26.16",
++  "version": "1.26.17",
+   "private": true,
+   "description": "Sito statico per la gestione e la pubblicazione di un torneo.",
+   "scripts": {
+@@ -11,6 +11,7 @@
+     "test:articles": "node tools/test-ui-stability.mjs --articles-only",
+     "test:simulation": "node tools/test-simulation.mjs",
+     "test:photos": "node tools/test-photo-system.mjs",
+-    "test:edge": "tsc --noEmit --target ES2022 --module ESNext --moduleResolution Bundler --lib ES2022,DOM,DOM.Iterable --skipLibCheck tools/edge-function-test-globals.d.ts supabase/functions/team-photos/index.ts"
++    "test:edge": "tsc --noEmit --target ES2022 --module ESNext --moduleResolution Bundler --lib ES2022,DOM,DOM.Iterable --skipLibCheck tools/edge-function-test-globals.d.ts supabase/functions/team-photos/index.ts",
++    "test:photo-edge-live": "node tools/check-photo-edge.mjs"
+   }
+ }
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=CHANGES_V126_16.patch' '--exclude=FULL_MODIFIED_FILES_V126_16.md' '--exclude=IMPLEMENTATION_REPORT_V126_16.md' '--exclude=TEST_RESULTS_V126_16.txt' /mnt/data/ng-baseline/new-generation-main/supabase/functions/.env.example /mnt/data/ng-fix/new-generation-main/supabase/functions/.env.example
+--- /mnt/data/ng-baseline/new-generation-main/supabase/functions/.env.example	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/ng-fix/new-generation-main/supabase/functions/.env.example	2026-06-22 11:53:18.341946871 +0000
+@@ -0,0 +1,17 @@
++# Scegli UNA delle due configurazioni Cloudinary.
++# Opzione A: URL completo (solo nei Secrets Supabase / .env locale ignorato)
++CLOUDINARY_URL=cloudinary://API_KEY:API_SECRET@CLOUD_NAME
++
++# Opzione B: variabili separate
++# CLOUDINARY_CLOUD_NAME=your-cloud-name
++# CLOUDINARY_API_KEY=your-api-key
++# CLOUDINARY_API_SECRET=your-api-secret
++
++CLOUDINARY_TEAM_FOLDER=squadra
++CLOUDINARY_SECTION_TAG=foto-squadra
++PHOTO_ALLOWED_ORIGINS=https://your-production-domain.example,http://localhost:4173
++
++# In hosting Supabase queste variabili sono normalmente disponibili come secrets predefiniti/legacy.
++SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
++SUPABASE_ANON_KEY=your-anon-or-legacy-anon-key
++SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=CHANGES_V126_16.patch' '--exclude=FULL_MODIFIED_FILES_V126_16.md' '--exclude=IMPLEMENTATION_REPORT_V126_16.md' '--exclude=TEST_RESULTS_V126_16.txt' /mnt/data/ng-baseline/new-generation-main/supabase/functions/team-photos/index.ts /mnt/data/ng-fix/new-generation-main/supabase/functions/team-photos/index.ts
+--- /mnt/data/ng-baseline/new-generation-main/supabase/functions/team-photos/index.ts	2026-06-22 11:16:16.000000000 +0000
++++ /mnt/data/ng-fix/new-generation-main/supabase/functions/team-photos/index.ts	2026-06-22 11:52:23.991465766 +0000
+@@ -36,32 +36,41 @@
+   return Deno.env.get(name) || fallback;
+ }
+ 
++function normalizeOrigin(value: string) {
++  return String(value || '').trim().replace(/\/$/, '');
++}
++
+ function allowedOrigins() {
+   return env('PHOTO_ALLOWED_ORIGINS')
+     .split(',')
+-    .map((value) => value.trim())
++    .map(normalizeOrigin)
+     .filter(Boolean);
+ }
+ 
+-function corsHeaders(req: Request) {
+-  const origin = req.headers.get('origin') || '';
++function isOriginAllowed(origin: string) {
+   const configured = allowedOrigins();
+-  const allowOrigin = configured.length ? (configured.includes(origin) ? origin : '') : '*';
++  const normalized = normalizeOrigin(origin);
++  return !normalized || !configured.length || configured.includes('*') || configured.includes(normalized);
++}
++
++function corsHeaders(req: Request) {
++  const origin = normalizeOrigin(req.headers.get('origin') || '');
+   const headers: Record<string, string> = {
+     'Access-Control-Allow-Headers': 'authorization, content-type, x-client-info, apikey',
+     'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+     'Access-Control-Max-Age': '86400',
+     'Vary': 'Origin',
+   };
+-  if (allowOrigin) headers['Access-Control-Allow-Origin'] = allowOrigin;
++  // La route resta bloccata da ensureOriginAllowed, ma il browser può leggere
++  // il JSON 403 e mostrare ORIGIN_NOT_ALLOWED invece di "Failed to fetch".
++  headers['Access-Control-Allow-Origin'] = origin || '*';
+   return headers;
+ }
+ 
+ function ensureOriginAllowed(req: Request) {
+-  const origin = req.headers.get('origin') || '';
+-  const configured = allowedOrigins();
+-  if (origin && configured.length && !configured.includes(origin)) {
+-    throw new HttpError(403, 'ORIGIN_NOT_ALLOWED', 'Origine non autorizzata per la sezione Foto.');
++  const origin = normalizeOrigin(req.headers.get('origin') || '');
++  if (!isOriginAllowed(origin)) {
++    throw new HttpError(403, 'ORIGIN_NOT_ALLOWED', 'Origine non autorizzata per la sezione Foto. Aggiorna PHOTO_ALLOWED_ORIGINS con il dominio esatto del sito.');
+   }
+ }
+ 
+@@ -115,10 +124,30 @@
+   return String(filename || '').split('.').pop()?.toLowerCase() || '';
+ }
+ 
++function cloudinaryUrlConfig() {
++  const raw = env('CLOUDINARY_URL').trim();
++  if (!raw) return { cloudName: '', apiKey: '', apiSecret: '' };
++  try {
++    const parsed = new URL(raw.replace(/^cloudinary:\/\//i, 'https://'));
++    const result = {
++      cloudName: decodeURIComponent(parsed.hostname || ''),
++      apiKey: decodeURIComponent(parsed.username || ''),
++      apiSecret: decodeURIComponent(parsed.password || ''),
++    };
++    if (Object.values(result).some((value) => /<|>|your_|placeholder/i.test(value))) {
++      return { cloudName: '', apiKey: '', apiSecret: '' };
++    }
++    return result;
++  } catch {
++    return { cloudName: '', apiKey: '', apiSecret: '' };
++  }
++}
++
+ function cloudinaryConfig() {
+-  const cloudName = env('CLOUDINARY_CLOUD_NAME', 'dc17izhac');
+-  const apiKey = env('CLOUDINARY_API_KEY');
+-  const apiSecret = env('CLOUDINARY_API_SECRET');
++  const fromUrl = cloudinaryUrlConfig();
++  const cloudName = env('CLOUDINARY_CLOUD_NAME', fromUrl.cloudName || 'dc17izhac');
++  const apiKey = env('CLOUDINARY_API_KEY', fromUrl.apiKey);
++  const apiSecret = env('CLOUDINARY_API_SECRET', fromUrl.apiSecret);
+   const rootFolder = cleanSegment(env('CLOUDINARY_TEAM_FOLDER', 'squadra'), 'squadra');
+   const sectionTag = cleanSegment(env('CLOUDINARY_SECTION_TAG', 'foto-squadra'), 'foto-squadra');
+   if (!cloudName || !apiKey || !apiSecret) {
+@@ -127,6 +156,32 @@
+   return { cloudName, apiKey, apiSecret, rootFolder, sectionTag };
+ }
+ 
++function configurationHealth(req: Request) {
++  const fromUrl = cloudinaryUrlConfig();
++  const cloudName = env('CLOUDINARY_CLOUD_NAME', fromUrl.cloudName || 'dc17izhac');
++  const cloudinaryConfigured = Boolean(
++    cloudName &&
++    (env('CLOUDINARY_API_KEY') || fromUrl.apiKey) &&
++    (env('CLOUDINARY_API_SECRET') || fromUrl.apiSecret)
++  );
++  const supabaseConfigured = Boolean(env('SUPABASE_URL') && env('SUPABASE_ANON_KEY') && env('SUPABASE_SERVICE_ROLE_KEY'));
++  const origin = normalizeOrigin(req.headers.get('origin') || '');
++  return {
++    ok: cloudinaryConfigured && supabaseConfigured && isOriginAllowed(origin),
++    service: 'team-photos',
++    version: 'v126.17',
++    origin: origin || null,
++    originAllowed: isOriginAllowed(origin),
++    configuredOrigins: allowedOrigins().length,
++    cloudinary: {
++      configured: cloudinaryConfigured,
++      cloudName: cloudName || null,
++      source: env('CLOUDINARY_API_KEY') ? 'separate-secrets' : (fromUrl.apiKey ? 'CLOUDINARY_URL' : 'missing'),
++    },
++    supabase: { configured: supabaseConfigured },
++  };
++}
++
+ function supabaseConfig() {
+   const url = env('SUPABASE_URL');
+   const anonKey = env('SUPABASE_ANON_KEY');
+@@ -678,6 +733,7 @@
+   ensureOriginAllowed(req);
+   const url = new URL(req.url);
+   const action = url.searchParams.get('action') || '';
++  if (req.method === 'GET' && action === 'health') return json(req, configurationHealth(req));
+   if (ADMIN_METHODS.has(req.method) && action !== 'zip') await requireAdmin(req);
+   if (req.method === 'GET' && action === 'download') return downloadOriginal(req);
+   if (req.method === 'GET' && action === 'detail') return json(req, { ok: true, photo: await resolvePhoto(url.searchParams.get('photoId') || '') });
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=CHANGES_V126_16.patch' '--exclude=FULL_MODIFIED_FILES_V126_16.md' '--exclude=IMPLEMENTATION_REPORT_V126_16.md' '--exclude=TEST_RESULTS_V126_16.txt' /mnt/data/ng-baseline/new-generation-main/tools/check-photo-edge.mjs /mnt/data/ng-fix/new-generation-main/tools/check-photo-edge.mjs
+--- /mnt/data/ng-baseline/new-generation-main/tools/check-photo-edge.mjs	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/ng-fix/new-generation-main/tools/check-photo-edge.mjs	2026-06-22 11:58:34.473136983 +0000
+@@ -0,0 +1,32 @@
++import process from 'node:process';
++
++const projectUrl=(process.env.SUPABASE_URL||'https://mcksxqtgibkazxnkdfra.supabase.co').replace(/\/$/,'');
++const publishableKey=process.env.SUPABASE_ANON_KEY||'sb_publishable_AAtoXhi2a99AyHGvDLM-CA_luXl_-PK';
++const origin=process.env.PHOTO_TEST_ORIGIN||'http://localhost:4173';
++const endpoint=`${projectUrl}/functions/v1/team-photos?action=health`;
++const controller=new AbortController();
++const timer=setTimeout(()=>controller.abort(),15000);
++
++try{
++  const response=await fetch(endpoint,{headers:{apikey:publishableKey,Origin:origin},signal:controller.signal});
++  const text=await response.text();
++  let body=null;try{body=text?JSON.parse(text):null;}catch{body={raw:text.slice(0,500)};}
++  console.log(JSON.stringify({endpoint,origin,status:response.status,headers:{allowOrigin:response.headers.get('access-control-allow-origin'),contentType:response.headers.get('content-type')},body},null,2));
++  if(response.status===404)throw new Error('La Edge Function team-photos non risulta distribuita in questo progetto.');
++  if(!response.ok)throw new Error(body?.message||`Health check HTTP ${response.status}`);
++  if(body?.originAllowed===false)throw new Error('PHOTO_ALLOWED_ORIGINS non contiene il dominio testato.');
++  if(body?.cloudinary?.configured===false)throw new Error('Cloudinary non è configurato nei Secrets della Edge Function.');
++  if(body?.supabase?.configured===false)throw new Error('Secrets Supabase server-side incompleti.');
++  console.log('OK: Edge Function Foto raggiungibile e configurazione dichiarata completa.');
++}catch(error){
++  const causeCode=error?.cause?.code||'';
++  const causeMessage=error?.cause?.message||'';
++  let reason=error?.message||String(error);
++  if(error?.name==='AbortError')reason='timeout della richiesta alla Edge Function';
++  else if(causeCode==='ENOTFOUND'||causeCode==='EAI_AGAIN')reason=`DNS non risolto per ${new URL(projectUrl).hostname}`;
++  else if(causeCode==='ECONNREFUSED')reason='connessione rifiutata dal server Supabase';
++  else if(causeCode==='CERT_HAS_EXPIRED'||causeCode==='UNABLE_TO_VERIFY_LEAF_SIGNATURE')reason='certificato TLS non valido';
++  else if(causeMessage)reason=`${reason} (${causeCode||causeMessage})`;
++  console.error(`ERRORE: ${reason}`);
++  process.exitCode=1;
++}finally{clearTimeout(timer);}
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=CHANGES_V126_16.patch' '--exclude=FULL_MODIFIED_FILES_V126_16.md' '--exclude=IMPLEMENTATION_REPORT_V126_16.md' '--exclude=TEST_RESULTS_V126_16.txt' /mnt/data/ng-baseline/new-generation-main/tools/test-photo-system.mjs /mnt/data/ng-fix/new-generation-main/tools/test-photo-system.mjs
+--- /mnt/data/ng-baseline/new-generation-main/tools/test-photo-system.mjs	2026-06-22 11:18:13.000000000 +0000
++++ /mnt/data/ng-fix/new-generation-main/tools/test-photo-system.mjs	2026-06-22 11:53:43.869543358 +0000
+@@ -66,12 +66,13 @@
+   catch(error){results.push({name,result:'FAIL',details:error.stack||String(error)});console.error(`[photos] FAIL · ${name}\n${error.stack||error}`);process.exitCode=1;}
+ }
+ 
+-await test('GET pubblico senza Authorization e senza preflight superflua',async()=>{
++await test('GET pubblico usa apikey gateway senza Authorization utente',async()=>{
+   let request;
+   const {Photos}=createRuntime({fetchImpl:async(url,opts)=>{request={url,opts};return new Response(JSON.stringify({ok:true,photos:[]}),{status:200,headers:{'content-type':'application/json'}});}});
+   await Photos.refreshAll({force:true});
+   assert.equal(request.opts.method,'GET');
+   assert.equal(request.opts.headers.Authorization,undefined);
++  assert.equal(request.opts.headers.apikey,'sb_publishable_test');
+   assert.equal(request.opts.headers['Content-Type'],undefined);
+ });
+ 
+@@ -84,6 +85,7 @@
+   const photo=await Photos.uploadTeamPhoto('team-a',jpegFile());
+   assert.equal(request.opts.method,'POST');
+   assert.equal(request.opts.headers.Authorization,'Bearer user-session-token');
++  assert.equal(request.opts.headers.apikey,'sb_publishable_test');
+   assert.equal(request.opts.headers['Content-Type'],undefined);
+   assert.ok(request.opts.body instanceof FormData);
+   assert.ok(request.opts.body.get('file') instanceof File);
+@@ -102,11 +104,24 @@
+   const {Photos}=createRuntime({fetchImpl:async()=>{throw new TypeError('Failed to fetch');}});
+   await assert.rejects(()=>Photos.refreshAll({force:true}),error=>{
+     assert.equal(error.code,'NETWORK_ERROR');
+-    assert.match(Photos.userMessage(error),/Server Foto non raggiungibile/);
++    assert.match(Photos.userMessage(error),/Edge Function Foto non raggiungibile/);
+     return true;
+   });
+ });
+ 
++await test('health check distingue configurazione backend senza esporre segreti',async()=>{
++  let request;
++  const {Photos}=createRuntime({fetchImpl:async(url,opts)=>{
++    request={url,opts};
++    return new Response(JSON.stringify({ok:true,service:'team-photos',originAllowed:true,cloudinary:{configured:true,cloudName:'demo',source:'CLOUDINARY_URL'},supabase:{configured:true}}),{status:200,headers:{'content-type':'application/json'}});
++  }});
++  const health=await Photos.healthCheck();
++  assert.match(request.url,/action=health/);
++  assert.equal(request.opts.headers.apikey,'sb_publishable_test');
++  assert.equal(health.cloudinary.cloudName,'demo');
++  assert.equal(JSON.stringify(health).includes('apiSecret'),false);
++});
++
+ await test('validazione rifiuta formato e firma binaria incoerenti',async()=>{
+   const {Photos}=createRuntime({fetchImpl:async()=>new Response('{}',{status:200,headers:{'content-type':'application/json'}})});
+   const fake=new File([new TextEncoder().encode('not an image')],'finta.jpg',{type:'image/jpeg'});
+@@ -164,6 +179,8 @@
+   assert.match(edge,/MAX_ZIP_BYTES = 150/);
+   assert.match(edge,/req\.method === 'OPTIONS'/);
+   assert.match(edge,/ORIGIN_NOT_ALLOWED/);
++  assert.match(edge,/CLOUDINARY_URL/);
++  assert.match(edge,/action === 'health'/);
+   assert.match(edge,/MAX_IMAGE_PIXELS/);
+   assert.doesNotMatch(edge,/from\(['"]articles|\/articles\?|article_images/);
+   assert.match(config,/verify_jwt\s*=\s*false/);
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=CHANGES_V126_16.patch' '--exclude=FULL_MODIFIED_FILES_V126_16.md' '--exclude=IMPLEMENTATION_REPORT_V126_16.md' '--exclude=TEST_RESULTS_V126_16.txt' /mnt/data/ng-baseline/new-generation-main/tools/test-ui-stability.mjs /mnt/data/ng-fix/new-generation-main/tools/test-ui-stability.mjs
+--- /mnt/data/ng-baseline/new-generation-main/tools/test-ui-stability.mjs	2026-06-22 11:32:14.000000000 +0000
++++ /mnt/data/ng-fix/new-generation-main/tools/test-ui-stability.mjs	2026-06-22 11:54:43.003237292 +0000
+@@ -422,6 +422,8 @@
+   await click('[data-article-open="article_2"]');
+   detail=await evaluate(`(()=>{const root=document.querySelector('#articleModalBody');const img=root.querySelector('.article-detail-media img');return {title:root.querySelector('h1')?.textContent||'',h3:root.querySelector('.article-full-text h3')?.textContent||'',strong:root.querySelector('.article-full-text strong')?.textContent||'',em:root.querySelector('.article-full-text em')?.textContent||'',link:root.querySelector('.article-full-text a')?.href||'',list:root.querySelectorAll('.article-full-text li').length,quote:root.querySelector('blockquote')?.textContent||'',objectFit:img?getComputedStyle(img).objectFit:'',caption:root.querySelector('figcaption')?.textContent||'',scriptCount:root.querySelectorAll('script').length};})()`);
+   add('dettaglio completo e formattazione sicura',detail.title.startsWith('Titolo molto lungo')&&detail.h3==='Analisi completa'&&detail.strong==='grassetto'&&detail.em==='corsivo'&&detail.link.startsWith('https://example.com')&&detail.list===2&&detail.quote.includes('citazione')&&detail.objectFit==='contain'&&detail.caption.includes('Didascalia')&&detail.scriptCount===0,JSON.stringify(detail));
++  const photoLayout=await evaluate(`(()=>{const root=document.querySelector('#articleModalBody .article-detail-editorial');const header=root?.querySelector('.article-detail-header');const photo=root?.querySelector('.article-featured-photo');const frame=root?.querySelector('.article-featured-photo-frame');const body=root?.querySelector('.article-detail-body');const img=photo?.querySelector('img');const hint=photo?.querySelector('.article-image-open-hint');const hr=header?.getBoundingClientRect();const pr=photo?.getBoundingClientRect();const br=body?.getBoundingClientRect();const fr=frame?.getBoundingClientRect();return {sections:root?.querySelectorAll('.article-featured-photo').length||0,detailDisplay:root?getComputedStyle(root).display:'',photoPosition:photo?getComputedStyle(photo).position:'',hintPosition:hint?getComputedStyle(hint).position:'',headerBeforePhoto:!!(hr&&pr&&hr.bottom<=pr.top+2),photoBeforeBody:!!(pr&&br&&pr.bottom<=br.top+2),frameWidth:fr?.width||0,modalWidth:document.querySelector('.article-modal-content')?.getBoundingClientRect().width||0,imgObjectFit:img?getComputedStyle(img).objectFit:'',overflow:document.documentElement.scrollWidth-document.documentElement.clientWidth};})()`);
++  add('fotografia in sezione editoriale autonoma e ordinata',photoLayout.sections===1&&photoLayout.detailDisplay==='block'&&photoLayout.photoPosition==='relative'&&photoLayout.hintPosition==='static'&&photoLayout.headerBeforePhoto&&photoLayout.photoBeforeBody&&photoLayout.frameWidth>300&&photoLayout.frameWidth<photoLayout.modalWidth&&photoLayout.imgObjectFit==='contain'&&photoLayout.overflow<=1,JSON.stringify(photoLayout));
+   await evaluate(`(()=>{const opener=document.querySelector('#articleModalBody [data-article-image-open]');opener.focus();opener.click();document.querySelector('.article-image-viewer [data-article-viewer-in]').click();})()`);
+   await delay(60);
+   const articleViewer=await evaluate(`(()=>{const root=document.querySelector('.article-image-viewer');return {open:root.classList.contains('open'),hidden:root.getAttribute('aria-hidden'),zoom:root.querySelector('[data-article-viewer-label]').textContent,focusClose:document.activeElement===root.querySelector('.article-image-viewer-close')};})()`);
+@@ -448,6 +450,15 @@
+     add(`responsive ${width}px`,data.doc<=1&&data.cardRight<=data.vw+1&&data.mediaH>0&&(width<=760||data.mediaH<=301)&&data.titleDisplay==='block'&&(width>760||!data.columns.includes(' '))&&data.touch,JSON.stringify(data));
+   }
+ 
++  const detailResponsive=[];
++  for(const [width,height] of [[320,700],[768,1024],[1440,900]]){
++    await setViewport(width,height);await navigate('index.html');await click('[data-tab="articles"]');await click('[data-article-open="article_2"]');await delay(100);
++    const data=await evaluate(`(()=>{const modal=document.querySelector('.article-modal-content');const detail=document.querySelector('#articleModalBody .article-detail-editorial');const photo=detail?.querySelector('.article-featured-photo');const frame=detail?.querySelector('.article-featured-photo-frame');const img=detail?.querySelector('.article-featured-photo img');const body=detail?.querySelector('.article-detail-body');const pr=photo?.getBoundingClientRect();const br=body?.getBoundingClientRect();return {width:${width},overflow:modal?modal.scrollWidth-modal.clientWidth:999,detailDisplay:detail?getComputedStyle(detail).display:'',photoWidth:pr?.width||0,viewport:innerWidth,frameMinHeight:frame?parseFloat(getComputedStyle(frame).minHeight):0,imgFit:img?getComputedStyle(img).objectFit:'',ordered:!!(pr&&br&&pr.bottom<=br.top+2)};})()`);
++    detailResponsive.push(data);
++    add(`dettaglio fotografico responsive ${width}px`,data.overflow<=1&&data.detailDisplay==='block'&&data.photoWidth>0&&data.photoWidth<=data.viewport+1&&data.frameMinHeight>=180&&data.imgFit==='contain'&&data.ordered,JSON.stringify(data));
++    await click('#closeArticleModal');
++  }
++
+   await setViewport(1280,900);await navigate('admin-articles.html');
+   let adminState=await evaluate(`({cards:document.querySelectorAll('#adminArticlesList .article-card').length,drafts:document.querySelectorAll('.status-draft').length,scheduled:document.querySelectorAll('.status-scheduled').length,fields:['articleTitle','articleSubtitle','articleExcerpt','articleAuthor','articleCategory','articleTags','articleBody','articleImage','articleImageAlt','articleImageCaption','articleStatus','articlePublishedAt','articleSlug'].every(id=>!!document.getElementById(id))})`);
+   add('elenco e modulo admin completi',adminState.cards===4&&adminState.drafts===1&&adminState.scheduled===1&&adminState.fields,JSON.stringify(adminState));

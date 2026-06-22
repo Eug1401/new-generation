@@ -1,0 +1,56 @@
+NEW GENERATION v126.17 — RISULTATI DI VERIFICA
+Data: 22 giugno 2026
+
+PASS  npm test
+      13 file HTML, 22 file JavaScript, 0 errori, 0 avvisi.
+
+PASS  npm run lint
+      13 file HTML, 22 file JavaScript, 0 errori, 0 avvisi.
+
+PASS  npm run test:photos
+      12/12 controlli:
+      - header apikey sulle richieste pubbliche;
+      - JWT sessione sulle operazioni admin;
+      - multipart senza Content-Type manuale;
+      - classificazione rete/CORS;
+      - health check senza esposizione secrets;
+      - firme JPEG/PNG/WebP;
+      - rifiuto file incoerenti/corrotti;
+      - limiti file e batch;
+      - interruzione upload recuperabile;
+      - download originale e ZIP via Edge Function;
+      - separazione dagli Articoli;
+      - limiti e formati dichiarati nella UI.
+
+PASS  npm run test:edge
+      Controllo TypeScript della Edge Function team-photos.
+
+PASS  npm run test:articles
+      Inclusi:
+      - fotografia in sezione editoriale autonoma e ordinata;
+      - ordine intestazione → fotografia → corpo;
+      - object-fit: contain;
+      - visualizzatore, Escape e ritorno focus;
+      - dettaglio fotografico responsive 320/768/1440 px;
+      - nessun overflow orizzontale;
+      - anteprima amministrativa coerente;
+      - nessuna regressione upload immagini Articoli.
+
+PASS  npm run test:ui
+      13 pagine, 11 viewport, nessun errore runtime o richiesta locale fallita.
+
+PASS  npm run test:simulation
+      Simulazione e rollback verificati.
+
+PASS  npm run build
+      Sorgente e cartella dist validate; build statica generata.
+
+NON VERIFICABILE DALL'AMBIENTE LOCALE
+      npm run test:photo-edge-live
+      Esito del container: DNS non risolto per il dominio del progetto Supabase.
+      Il risultato non determina se la funzione remota sia pubblicata o configurata.
+      Occorre ripetere il comando da una rete con accesso Internet dopo deploy e secrets set.
+
+SICUREZZA
+      Scansione dell'albero sorgente: i valori Cloudinary forniti dall'utente non sono presenti nei file o nell'archivio.
+      La API secret esposta deve comunque essere ruotata prima del deploy.
