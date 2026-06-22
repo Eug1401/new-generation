@@ -1,95 +1,81 @@
-# Setup foto squadra Cloudinary + Supabase Edge Function
+# Setup galleria Foto: Cloudinary + Supabase Edge Function (v126.16)
 
-Questa versione sposta la gestione delle foto squadra fuori dal database.
-Il DB Supabase continua a gestire articoli, squadre, partite e stato app.
-Le foto vengono salvate e lette da Cloudinary tramite una Edge Function Supabase.
+La galleria Foto è un flusso autonomo rispetto alle immagini degli articoli:
 
-## 1. Valori già configurati nel frontend
-
-```js
-CLOUDINARY_CLOUD_NAME = dc17izhac
-CLOUDINARY_TEAM_FOLDER = squadra
-PHOTO_SECTION_NAME = foto-squadra
-EDGE_FUNCTION = team-photos
+```text
+frontend Foto → team-photos → Cloudinary cartella squadra/<teamId>
+                           ↘ tabella public.team_photos
 ```
 
-## 2. Crea i Secrets nella dashboard Supabase
+Gli articoli, i relativi URL immagine e il loro caricamento non vengono usati né modificati.
 
-Nel progetto Supabase vai in:
+## 1. Database
 
-Project Settings → Edge Functions → Secrets
+Esegui `SUPABASE_SETUP.sql` nel SQL Editor. La sezione v126.16 crea `public.team_photos`, che conserva `public_id`, URL originale, URL delle preview, formato, dimensioni, byte, MIME type, nome originale, titolo, descrizione, didascalia, alt, album, ordine e date.
 
-Aggiungi:
+Il browser non accede direttamente alla tabella. La Edge Function usa la service role; RLS resta attivo senza policy pubbliche.
+
+## 2. Secrets della Edge Function
+
+Configura in Supabase:
 
 ```env
 CLOUDINARY_CLOUD_NAME=dc17izhac
-CLOUDINARY_API_KEY=la_tua_api_key
-CLOUDINARY_API_SECRET=il_tuo_api_secret
+CLOUDINARY_API_KEY=<api-key>
+CLOUDINARY_API_SECRET=<api-secret>
 CLOUDINARY_TEAM_FOLDER=squadra
 CLOUDINARY_SECTION_TAG=foto-squadra
+SUPABASE_URL=<url-progetto>
+SUPABASE_ANON_KEY=<anon-o-legacy-anon-key>
+SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
+PHOTO_ALLOWED_ORIGINS=https://dominio-produzione.example,https://dominio-preview.example
 ```
 
-Non mettere mai `CLOUDINARY_API_SECRET` nei file JS pubblici.
+Per sviluppo aggiungi esplicitamente l'origine locale usata, per esempio `http://localhost:4173`. Non inserire mai `CLOUDINARY_API_SECRET` o `SUPABASE_SERVICE_ROLE_KEY` nel frontend.
 
-## 3. Deploy Edge Function
+## 3. Autenticazione e CORS
 
-Con Supabase CLI:
+`supabase/functions/team-photos/config.toml` usa `verify_jwt = false` per permettere alla preflight `OPTIONS` e alle letture pubbliche di raggiungere la funzione. La funzione valida manualmente il vero access token Supabase per `POST`, `PUT`, `PATCH` e `DELETE`.
+
+Il frontend non usa più la chiave pubblicabile come token utente. Per le operazioni amministrative legge `session.access_token`; per il `FormData` non imposta manualmente `Content-Type`, così il browser genera il boundary corretto.
+
+## 4. Deploy
 
 ```bash
 supabase login
-supabase link --project-ref avypkzuwyfydmayoewdi
+supabase link --project-ref <project-ref>
 supabase functions deploy team-photos
 ```
 
-Se lavori in locale, la funzione è in:
+Verifica che il dominio pubblicato utilizzi HTTPS e che `assets/js/supabase-config.js` punti allo stesso progetto Supabase, senza URL `localhost` in produzione.
+
+## 5. Endpoint
 
 ```text
-supabase/functions/team-photos/index.ts
+GET    /team-photos                         lista galleria
+GET    /team-photos?action=detail&photoId=  dettaglio
+GET    /team-photos?action=download&photoId= download originale
+POST   /team-photos                         upload file/files multipart (admin)
+POST   /team-photos?action=zip              ZIP originali selezionati
+PATCH  /team-photos                         modifica metadati (admin)
+PUT    /team-photos                         sostituzione sicura (admin)
+DELETE /team-photos                         eliminazione verificata (admin)
+OPTIONS /team-photos                        preflight senza autenticazione
 ```
 
-## 4. Deploy sito su Cloudflare
+## 6. Limiti e formati
 
-Carica normalmente il sito statico su Cloudflare Pages.
-Il frontend chiama:
+- JPEG, PNG, WebP;
+- 10 MB per file;
+- 20 file e 80 MB per batch;
+- validazione di MIME, estensione, firma binaria e decodifica lato client;
+- validazione di MIME, estensione e firma binaria lato funzione;
+- upload multiplo parzialmente completabile: ogni file ha esito autonomo e le sole foto fallite possono essere riprovate.
 
-```text
-https://avypkzuwyfydmayoewdi.supabase.co/functions/v1/team-photos
-```
+## 7. Originali, preview e ZIP
 
-usando la `ANON_KEY` già presente in `assets/js/supabase-config.js`.
+Cloudinary conserva l'originale senza trasformazioni distruttive. La galleria usa derivate `thumb`, `medium` e `large`; download singolo e ZIP passano dalla Edge Function e contengono esclusivamente originali appartenenti alla galleria Foto. Lo ZIP non viene più costruito nel browser e non può includere immagini degli articoli.
 
-## 5. Come funziona ora
+## 8. Diagnostica
 
-Admin:
-
-```text
-admin-photos.html → POST Edge Function → Cloudinary
-```
-
-Pubblico:
-
-```text
-index.html → GET Edge Function → lista foto da Cloudinary
-```
-
-Griglia:
-
-```text
-c_fill,w_600,h_420,q_auto,f_auto
-```
-
-Lightbox:
-
-```text
-c_limit,w_2200,q_auto,f_auto
-```
-
-Download/ZIP:
-
-```text
-originale Cloudinary
-```
-
-## 6. Limite importante Free Plan
-
-Cloudinary Free accetta immagini fino a 10 MB. Il frontend e la funzione bloccano file più grandi.
+La funzione registra metodo, azione, status, codice errore e durata senza token o segreti. Il frontend distingue autenticazione, rete/CORS, mixed content, timeout, validazione, Cloudinary, database e ZIP incompleto.

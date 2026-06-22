@@ -62,48 +62,53 @@ end $$;
 
 
 -- ============================================================
--- v90: bucket Storage per le foto squadre
+-- Legacy: bucket Supabase Storage "team-photos"
 -- ============================================================
--- Esegui questo blocco UNA VOLTA, dopo aver applicato il resto dello script.
--- Crea un bucket pubblico chiamato 'team-photos' dove ogni file ha:
---   - path: team-photos/<teamId>/<timestamp>_<filename>
---   - public read (chiunque può scaricare/visualizzare)
---   - write solo da utenti autenticati (admin)
+-- Le versioni precedenti potevano usare un bucket Storage pubblico. Dalla
+-- v126.16 il flusso Foto usa esclusivamente la Edge Function team-photos,
+-- Cloudinary e public.team_photos. Questo setup non crea né rende pubblico
+-- alcun bucket e non modifica eventuali file legacy già presenti.
+-- Dopo aver verificato che non servano più, bucket e policy legacy possono
+-- essere rimossi manualmente dal progetto Supabase.
 
--- Crea il bucket (se non esiste già)
-insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values (
-  'team-photos',
-  'team-photos',
-  true,                                  -- public read
-  10485760,                              -- 10 MB per file (limite per evitare bombe nel free tier 1GB totale)
-  array['image/jpeg','image/png','image/webp','image/gif']
-)
-on conflict (id) do update set
-  public = true,
-  file_size_limit = 10485760,
-  allowed_mime_types = array['image/jpeg','image/png','image/webp','image/gif'];
+-- ============================================================
+-- v126.16: metadati dedicati alla galleria Foto Cloudinary
+-- ============================================================
+-- Questa tabella NON contiene e NON referenzia le immagini degli articoli.
+-- Viene letta/scritta esclusivamente dalla Edge Function team-photos tramite
+-- SUPABASE_SERVICE_ROLE_KEY; il frontend non accede direttamente alla tabella.
+create extension if not exists pgcrypto;
 
--- Policy: chiunque può leggere (download / visualizzazione foto)
-drop policy if exists "team-photos public read" on storage.objects;
-create policy "team-photos public read"
-on storage.objects
-for select
-to anon, authenticated
-using (bucket_id = 'team-photos');
+create table if not exists public.team_photos (
+  id uuid primary key default gen_random_uuid(),
+  public_id text not null unique,
+  team_id text not null,
+  original_url text not null,
+  download_url text not null,
+  thumb_url text not null,
+  medium_url text not null,
+  large_url text not null,
+  version bigint not null default 0,
+  format text not null,
+  width integer not null check (width > 0),
+  height integer not null check (height > 0),
+  bytes bigint not null check (bytes > 0),
+  mime_type text not null check (mime_type in ('image/jpeg','image/png','image/webp')),
+  original_name text not null,
+  title text not null default '',
+  description text not null default '',
+  caption text not null default '',
+  alt_text text not null default '',
+  album text not null default '',
+  display_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint team_photos_gallery_scope check (public_id like 'squadra/%')
+);
 
--- Policy: solo admin autenticati possono caricare
-drop policy if exists "team-photos admin upload" on storage.objects;
-create policy "team-photos admin upload"
-on storage.objects
-for insert
-to authenticated
-with check (bucket_id = 'team-photos');
+create index if not exists team_photos_team_order_idx
+  on public.team_photos (team_id, display_order, created_at desc);
 
--- Policy: solo admin autenticati possono cancellare
-drop policy if exists "team-photos admin delete" on storage.objects;
-create policy "team-photos admin delete"
-on storage.objects
-for delete
-to authenticated
-using (bucket_id = 'team-photos');
+alter table public.team_photos enable row level security;
+-- Nessuna policy diretta: la service role della Edge Function bypassa RLS.
+-- La lettura pubblica passa dalla funzione, che restituisce solo il perimetro squadra/.
