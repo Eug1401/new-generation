@@ -1,12 +1,14 @@
 {
   "name": "new-generation-tournament",
-  "version": "1.25.0",
+  "version": "1.26.14",
   "private": true,
   "description": "Sito statico per la gestione e la pubblicazione di un torneo.",
   "scripts": {
     "lint": "node tools/validate-project.mjs --lint",
     "test": "node tools/validate-project.mjs",
     "build": "node tools/build-static.mjs",
-    "test:ui": "node tools/test-ui-stability.mjs"
+    "test:ui": "node tools/test-ui-stability.mjs",
+    "test:articles": "node tools/test-ui-stability.mjs --articles-only",
+    "test:simulation": "node tools/test-simulation.mjs"
   }
 }
