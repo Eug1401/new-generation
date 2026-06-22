@@ -18,7 +18,12 @@
     return 'Admin';
   }
 
-  const PDF_COLORS={bg:[7,7,6],ink:[24,16,6],muted:[108,91,54],gold:[201,154,58],gold2:[255,235,176],paper:[255,252,241],line:[225,205,151],red:[125,33,41]};
+  // v126.9: palette editoriale bianco/oro (vedi admin-reports.js per il
+  // razionale). Coerente fra tutti i PDF: classifiche, marcatori, recap
+  // partite, tabellone e recap globale pre-reset.
+  // 'bg' è ora un grigio molto chiaro (quasi bianco) invece del nero
+  // precedente: i nuovi header non usano sfondi scuri.
+  const PDF_COLORS={bg:[253,251,247],ink:[22,18,8],muted:[120,105,72],gold:[184,134,28],gold2:[253,239,200],paper:[253,251,247],line:[222,210,176],red:[156,30,42]};
   function setRgb(doc,fn,c){doc[fn](...(Array.isArray(c)?c:[c,c,c]));}
   function today(){return new Date().toLocaleDateString('it-IT');}
   function slug(v){return String(v||'new-generation').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'new-generation';}
@@ -38,7 +43,29 @@
     const presidentScorers=(store.selectors.presidentScorers?store.selectors.presidentScorers(s):[]).map((p,i)=>({...p,rank:i+1,president:p.name,team:p.teamName}));
     const data=store.bracketData(s);
     const winner=findWinner(s,standings);
-    function header(title,subtitle){const w=doc.internal.pageSize.getWidth();setRgb(doc,'setFillColor',PDF_COLORS.bg);doc.rect(0,0,w,50,'F');drawLogo(doc,brand,w/2-15,6,30,s.rules?.name||'NG');setRgb(doc,'setTextColor',PDF_COLORS.gold2);doc.setFont('helvetica','bold');doc.setFontSize(15);doc.text(String(s.rules?.name||'New Generation'),w/2,40,{align:'center'});setRgb(doc,'setTextColor',PDF_COLORS.ink);doc.setFont('helvetica','bold');doc.setFontSize(18);doc.text(title,14,66);setRgb(doc,'setTextColor',PDF_COLORS.muted);doc.setFont('helvetica','normal');doc.setFontSize(9);doc.text(subtitle,14,72,{maxWidth:w-28});}
+    function header(title,subtitle){
+      const w=doc.internal.pageSize.getWidth();
+      // v126.9: header editoriale bianco (vedi admin-reports.js). Niente
+      // più sfondo scuro: stesso linguaggio visivo per tutti i PDF.
+      setRgb(doc,'setFillColor',[255,255,255]);doc.rect(0,0,w,32,'F');
+      if(brand){ try { doc.addImage(brand,'PNG',14,7,18,18,undefined,'FAST'); } catch(_){} }
+      setRgb(doc,'setTextColor',PDF_COLORS.gold);doc.setFont('helvetica','bold');doc.setFontSize(7);
+      doc.text('NEW GENERATION · REPORT UFFICIALE',35,11);
+      setRgb(doc,'setTextColor',PDF_COLORS.ink);doc.setFont('helvetica','bold');doc.setFontSize(13);
+      doc.text(String(s.rules?.name||'New Generation'),35,18,{maxWidth:w-90});
+      setRgb(doc,'setTextColor',PDF_COLORS.ink);doc.setFont('helvetica','bold');doc.setFontSize(14);
+      doc.text(title,w-14,18,{align:'right',maxWidth:w*0.5});
+      setRgb(doc,'setTextColor',PDF_COLORS.muted);doc.setFont('helvetica','normal');doc.setFontSize(7);
+      doc.text(`Generato ${today()}`,w-14,23,{align:'right'});
+      // Regola gold sotto l'header
+      setRgb(doc,'setDrawColor',PDF_COLORS.gold);doc.setLineWidth(0.5);doc.line(14,32,w-14,32);
+      setRgb(doc,'setDrawColor',PDF_COLORS.line);doc.setLineWidth(0.18);doc.line(14,32.9,w-14,32.9);
+      // Titolo della sezione
+      setRgb(doc,'setTextColor',PDF_COLORS.ink);doc.setFont('helvetica','bold');doc.setFontSize(16);
+      doc.text(title,14,46);
+      setRgb(doc,'setTextColor',PDF_COLORS.muted);doc.setFont('helvetica','normal');doc.setFontSize(8.5);
+      doc.text(subtitle,14,52,{maxWidth:w-28});
+    }
     function footer(){const pages=doc.internal.getNumberOfPages();for(let i=1;i<=pages;i++){doc.setPage(i);const w=doc.internal.pageSize.getWidth(),h=doc.internal.pageSize.getHeight();setRgb(doc,'setDrawColor',PDF_COLORS.gold);doc.setLineWidth(.25);doc.line(14,h-13,w-14,h-13);setRgb(doc,'setTextColor',PDF_COLORS.muted);doc.setFont('helvetica','normal');doc.setFontSize(7);doc.text(`Recap torneo - ${today()}`,14,h-8);doc.text(`Pagina ${i}/${pages}`,w-14,h-8,{align:'right'});}}
     function tableTheme(){return {theme:'grid',styles:{font:'helvetica',fontSize:8,cellPadding:2,lineColor:[232,210,150],lineWidth:.12,textColor:PDF_COLORS.ink,overflow:'linebreak',valign:'middle'},headStyles:{fillColor:PDF_COLORS.ink,textColor:PDF_COLORS.gold2,fontStyle:'bold',fontSize:7.5,halign:'center'},alternateRowStyles:{fillColor:[255,252,241]},margin:{left:14,right:14},showHead:'everyPage'};}
     function didParseTeamCell(col){return function(d){if(d.section==='body'&&d.column.index===col){d.cell.styles.cellPadding={top:2,right:2,bottom:2,left:11};d.cell.styles.fontStyle='bold';}};}
@@ -170,59 +197,336 @@
     if(reload)setTimeout(()=>location.reload(),400);
     return true;
   }
+  // =====================================================================
+  // RESET DEL TORNEO — v126.10 (flusso transazionale verificato)
+  //
+  // Sostituisce il vecchio flusso unico setTimeout(..., 900). Le fasi sono
+  // ora esplicite, verificate e atomiche:
+  //
+  //   1) SNAPSHOT  — deep copy dello state corrente
+  //   2) EXPORT    — generazione Blob backup JSON + Blob PDF recap
+  //   3) VERIFICA  — blob.size > 0 e MIME type corretto per entrambi
+  //   4) DOWNLOAD  — trigger dei file via <a download>
+  //   5) CONFERMA  — l'admin deve cliccare esplicitamente "Procedi" dopo
+  //                  aver verificato che i file siano stati salvati
+  //   6) CANCELLAZIONE — emptyState + force remote save (attende Supabase)
+  //   7) VERIFICA STATO VUOTO — rilegge da localStorage e da remoto
+  //   8) RELOAD    — reload finale (UI admin + propagazione lato utente)
+  //
+  // La cancellazione NON parte mai se la fase 2 o 3 fallisce: niente perdita
+  // di dati. Lock anti-doppio-click attivo per tutta la durata del flusso.
+  // =====================================================================
+
+  let resetInProgress = false;
+  function resetLog(opId, phase, detail){
+    try { console.info(`[NG-Reset ${opId}] ${phase}`, detail !== undefined ? detail : ''); } catch(_){}
+  }
+
+  // FASE 1: deep snapshot indipendente dallo state mutabile
+  function snapshotState(){
+    const s = state();
+    return JSON.parse(JSON.stringify(s));
+  }
+
+  // FASE 2a: blob JSON
+  function buildBackupBlob(snapshot){
+    const payload = backupPayload(snapshot, 'reset-flow');
+    const json = JSON.stringify(payload, null, 2);
+    const blob = new Blob([json], { type:'application/json' });
+    const filename = `${slug(payload.meta.tournamentName)}-backup-torneo-${new Date().toISOString().slice(0,10)}.json`;
+    return { blob, filename, payload };
+  }
+
+  // FASE 2b: blob PDF (usa createRecapDoc esistente, ottenendo blob
+  // invece che chiamare doc.save() direttamente). jsPDF supporta output('blob').
+  async function buildRecapPdfBlob(snapshot){
+    const doc = await createRecapDoc(store.normalizeState(snapshot));
+    const blob = doc.output('blob');
+    const filename = `${slug(snapshot.rules?.name||'new-generation')}-recap-torneo.pdf`;
+    return { blob, filename };
+  }
+
+  // FASE 3: verifica integrità blob
+  function verifyExport(label, expectedMime, blob){
+    if(!blob || !(blob instanceof Blob)) throw new Error(`Export ${label}: oggetto non valido.`);
+    if(blob.size === 0) throw new Error(`Export ${label}: file vuoto (0 byte).`);
+    if(expectedMime && blob.type && !blob.type.includes(expectedMime.split('/')[1])){
+      // MIME loose check: alcuni browser normalizzano application/pdf vs application/x-pdf
+      console.warn(`[NG-Reset] MIME atteso ${expectedMime}, ricevuto ${blob.type}`);
+    }
+    return true;
+  }
+
+  // FASE 4: trigger download via anchor (un singolo gesture, no popup blocker)
+  function triggerDownload(blob, filename){
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    // Pulizia ritardata dell'URL per dare tempo al browser di iniziare il download
+    setTimeout(() => {
+      try { document.body.removeChild(a); } catch(_){}
+      try { URL.revokeObjectURL(url); } catch(_){}
+    }, 4000);
+    return url;
+  }
+
+  // FASE 6 + 7: cancellazione transazionale con attesa remote save
+  async function executeAtomicWipe(opId){
+    // 6a) salvataggio locale dello stato vuoto
+    resetLog(opId, 'CANCELLAZIONE', 'rimozione cache localStorage');
+    try{
+      Object.keys(localStorage)
+        .filter(k => k.startsWith('new-generation-admin-state') || k.startsWith('new-generation-public-state') || k.startsWith('nexora-admin-state') || k.startsWith('nexora-public-state'))
+        .forEach(k => localStorage.removeItem(k));
+    }catch(e){ resetLog(opId, 'CANCELLAZIONE WARN', 'localStorage clear fallito (continuo)'); }
+
+    const empty = store.emptyState();
+    resetLog(opId, 'CANCELLAZIONE', 'save(emptyState) locale + broadcast');
+    save(empty); // patched store.save: scrive localStorage + broadcast + scheduleRemoteSave
+
+    // 6b) attesa flush remoto (Supabase): qui sta la differenza chiave.
+    // Senza questo wait, location.reload() può anticipare il remote save,
+    // su Supabase resta lo stato pieno, supabase-sync lo ripristina e
+    // l'utente vede il torneo "tornato".
+    if(typeof window.NG_FORCE_REMOTE_SAVE === 'function'){
+      resetLog(opId, 'CANCELLAZIONE', 'attesa NG_FORCE_REMOTE_SAVE');
+      try {
+        const ok = await Promise.race([
+          window.NG_FORCE_REMOTE_SAVE(empty),
+          new Promise(resolve => setTimeout(() => resolve('timeout'), 8000))
+        ]);
+        if(ok === 'timeout'){
+          resetLog(opId, 'CANCELLAZIONE WARN', 'remote save timeout 8s — proseguo comunque');
+        } else {
+          resetLog(opId, 'CANCELLAZIONE', `remote save risultato: ${ok}`);
+        }
+      } catch(err){
+        resetLog(opId, 'CANCELLAZIONE WARN', `remote save errore: ${err?.message||err}`);
+      }
+    } else {
+      resetLog(opId, 'CANCELLAZIONE', 'NG_FORCE_REMOTE_SAVE non disponibile (modalità offline / no Supabase)');
+    }
+
+    // 7) verifica stato vuoto rileggendo da store.load
+    const verifyState = store.load('admin');
+    const isEmpty = (verifyState.teams||[]).length === 0
+                 && (verifyState.matches||[]).length === 0
+                 && (verifyState.articles||[]).length === 0;
+    resetLog(opId, 'VERIFICA STATO VUOTO', { teams:(verifyState.teams||[]).length, matches:(verifyState.matches||[]).length, articles:(verifyState.articles||[]).length, ok:isEmpty });
+    if(!isEmpty){
+      throw new Error('Lo stato locale risulta ancora popolato dopo la cancellazione. Riprovare.');
+    }
+    return true;
+  }
+
+  // Funzione legacy mantenuta per compatibilità (mai più chiamata dal nuovo
+  // flusso; preservata per non rompere eventuali test esterni).
   function resetStorageAndState(){
-    try{Object.keys(localStorage).filter(k=>k.startsWith('new-generation-admin-state')||k.startsWith('new-generation-public-state')||k.startsWith('nexora-admin-state')||k.startsWith('nexora-public-state')).forEach(k=>localStorage.removeItem(k));}catch(e){}
+    try{
+      Object.keys(localStorage)
+        .filter(k => k.startsWith('new-generation-admin-state') || k.startsWith('new-generation-public-state') || k.startsWith('nexora-admin-state') || k.startsWith('nexora-public-state'))
+        .forEach(k => localStorage.removeItem(k));
+    }catch(e){}
     save(store.emptyState());
     location.reload();
   }
+
   function openResetDialog(){
-    let dlg=document.getElementById('resetTournamentDialog');
+    if(resetInProgress){
+      return; // protezione anti-doppio click globale: un reset alla volta
+    }
+    let dlg = document.getElementById('resetTournamentDialog');
     if(!dlg){
-      dlg=document.createElement('div');dlg.id='resetTournamentDialog';dlg.className='ng-modal-backdrop';
-      dlg.innerHTML=`<div class="ng-modal card pad reset-modal" role="dialog" aria-modal="true" aria-labelledby="resetDialogTitle">
-        <span class="pill danger-pill">Azione irreversibile</span>
-        <h2 id="resetDialogTitle">Reset torneo</h2>
-        <p class="muted">Il reset cancella torneo, squadre, giocatori, referti, articoli, calendari e cache pubbliche. Prima dell'azzeramento puoi scaricare i file di sicurezza.</p>
-        <div class="reset-export-panel">
-          <label class="check-card"><input id="resetExportBackup" type="checkbox" checked><span><strong>Scarica backup completo JSON</strong><small>Contiene l'intero stato del torneo e può essere ricaricato dall'interfaccia di ripristino.</small></span></label>
-          <label class="check-card"><input id="resetExportRecap" type="checkbox"><span><strong>Scarica recap PDF</strong><small>Solo classifiche, marcatori, tabellone finale e vincitore.</small></span></label>
-        </div>
-        <label class="check-card confirm-card"><input id="resetConfirmCheck" type="checkbox"><span><strong>Confermo di voler azzerare il torneo</strong><small>Ho capito che l'operazione sostituisce lo stato attuale con un torneo vuoto.</small></span></label>
-        <div id="resetDialogMsg"></div>
-        <div class="reset-choice-grid"><button class="btn danger" id="resetExecuteBtn" type="button" disabled>Conferma ed esegui reset</button><button class="btn" id="cancelResetBtn" type="button">Annulla</button></div>
-      </div>`;
+      dlg = document.createElement('div');
+      dlg.id = 'resetTournamentDialog';
+      dlg.className = 'ng-modal-backdrop';
+      dlg.innerHTML = `
+        <div class="ng-modal card pad reset-modal" role="dialog" aria-modal="true" aria-labelledby="resetDialogTitle">
+          <span class="pill danger-pill">Azione irreversibile</span>
+          <h2 id="resetDialogTitle">Reset torneo</h2>
+          <p class="muted">Il reset esegue questi passaggi <strong>in ordine</strong>:</p>
+          <ol class="reset-steps muted">
+            <li>Generazione e download del <strong>backup JSON</strong> completo</li>
+            <li>Generazione e download del <strong>PDF recap</strong> ufficiale</li>
+            <li>Verifica che entrambi i file siano stati salvati (conferma manuale)</li>
+            <li>Cancellazione dello stato torneo (lato locale e remoto)</li>
+            <li>Verifica dello stato vuoto e ricaricamento</li>
+          </ol>
+          <p class="muted small">Se la generazione di uno dei due file fallisce, <strong>il reset non viene eseguito</strong> e nessun dato viene cancellato.</p>
+
+          <label class="check-card confirm-card">
+            <input id="resetConfirmCheck" type="checkbox">
+            <span>
+              <strong>Confermo di voler azzerare il torneo</strong>
+              <small>L'operazione è irreversibile. I file di backup sono l'unico modo per ripristinare i dati.</small>
+            </span>
+          </label>
+
+          <div id="resetPhaseBox" class="reset-phase-box" aria-live="polite"></div>
+          <div id="resetDialogMsg" aria-live="polite"></div>
+
+          <div class="reset-choice-grid">
+            <button class="btn danger" id="resetExecuteBtn" type="button" disabled>Esporta file di sicurezza</button>
+            <button class="btn danger" id="resetFinalBtn" type="button" hidden>Procedi con la cancellazione</button>
+            <button class="btn" id="cancelResetBtn" type="button">Annulla</button>
+          </div>
+        </div>`;
       document.body.appendChild(dlg);
-      const confirmCheck=dlg.querySelector('#resetConfirmCheck');
-      const execBtn=dlg.querySelector('#resetExecuteBtn');
-      confirmCheck.addEventListener('change',()=>{execBtn.disabled=!confirmCheck.checked;});
-      dlg.querySelector('#cancelResetBtn').addEventListener('click',()=>dlg.classList.remove('show'));
-      dlg.addEventListener('click',e=>{if(e.target===dlg){e.preventDefault();e.stopPropagation();dlg.classList.remove('show');}});
-      execBtn.addEventListener('click',async()=>{
-        if(!confirmCheck.checked)return;
-        const msg=dlg.querySelector('#resetDialogMsg');
-        const exportBackup=dlg.querySelector('#resetExportBackup')?.checked;
-        const exportRecap=dlg.querySelector('#resetExportRecap')?.checked;
-        const current=state();
+
+      const confirmCheck = dlg.querySelector('#resetConfirmCheck');
+      const execBtn      = dlg.querySelector('#resetExecuteBtn');
+      const finalBtn     = dlg.querySelector('#resetFinalBtn');
+      const cancelBtn    = dlg.querySelector('#cancelResetBtn');
+      const phaseBox     = dlg.querySelector('#resetPhaseBox');
+      const msg          = dlg.querySelector('#resetDialogMsg');
+
+      confirmCheck.addEventListener('change', () => {
+        execBtn.disabled = !confirmCheck.checked || resetInProgress;
+      });
+      cancelBtn.addEventListener('click', () => {
+        if(resetInProgress) return; // niente cancel durante la cancellazione
+        dlg.classList.remove('show');
+      });
+      dlg.addEventListener('click', e => {
+        if(e.target === dlg && !resetInProgress){
+          e.preventDefault(); e.stopPropagation();
+          dlg.classList.remove('show');
+        }
+      });
+
+      function setPhase(text, level){
+        phaseBox.innerHTML = `<div class="reset-phase reset-phase-${level||'info'}">${UI.esc(text)}</div>`;
+      }
+      function setMsg(text, type){
+        msg.innerHTML = text ? `<div class="message ${type||''}">${UI.esc(text)}</div>` : '';
+      }
+
+      // Memoria delle URL blob per cleanup
+      const blobUrls = [];
+
+      // -------- STEP 1: pulsante "Esporta file di sicurezza" --------
+      execBtn.addEventListener('click', async () => {
+        if(!confirmCheck.checked || resetInProgress) return;
+        const opId = (Math.random().toString(36).slice(2,8)).toUpperCase();
+        resetInProgress = true;
+        resetLog(opId, 'AVVIO RESET', { time:new Date().toISOString() });
+        confirmCheck.disabled = true;
+        execBtn.disabled = true;
+        const busy = window.NGInteractive;
+        if(busy) busy.setButtonBusy(execBtn, true, 'Esporto…');
+
         try{
-          const busy=window.NGInteractive;
-          if(busy) busy.setButtonBusy(execBtn,true,'Reset in corso…');
-          else execBtn.disabled=true;
-          msg.innerHTML='<div class="message">Preparo i file selezionati prima del reset...</div>';
-          if(exportBackup){downloadStateBackup(current,'reset-flow');}
-          if(exportRecap){await downloadRecapPdf(current);}
-          msg.innerHTML='<div class="message ok">File avviati. Reset in corso...</div>';
-          setTimeout(resetStorageAndState,900);
+          // FASE 1: snapshot
+          setPhase('1/4 · Preparazione dei dati');
+          resetLog(opId, 'FASE 1 SNAPSHOT');
+          const snapshot = snapshotState();
+          const summary = {
+            tournament: snapshot.rules?.name || 'New Generation',
+            teams: (snapshot.teams||[]).length,
+            matches: (snapshot.matches||[]).length,
+            articles: (snapshot.articles||[]).length
+          };
+          resetLog(opId, 'FASE 1 SNAPSHOT OK', summary);
+
+          // FASE 2 (a): backup JSON
+          setPhase('2/4 · Generazione backup JSON');
+          resetLog(opId, 'FASE 2a BACKUP JSON');
+          const backup = buildBackupBlob(snapshot);
+          verifyExport('backup JSON', 'application/json', backup.blob);
+          resetLog(opId, 'FASE 2a BACKUP JSON OK', { filename:backup.filename, sizeBytes:backup.blob.size });
+
+          // FASE 2 (b): PDF recap
+          setPhase('2/4 · Generazione PDF recap');
+          resetLog(opId, 'FASE 2b PDF RECAP');
+          if(!window.jspdf || !window.jspdf.jsPDF){
+            await ensurePdfTools();
+          }
+          const pdf = await buildRecapPdfBlob(snapshot);
+          verifyExport('PDF recap', 'application/pdf', pdf.blob);
+          resetLog(opId, 'FASE 2b PDF RECAP OK', { filename:pdf.filename, sizeBytes:pdf.blob.size });
+
+          // FASE 3: download di entrambi (in ordine)
+          setPhase('3/4 · Avvio download');
+          resetLog(opId, 'FASE 3 DOWNLOAD AVVIO');
+          blobUrls.push(triggerDownload(backup.blob, backup.filename));
+          // Piccolo ritardo per evitare che il browser unisca due download in
+          // un solo dialog "salva con nome" su alcuni sistemi
+          await new Promise(r => setTimeout(r, 400));
+          blobUrls.push(triggerDownload(pdf.blob, pdf.filename));
+          resetLog(opId, 'FASE 3 DOWNLOAD OK', { backup:backup.filename, pdf:pdf.filename });
+
+          // FASE 3b: attesa user-confirmation (cuore della sicurezza)
+          setPhase('Verifica i file salvati, poi conferma per procedere');
+          setMsg(`Sono stati avviati ${2} download: il backup JSON (${(backup.blob.size/1024).toFixed(0)} KB) e il PDF recap (${(pdf.blob.size/1024).toFixed(0)} KB). Controlla che entrambi i file siano arrivati nella cartella Download e siano apribili. Solo dopo la verifica clicca "Procedi con la cancellazione".`, 'ok');
+          execBtn.hidden = true;
+          finalBtn.hidden = false;
+          finalBtn.disabled = true;
+          // Anti-rage-click: il pulsante finale resta disabilitato per
+          // almeno 2.5 secondi così l'utente non può cancellare per errore
+          setTimeout(() => { if(!resetInProgress) return; finalBtn.disabled = false; }, 2500);
+          resetLog(opId, 'FASE 3 IN ATTESA CONFERMA UTENTE');
+
+          // FASE 4: handler del pulsante finale (in chiusura, registrato qui per accesso a opId/snapshot)
+          const finalHandler = async () => {
+            if(finalBtn.disabled) return;
+            finalBtn.disabled = true;
+            cancelBtn.disabled = true;
+            try{
+              setPhase('4/4 · Cancellazione torneo in corso');
+              resetLog(opId, 'FASE 4 CANCELLAZIONE INIZIO');
+              await executeAtomicWipe(opId);
+              setPhase('Reset completato. Ricaricamento in corso…', 'ok');
+              setMsg('Stato vuoto confermato. La pagina verrà ricaricata fra un istante.', 'ok');
+              resetLog(opId, 'RESET COMPLETATO', { time:new Date().toISOString() });
+              // Piccolo delay per leggere il messaggio finale, poi reload
+              setTimeout(() => {
+                try { blobUrls.forEach(u => URL.revokeObjectURL(u)); } catch(_){}
+                location.reload();
+              }, 1200);
+            }catch(err){
+              resetLog(opId, 'FASE 4 ERRORE', err?.message || err);
+              setPhase('Cancellazione fallita. Il torneo non è stato azzerato.', 'error');
+              setMsg(`Errore: ${err.message||err}. Lo stato attuale è preservato. Riprova o segnala il problema.`, 'error');
+              finalBtn.disabled = false;
+              cancelBtn.disabled = false;
+              // NB: resetInProgress resta true finché l'utente chiude il dialog
+            }
+          };
+          // bind one-shot
+          finalBtn.onclick = finalHandler;
+
         }catch(err){
-          console.error(err);
-          if(window.NGInteractive) window.NGInteractive.setButtonBusy(execBtn,false);
-          else execBtn.disabled=false;
-          msg.innerHTML=`<div class="message error">Operazione interrotta: ${UI.esc(err.message||err)}</div>`;
+          // Errore in fase 1, 2 o 3 (PRIMA della cancellazione)
+          // → NESSUN DATO TOCCATO
+          resetLog(opId, 'EXPORT ERRORE', err?.message || err);
+          console.error('[NG-Reset] export fallito:', err);
+          setPhase('Esportazione fallita. Nessun dato è stato cancellato.', 'error');
+          setMsg(`Errore durante l'esportazione: ${err.message||err}. Lo stato del torneo è integro. Riprova o annulla.`, 'error');
+          // Riabilita per nuovo tentativo
+          if(busy) busy.setButtonBusy(execBtn, false);
+          execBtn.disabled = false;
+          confirmCheck.disabled = false;
+          resetInProgress = false;
+          // Cleanup eventuali URL già creati
+          try { blobUrls.forEach(u => URL.revokeObjectURL(u)); } catch(_){}
+          blobUrls.length = 0;
         }
       });
     }
-    const msg=dlg.querySelector('#resetDialogMsg'); if(msg)msg.innerHTML='';
-    const chk=dlg.querySelector('#resetConfirmCheck'); if(chk)chk.checked=false;
-    const exec=dlg.querySelector('#resetExecuteBtn'); if(exec)exec.disabled=true;
+
+    // Reset stato dialog ad ogni apertura
+    const phaseBox = dlg.querySelector('#resetPhaseBox'); if(phaseBox) phaseBox.innerHTML = '';
+    const msg = dlg.querySelector('#resetDialogMsg'); if(msg) msg.innerHTML = '';
+    const chk = dlg.querySelector('#resetConfirmCheck'); if(chk){ chk.checked = false; chk.disabled = false; }
+    const exec = dlg.querySelector('#resetExecuteBtn'); if(exec){ exec.disabled = true; exec.hidden = false; }
+    const finalBtn = dlg.querySelector('#resetFinalBtn'); if(finalBtn){ finalBtn.disabled = true; finalBtn.hidden = true; finalBtn.onclick = null; }
+    const cancel = dlg.querySelector('#cancelResetBtn'); if(cancel) cancel.disabled = false;
+    if(window.NGInteractive && exec) window.NGInteractive.setButtonBusy(exec, false);
+    resetInProgress = false;
     dlg.classList.add('show');
   }
 

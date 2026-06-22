@@ -3,10 +3,27 @@
   const esc=v=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
   const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
   function initials(name){return String(name||'?').split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();}
+  // Logo rendering stabile (v126.6):
+  // - wrapper con dimensioni riservate (aspect-ratio dal CSS)
+  // - iniziali SEMPRE presenti dietro l'<img>: se l'immagine sta caricando
+  //   o fallisce, l'utente vede le iniziali, mai un frame vuoto
+  // - data-team-id per identità stabile (debug + key)
+  // - onerror="this.remove()" sicuro: lascia visibile il fallback senza
+  //   manipolazioni outerHTML che possono colpire nodi orfani
+  // - loading="lazy" + decoding="async": niente blocchi di paint con
+  //   liste lunghe e data-URL pesanti
   function logo(team,big=false){
-    const cls=`team-logo ${big?'big':''}`;
-    if(team?.logo)return `<img class="${cls}" src="${esc(team.logo)}" alt="Logo ${esc(team.name)}" onerror="this.outerHTML='<div class=&quot;team-logo-fallback ${big?'big':''}&quot;><span></span></div>'">`;
-    return `<div class="team-logo-fallback ${big?'big':''}" title="Logo non disponibile"><span></span></div>`;
+    const bigCls=big?'big':'';
+    const tid=esc(team?.id||'');
+    const inits=esc(initials(team?.name));
+    const safeName=esc(team?.name||'');
+    if(team?.logo){
+      return `<span class="team-logo-wrap ${bigCls}" data-team-id="${tid}">`+
+        `<span class="team-logo-fallback ${bigCls}" aria-hidden="true"><span>${inits}</span></span>`+
+        `<img class="team-logo ${bigCls}" src="${esc(team.logo)}" alt="Logo ${safeName}" loading="lazy" decoding="async" draggable="false" onerror="this.remove()">`+
+        `</span>`;
+    }
+    return `<span class="team-logo-fallback ${bigCls}" data-team-id="${tid}" title="Logo non disponibile"><span>${inits}</span></span>`;
   }
   function fmtDate(m){if(m.date&&m.time)return new Intl.DateTimeFormat('it-IT',{dateStyle:'medium',timeStyle:'short'}).format(new Date(`${m.date}T${m.time}`)); if(m.date)return new Intl.DateTimeFormat('it-IT',{dateStyle:'medium'}).format(new Date(`${m.date}T00:00`)); return 'Da definire';}
   function teamOptions(state,selected=''){return `<option value="">Seleziona squadra</option>`+state.teams.map(t=>`<option value="${t.id}" ${t.id===selected?'selected':''}>${esc(t.name)}</option>`).join('');}

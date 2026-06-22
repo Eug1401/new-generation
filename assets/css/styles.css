@@ -6308,3 +6308,221 @@ html { scroll-padding-top: 12px; }
 @media (prefers-reduced-motion: reduce) {
   .mobile-nav-panel { animation: none !important; }
 }
+
+/* v126.5 — icon weight normalization for monochrome glyphs in mobile nav.
+   ⬢ (matches), ▥ (bracket), ✦ (articles) hanno metriche diverse fra font:
+   bilanciamo il peso visivo affinché l'oro renda uniforme su tutti. */
+.mobile-nav-icon {
+  font-family: system-ui, -apple-system, "Segoe UI Symbol", "Apple Symbols", sans-serif;
+  font-weight: 700;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.15rem;
+}
+.mobile-nav-item.active .mobile-nav-icon {
+  text-shadow: 0 1px 0 rgba(255,255,255,.18);
+}
+
+/* =====================================================================
+   v126.6 — Logo squadra stabile (no flicker / no stemma "vecchio")
+   Markup nuovo:
+     <span class="team-logo-wrap">           ← contenitore con aspect-ratio
+       <span class="team-logo-fallback">     ← iniziali sempre presenti dietro
+         <span>AB</span>
+       </span>
+       <img class="team-logo" loading="lazy" decoding="async"
+            onerror="this.remove()">          ← se errore, sparisce e
+                                                restano le iniziali
+     </span>
+   Il fallback è sempre montato: durante il caricamento o il decode
+   l'utente vede le iniziali, mai un frame vuoto. Onerror sicuro.
+   ===================================================================== */
+
+.team-logo-wrap {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  aspect-ratio: 1 / 1;
+  border-radius: 16px;
+  overflow: hidden;
+  flex: 0 0 auto;
+  isolation: isolate;
+}
+.team-logo-wrap.big { width: 82px; height: 82px; border-radius: 24px; }
+
+/* L'<img> e il fallback occupano lo stesso slot; il fallback resta sotto. */
+.team-logo-wrap .team-logo,
+.team-logo-wrap .team-logo-fallback {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  margin: 0;
+}
+.team-logo-wrap .team-logo-fallback {
+  z-index: 0;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, var(--gold) 0%, var(--gold-soft) 100%);
+  color: var(--gold-ink);
+  font-weight: 950;
+  font-size: 1rem;
+  letter-spacing: -.02em;
+  text-shadow: 0 1px 0 rgba(255,255,255,.18);
+}
+.team-logo-wrap.big .team-logo-fallback { font-size: 1.45rem; }
+.team-logo-wrap .team-logo {
+  z-index: 1;
+  object-fit: cover;
+  background: transparent;
+}
+
+/* Standalone fallback (squadra senza logo) — stessa dimensione e stile */
+.team-logo-fallback:not(.team-logo-wrap .team-logo-fallback) {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  aspect-ratio: 1 / 1;
+  border-radius: 16px;
+  flex: 0 0 auto;
+  background: linear-gradient(135deg, var(--gold) 0%, var(--gold-soft) 100%);
+  color: var(--gold-ink);
+  font-weight: 950;
+  font-size: 1rem;
+  letter-spacing: -.02em;
+  text-shadow: 0 1px 0 rgba(255,255,255,.18);
+}
+.team-logo-fallback.big:not(.team-logo-wrap .team-logo-fallback) {
+  width: 82px;
+  height: 82px;
+  border-radius: 24px;
+  font-size: 1.45rem;
+}
+
+/* Loghi inline nelle righe di classifica e nel bracket: stessa scala */
+.team-inline .team-logo-wrap,
+.bracket-team .team-logo-wrap {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+}
+.team-inline .team-logo-wrap .team-logo-fallback,
+.bracket-team .team-logo-wrap .team-logo-fallback {
+  font-size: .72rem;
+}
+.team-inline .team-logo-fallback:not(.team-logo-wrap .team-logo-fallback),
+.bracket-team .team-logo-fallback:not(.team-logo-wrap .team-logo-fallback) {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  font-size: .72rem;
+}
+
+/* Reduced motion: img caricamento sempre istantaneo (nessuna transizione
+   d'opacità che possa generare flash al swap) */
+.team-logo-wrap .team-logo {
+  transition: opacity .12s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .team-logo-wrap .team-logo { transition: none !important; }
+}
+
+/* ===================================================================== */
+/*  Fluidità desktop: rendering ottimizzato                              */
+/* ===================================================================== */
+
+/* Off-screen tab-panel: niente costo di reflow/paint quando non visibile.
+   Su Chromium/Edge/Safari recenti questo fa una differenza misurabile. */
+.tab-panel:not(.active) {
+  content-visibility: auto;
+  contain-intrinsic-size: 1px 800px;
+}
+
+/* Match card: stable rendering envelope.
+   contain: layout style limita il reflow al singolo card quando lo state
+   change tocca solo quella card; paint resta corretto perché l'overflow
+   visible è necessario per il glow live. */
+.match-card.public-fixture-card {
+  contain: layout style;
+}
+
+/* End of v126.6 stable logo + desktop fluidity */
+
+/* =====================================================================
+   v126.10 — Reset dialog (fasi visibili)
+   ===================================================================== */
+.reset-modal .reset-steps {
+  margin: 8px 0 12px;
+  padding-left: 22px;
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+.reset-modal .reset-steps li { margin-bottom: 2px; }
+.reset-modal .reset-steps li strong { color: var(--text); }
+
+.reset-phase-box { margin: 10px 0 4px; min-height: 0; }
+.reset-phase-box:empty { display: none; }
+.reset-phase {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-weight: 800;
+  font-size: 0.9rem;
+  border: 1px solid var(--line);
+  background: rgba(255,248,231,.05);
+  color: var(--text);
+}
+.reset-phase::before {
+  content: '';
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 0 3px rgba(215,164,45,.22);
+  flex: 0 0 auto;
+  animation: ngResetPulse 1.4s ease-in-out infinite;
+}
+@keyframes ngResetPulse {
+  0%,100% { opacity: 1; transform: scale(1); }
+  50%     { opacity: .5; transform: scale(.85); }
+}
+.reset-phase.reset-phase-error {
+  background: rgba(229,83,95,.10);
+  border-color: rgba(229,83,95,.50);
+  color: #ffd3da;
+}
+.reset-phase.reset-phase-error::before {
+  background: var(--danger);
+  box-shadow: 0 0 0 3px rgba(229,83,95,.25);
+  animation: none;
+}
+.reset-phase.reset-phase-ok {
+  background: rgba(34,197,94,.10);
+  border-color: rgba(13,122,62,.45);
+  color: #d6ffe5;
+}
+.reset-phase.reset-phase-ok::before {
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34,197,94,.25);
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .reset-phase::before { animation: none !important; }
+}
+
+/* Pulsanti reset: layout grid responsivo */
+.reset-modal .reset-choice-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+.reset-modal .reset-choice-grid .btn { flex: 1 1 auto; min-width: 140px; }

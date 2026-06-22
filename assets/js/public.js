@@ -4,7 +4,9 @@
   const FAVORITE_TEAM_KEY='new-generation-public-favorite-team-v1';
   let favoriteTeamId=loadFavoriteTeamId();
   const BRAND_LOGO='assets/brand/new-generation-logo-transparent.png';
-  const PDF_COLORS={bg:[8,8,8],ink:[23,19,10],muted:[112,94,56],gold:[201,154,58],gold2:[255,235,176],paper:[255,252,241],line:[225,205,151]};
+  // v126.9: palette editoriale bianco/oro (vedi admin-reports.js per il
+  // razionale). Coerente con tutti gli altri PDF del sito.
+  const PDF_COLORS={bg:[253,251,247],ink:[22,18,8],muted:[120,105,72],gold:[184,134,28],gold2:[253,239,200],paper:[253,251,247],line:[222,210,176]};
   const PUBLIC_ACTIVE_TAB_KEY='new-generation-public-active-tab-v1';
   const PUBLIC_FILTERS_KEY='new-generation-public-filter-state-v1';
   const PUBLIC_TABS=new Set(['home','teams','players','matches','bracket','articles','photos','search']);
@@ -773,8 +775,17 @@
     const {jsPDF}=window.jspdf; const doc=new jsPDF({orientation:'p',unit:'mm',format:'a4',compress:true});
     const brandLogo=await dataUrlFromImage(BRAND_LOGO); const teamLogo=await dataUrlFromImage(team.logo);
     const w=doc.internal.pageSize.getWidth();
-    setRgb(doc,'setFillColor',PDF_COLORS.bg);doc.rect(0,0,w,48,'F');drawPdfLogo(doc,brandLogo,w/2-13,7,26,state.rules?.name||'NG');
-    setRgb(doc,'setTextColor',PDF_COLORS.gold2);doc.setFont('helvetica','bold');doc.setFontSize(13);doc.text(String(state.rules?.name||'New Generation').toUpperCase(),w/2,39,{align:'center'});
+    // v126.9: header editoriale bianco. Niente più sfondo scuro.
+    setRgb(doc,'setFillColor',[255,255,255]);doc.rect(0,0,w,32,'F');
+    if(brandLogo){ try { doc.addImage(brandLogo,'PNG',14,7,18,18,undefined,'FAST'); } catch(_){} }
+    setRgb(doc,'setTextColor',PDF_COLORS.gold);doc.setFont('helvetica','bold');doc.setFontSize(7);
+    doc.text('NEW GENERATION · SCHEDA SQUADRA',35,11);
+    setRgb(doc,'setTextColor',PDF_COLORS.ink);doc.setFont('helvetica','bold');doc.setFontSize(13);
+    doc.text(String(state.rules?.name||'New Generation'),35,18,{maxWidth:w-70});
+    setRgb(doc,'setTextColor',PDF_COLORS.muted);doc.setFont('helvetica','normal');doc.setFontSize(7);
+    doc.text(`Generato ${today()}`,w-14,18,{align:'right'});
+    setRgb(doc,'setDrawColor',PDF_COLORS.gold);doc.setLineWidth(0.5);doc.line(14,32,w-14,32);
+    setRgb(doc,'setDrawColor',PDF_COLORS.line);doc.setLineWidth(0.18);doc.line(14,32.9,w-14,32.9);
     setRgb(doc,'setFillColor',PDF_COLORS.paper);doc.roundedRect(12,55,w-24,46,8,8,'F');drawPdfLogo(doc,teamLogo,20,63,28,team.name);
     setRgb(doc,'setTextColor',PDF_COLORS.ink);doc.setFont('helvetica','bold');doc.setFontSize(21);doc.text(String(team.name||'Squadra'),55,74,{maxWidth:w-70});
     doc.setFont('helvetica','normal');doc.setFontSize(9);setRgb(doc,'setTextColor',PDF_COLORS.muted);doc.text(`Presidente: ${team.president?.name||'Non inserito'}  ·  Allenatore: ${team.coach?.name||'Non inserito'}`,55,83,{maxWidth:w-70});
@@ -1172,7 +1183,14 @@
         articles:(s.articles||[]).map(a=>({id:a.id,title:a.title,updatedAt:a.updatedAt||a.createdAt||'',image:a.image||''})),
         photos:(s.photos||[]).map(p=>({id:p.id,teamId:p.teamId,url:p.url||p.secure_url||'',publicId:p.publicId||p.public_id||'',updatedAt:p.updatedAt||p.createdAt||''}))
       };
-      return `${store.deriveFingerprint?store.deriveFingerprint(s):''}|${JSON.stringify(media)}`;
+      // v126.6 sync-fix: deriveFingerprint omette date/time/field/referee
+      // perché non incidono su classifiche/selettori memoizzati. Però sono
+      // proprio i campi che l'admin modifica più spesso ("Arbitri: Da
+      // definire", riprogrammazione campo/orario). Li includo qui nel
+      // signature di render così l'utente vede subito le modifiche senza
+      // dover ricaricare la pagina, mantenendo intatta la memoization.
+      const matchMeta=(s.matches||[]).map(m=>({id:m.id,date:m.date||'',time:m.time||'',field:m.field||'',referee:m.referee||''}));
+      return `${store.deriveFingerprint?store.deriveFingerprint(s):''}|${JSON.stringify(media)}|${JSON.stringify(matchMeta)}`;
     }catch(_){return String(Date.now())+Math.random();}
   }
   function markRenderedState(){_lastRenderedStateSig=publicStateSignature(state);}
@@ -1189,12 +1207,16 @@
     resetFiltersForNewState();
     persistPublicFilters();
     markRenderedState();
-    // Su mobile evitiamo di ricostruire tutte le sezioni nascoste a ogni update realtime:
-    // riduce layout shift e sfarfallii, lasciando la sensazione da app nativa.
-    if(isMobileAppView() && !opts.fullRender){
-      renderTabSection(activePublicTab());
-    }else{
+    // v126.8: render della SOLA sezione attiva anche su desktop (prima
+    // si rifacevano tutte 8 le sezioni a ogni broadcast). Le sezioni
+    // non attive sono visualmente nascoste (display:none + content-visibility),
+    // e verranno renderizzate dal listener ng:tab-changed quando l'utente
+    // le aprirà. opts.initial / opts.fullRender mantengono il render
+    // completo (boot iniziale, import dati, reset).
+    if(opts.initial || opts.fullRender){
       renderAllSections();
+    } else {
+      renderTabSection(activePublicTab());
     }
   }
   let _saveTimer=null;
@@ -1218,7 +1240,7 @@
     if(isMobileAppView()) _renderRafId = setTimeout(()=>requestAnimationFrame(run), 70);
     else _renderRafId = requestAnimationFrame(run);
   }
-  const publicImport=$('#publicImport'); if(publicImport) publicImport.addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;try{const json=JSON.parse(await file.text());state=store.normalizeState(json);save();phaseFilter='';roundFilter='';teamFilter='';statusFilter='';playerTeamFilter='';standingsGroup='all';persistPublicFilters();render();alert('Dati pubblici importati correttamente.');}catch(err){alert('File JSON non valido.');}});
+  const publicImport=$('#publicImport'); if(publicImport) publicImport.addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;try{const json=JSON.parse(await file.text());state=store.normalizeState(json);save();phaseFilter='';roundFilter='';teamFilter='';statusFilter='';playerTeamFilter='';standingsGroup='all';persistPublicFilters();render({fullRender:true});alert('Dati pubblici importati correttamente.');}catch(err){alert('File JSON non valido.');}});
   document.addEventListener('ng:tab-changed',e=>{const tab=e.detail?.tab;if(PUBLIC_TABS.has(tab)&&!e.detail?.restored)safeSessionSet(PUBLIC_ACTIVE_TAB_KEY,tab); if(PUBLIC_TABS.has(tab)) requestAnimationFrame(()=>renderTabSection(tab));});
   $('#publicPhaseFilter').addEventListener('change',e=>{phaseFilter=e.target.value;persistPublicFilters();renderMatches();});$('#publicRoundFilter').addEventListener('change',e=>{roundFilter=e.target.value;persistPublicFilters();renderMatches();});$('#publicTeamFilter').addEventListener('change',e=>{teamFilter=e.target.value;persistPublicFilters();renderMatches();});$('#publicPlayerTeamFilter')?.addEventListener('change',e=>{playerTeamFilter=e.target.value;persistPublicFilters();renderPlayers();});document.addEventListener('change',e=>{if(e.target.id==='publicGroupStandingsFilter'){standingsGroup=e.target.value||'all';persistPublicFilters();renderHome();}});$('#globalSearch').addEventListener('input',()=>{persistPublicFilters();renderSearch();});document.addEventListener('click',async e=>{const filterOpener=e.target.closest('[data-open-match-filter]');if(filterOpener){e.preventDefault();openMatchFilterSheet(filterOpener.dataset.openMatchFilter);return;}const filterChoice=e.target.closest('[data-filter-type]');if(filterChoice){e.preventDefault();setMatchFilter(filterChoice.dataset.filterType,filterChoice.dataset.filterValue||'');return;}if(e.target.closest('[data-close-match-filter]')){e.preventDefault();closeMatchFilterSheet();return;}if(e.target.id==='matchFilterSheet'){e.preventDefault();e.stopPropagation();closeMatchFilterSheet();return;}if(e.target.closest('[data-clear-match-filters]')){e.preventDefault();phaseFilter='';roundFilter='';teamFilter='';statusFilter='';persistPublicFilters();renderMatches();return;}const presetBtn=e.target.closest('[data-match-preset]');if(presetBtn){e.preventDefault();statusFilter=presetBtn.dataset.matchPreset==='all'?'':presetBtn.dataset.matchPreset;persistPublicFilters();renderMatches();return;}const shareBtn=e.target.closest('[data-share-match]');if(shareBtn){e.preventDefault();const m=state.matches.find(x=>x.id===shareBtn.dataset.shareMatch);if(m){if(m.status==='live'){alert('La condivisione immagine è disponibile solo per partite concluse.');return;}await shareMatchImage(m,shareBtn);}return;}const favBtn=e.target.closest('[data-favorite-team]');if(favBtn){e.preventDefault();e.stopPropagation();const id=favBtn.dataset.favoriteTeam;if(isFavoriteTeam(id))clearFavoriteTeam();else setFavoriteTeam(id);return;}if(e.target.closest('[data-clear-favorite]')){e.preventDefault();clearFavoriteTeam();return;}if(e.target.closest('[data-open-teams-tab]')){e.preventDefault();document.querySelector('[data-tab="teams"]')?.click();return;}const favMatchBtn=e.target.closest('[data-filter-favorite-matches]');if(favMatchBtn){e.preventDefault();teamFilter=favMatchBtn.dataset.filterFavoriteMatches||favoriteTeamId;persistPublicFilters();document.querySelector('[data-tab="matches"]')?.click();renderMatches();return;}const teamTarget=e.target.closest('[data-team-detail]');if(teamTarget){e.preventDefault();showTeamDetail(teamTarget.dataset.teamDetail,teamTarget);return;}const pdfBtn=e.target.closest('[data-team-pdf]');if(pdfBtn){const busy=window.NGInteractive;if(busy?.isButtonBusy(pdfBtn))return;if(busy)busy.setButtonBusy(pdfBtn,true,'Genero PDF…');else pdfBtn.disabled=true;try{await downloadTeamPdf(pdfBtn.dataset.teamPdf);}catch(err){alert('Errore PDF squadra: '+(err.message||err));}finally{if(busy)busy.setButtonBusy(pdfBtn,false);else pdfBtn.disabled=false;}return;}const articleTarget=e.target.closest('[data-article-open]');if(articleTarget && !e.target.closest('[data-edit-article],[data-delete-article]')){e.preventDefault();e.stopPropagation();showArticle(articleTarget.dataset.articleOpen||articleTarget.closest('[data-article-open]')?.dataset.articleOpen,articleTarget);return;}const card=e.target.closest('[data-match-detail]');if(card){e.preventDefault();showMatch(card.dataset.matchDetail);return;}if(e.target.id==='closeModal'){const mm=$('#matchModal');mm.classList.remove('open');mm.classList.remove('public-match-modal');}
   if(e.target.id==='matchModal'){e.preventDefault();e.stopPropagation();const mm=$('#matchModal');mm.classList.remove('open');mm.classList.remove('public-match-modal');}if(e.target.id==='closeArticleModal')closeArticleModal();
@@ -1242,7 +1264,7 @@
   function setupMobileNavigation(){
     if(document.querySelector('.mobile-bottom-nav')) return;
     const labels={home:'Panoramica',teams:'Squadre',players:'Giocatori',matches:'Partite',bracket:'Tabellone',articles:'Articoli',photos:'Foto',search:'Cerca'};
-    const icons={home:'⌂',teams:'◎',players:'♙',matches:'⚽',bracket:'▥',articles:'✦',photos:'📷',search:'⌕'};
+    const icons={home:'⌂',teams:'◎',players:'♙',matches:'⬢',bracket:'▥',articles:'✦',photos:'📷',search:'⌕'};
     const mainTabs=['home','teams','matches','search'];
     const moreTabs=['players','bracket','articles','photos'];
     const nav=document.createElement('nav');
@@ -1307,9 +1329,13 @@
       // Salto alignState e debouncing del render.
       const incoming = e.detail.state;
       const source = e.detail.source || '';
-      if(isRedundantIncoming(incoming)){state=incoming;return;}
-      // Rilevo cambi di punteggio nelle partite live PRIMA di sostituire lo state,
-      // così posso notificare l'utente. Lo snapshot interno è mantenuto.
+      // v126.7: rimosso il gate globale isRedundantIncoming. Era la causa
+      // di update "fantasma" quando admin puliva un Live: se anche un solo
+      // campo (es. date/time/referee, ora coperti) usciva dalla firma globale,
+      // l'update veniva scartato in toto. Ora lasciamo che il filtro avvenga
+      // a livello di setHtmlStable per-sezione (che confronta l'HTML finale,
+      // immune da gap dei campi). Più robusto: nessuna possibilità di update
+      // perso. Le sezioni con HTML invariato bailano comunque in pochi µs.
       detectLiveScoreChanges(incoming);
       state = incoming;
       // Anche i broadcast realtime passano dal render schedulato: su mobile evita
@@ -1324,7 +1350,7 @@
         const currentTab=activePublicTab();
         const parsed=JSON.parse(e.newValue);
         const incoming=store.normalizeState(store.mergeMissingMedia?store.mergeMissingMedia(parsed,state):parsed);
-        if(isRedundantIncoming(incoming)){state=incoming;return;}
+        // v126.7: rimosso anche qui il gate globale (vedi commento sopra).
         detectLiveScoreChanges(incoming);
         state=incoming;
         scheduleRender({skipAlign:true});
@@ -1346,5 +1372,5 @@
   // già in corso al boot non triggerano notifiche fasulle.
   detectLiveScoreChanges(state);
   window.NexoraPhotos?.refreshAll?.().catch(()=>{});
-  render();
+  render({initial:true});
 })();

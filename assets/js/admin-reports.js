@@ -1,372 +1,1122 @@
+/*
+ * admin-reports.js — v126.9 (editorial PDF rewrite)
+ *
+ * Generazione PDF amministratore. Riscrittura completa della grafica
+ * mantenendo invariate logica di selezione dati, endpoint e librerie
+ * (jsPDF 2.5 + jspdf-autotable 3.8). Stile editoriale chiaro per stampa.
+ *
+ *   Documenti generati:
+ *     1. Classifica generale          (verticale)
+ *     2. Marcatori (Top 15) + presidenti (verticale)
+ *     3. Classifiche gironi           (verticale, una per girone)
+ *     4. Recap partite concluse       (verticale)  <-- ex "Calendario"
+ *                                     filtra: solo m.status==='played' && hasScore
+ *     5. Tabellone fase finale        (orizzontale)
+ *
+ *   Filtro partite concluse: condiviso, vedi isConcluded(s,m).
+ *   Nessun dato live finisce nei PDF.
+ */
 (function(){
- const store=NexoraStore, UI=NexoraUI, A=NexoraAdmin;
- let playerTeamFilter='', standingsGroup='all';
- const BRAND_LOGO='assets/brand/new-generation-logo-transparent.png';
- const PDF_COLORS={ink:[24,16,6], muted:[108,91,54], gold:[185,130,24], gold2:[244,219,120], cream:[255,248,231], line:[221,177,73], soft:[255,246,218]};
- const imageCache=new Map();
+  const store = window.NexoraStore;
+  const UI    = window.NexoraUI;
+  const A     = window.NexoraAdmin;
 
- function teamFilterOptions(s,selected){return '<option value="">Tutte le squadre</option>'+s.teams.map(t=>`<option value="${t.id}" ${t.id===selected?'selected':''}>${UI.esc(t.name)}</option>`).join('');}
- function filteredPlayerStats(s){const rows=store.selectors.playerStats(s);return playerTeamFilter?rows.filter(p=>p.teamId===playerTeamFilter):rows.filter(p=>p.goals>0).slice(0,15);}
- function reportAvailability(s){
-   const matchCount=(s.matches||[]).length;
-   const teamCount=(s.teams||[]).length;
-   const scorers=store.selectors.scorers(s).length;
-   const hasGroups=store.selectors.hasGroupStage(s);
-   const bracket=store.bracketData(s);
-   return {
-     standings:{enabled:teamCount>0,detail:teamCount?`${teamCount} squadre`:'Aggiungi squadre'},
-     scorers:{enabled:teamCount>0,detail:scorers?`${Math.min(scorers,15)} marcatori`:'Nessun gol: PDF vuoto'},
-     groups:{enabled:hasGroups,detail:hasGroups?'Classifiche gironi':'Non previsto dal format'},
-     calendar:{enabled:matchCount>0,detail:matchCount?`${matchCount} partite`:'Genera il calendario'},
-     bracket:{enabled:Boolean(bracket.available),detail:bracket.available?'Tabellone disponibile':(bracket.message||'Non previsto dal format')}
-   };
- }
- function renderReportButtons(s){
-   const availability=reportAvailability(s);
-   Object.entries(availability).forEach(([kind,meta])=>{
-     const btn=document.querySelector(`[data-report-kind="${kind}"]`);
-     if(!btn)return;
-     btn.disabled=!meta.enabled;
-     btn.title=meta.detail;
-     const small=btn.querySelector('small');
-     if(small)small.textContent=meta.detail;
-   });
- }
- function render(){
-   const s=A.state();
-   renderReportButtons(s);
-   UI.$('#adminStats').innerHTML=UI.statsGrid(store.selectors.stats(s));
-   const standingsMenu=UI.$('#adminStandingsMenu');
-   if(standingsMenu)standingsMenu.innerHTML=store.selectors.hasGroupStage(s)?UI.groupStandingsSelector(s,standingsGroup,'adminGroupStandingsFilter'):'';
-   UI.$('#adminStandings').innerHTML=store.selectors.hasGroupStage(s)?UI.groupStandingsTables(s,standingsGroup):UI.standingsTable((store.selectors.officialStandings?store.selectors.officialStandings(s):store.selectors.calculateStandings(s)),s);
-   const filter=UI.$('#adminPlayerTeamFilter');
-   if(filter){filter.innerHTML=teamFilterOptions(s,playerTeamFilter);if(playerTeamFilter&&!s.teams.some(t=>t.id===playerTeamFilter))playerTeamFilter='';}
-   UI.$('#adminPlayers').innerHTML=UI.playerStatsTable(filteredPlayerStats(s))+(s.rules.isKingsLeague?'<div class="mini-section-title margin-top"><h3>Presidenti marcatori</h3></div>'+UI.presidentStatsTable(store.selectors.presidentScorers(s).slice(0,15)):'');
-   UI.$('#adminCalendar').innerHTML=UI.matchList(s);
-   UI.$('#adminBracket').innerHTML=UI.bracketMarkup(s);
- }
- document.addEventListener('DOMContentLoaded',render);
- UI.$('#adminPlayerTeamFilter')?.addEventListener('change',e=>{playerTeamFilter=e.target.value;render();});
- document.addEventListener('change',e=>{if(e.target.id==='adminGroupStandingsFilter'){standingsGroup=e.target.value||'all';render();}});
+  // ---------------------------------------------------------------------
+  // Stato UI della pagina report (filtri tabella in pagina, non nel PDF)
+  // ---------------------------------------------------------------------
+  let playerTeamFilter = '';
+  let standingsGroup   = 'all';
 
- function slug(s){return String(s||'report').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'').slice(0,60)||'report';}
- function today(){return new Intl.DateTimeFormat('it-IT',{dateStyle:'medium',timeStyle:'short'}).format(new Date());}
- function pdfName(s,type){return `${slug(s.rules?.name||'new-generation')}-${type}-${new Date().toISOString().slice(0,10)}.pdf`;}
- function setRgb(doc,method,rgb){doc[method](rgb[0],rgb[1],rgb[2]);}
- function toolsReady(){return window.jspdf&&window.jspdf.jsPDF;}
- function toast(msg,type='ok'){const box=UI.$('#pdfStatus'); if(box)box.innerHTML=`<div class="message ${type}">${UI.esc(msg)}</div>`;}
+  // ---------------------------------------------------------------------
+  // Costanti grafiche — palette editoriale bianco/oro, leggibile in stampa
+  // anche in bianco e nero (il gold si converte in grigio scuro coerente).
+  // ---------------------------------------------------------------------
+  const BRAND_LOGO = 'assets/brand/new-generation-logo-transparent.png';
+  const C = {
+    white     : [255,255,255],
+    paper     : [253,251,247],   // riga alternata + pannelli leggeri
+    ink       : [22,18,8],       // testo primario (near-black caldo)
+    ink2      : [60,52,32],      // testo secondario
+    muted     : [120,105,72],    // testo terziario, footer, caption
+    hair      : [222,210,176],   // hairline (bordi sottili)
+    rule      : [184,134,28],    // accent rule (linea sotto header)
+    gold      : [184,134,28],    // accent primario
+    goldInk   : [82,55,5],       // testo enfatico su sfondo gold-soft
+    goldSoft  : [253,239,200],   // wash giallo crema per highlight
+    goldFaint : [255,250,234],   // wash impalpabile (riepiloghi)
+    green     : [21,99,52],      // stato "Giocata"
+    greenSoft : [221,243,228],
+    red       : [156,30,42],
+  };
 
- function currentPdfState(){
-   const s=A.state();
-   const repair=store.repairState(s);
-   A.save(s);
-   const report=store.integrityReport(s);
-   const blocking=(report.details||[]).filter(i=>i.severity==='error');
-   if(blocking.length){throw new Error('Dati non coerenti per generare il PDF: '+blocking.slice(0,3).map(i=>i.message).join(' · '));}
-   if(repair.changed){toast('Dati riallineati con le ultime modifiche. Download in corso…');render();}
-   return s;
- }
- function dataUrlFromImage(src){
-   if(!src)return Promise.resolve(null);
-   if(imageCache.has(src))return imageCache.get(src);
-   const p=new Promise(resolve=>{
-     if(/^data:image\//i.test(src)){resolve(src);return;}
-     const img=new Image(); img.crossOrigin='anonymous';
-     img.onload=()=>{try{const c=document.createElement('canvas');c.width=img.naturalWidth||img.width;c.height=img.naturalHeight||img.height;const ctx=c.getContext('2d');ctx.drawImage(img,0,0);resolve(c.toDataURL('image/png'));}catch(e){resolve(null);}};
-     img.onerror=()=>resolve(null); img.src=src;
-   });
-   imageCache.set(src,p); return p;
- }
- async function preloadTeamLogos(s){const out={};await Promise.all(s.teams.map(async t=>{out[t.id]=await dataUrlFromImage(t.logo);}));return out;}
- function teamInitial(name){return String(name||'?').trim().split(/\s+/).map(x=>x[0]).join('').slice(0,2).toUpperCase()||'NG';}
- function drawPlaceholderLogo(doc,x,y,size,label){setRgb(doc,'setFillColor',PDF_COLORS.soft);setRgb(doc,'setDrawColor',PDF_COLORS.line);doc.roundedRect(x,y,size,size,2.2,2.2,'FD');setRgb(doc,'setTextColor',PDF_COLORS.gold);doc.setFont('helvetica','bold');doc.setFontSize(Math.max(5,size*.45));doc.text(teamInitial(label),x+size/2,y+size*.62,{align:'center'});}
- function drawLogo(doc,src,x,y,size,label){if(src){try{doc.addImage(src,'PNG',x,y,size,size,undefined,'FAST');return;}catch(e){try{doc.addImage(src,'JPEG',x,y,size,size,undefined,'FAST');return;}catch(_){}}}drawPlaceholderLogo(doc,x,y,size,label);}
- async function baseDoc(s,title,subtitle,orientation='p'){
-   const {jsPDF}=window.jspdf; const doc=new jsPDF({orientation,unit:'mm',format:'a4',compress:true});
-   const logo=await dataUrlFromImage(BRAND_LOGO); drawHeader(doc,s,title,subtitle,logo); return {doc,logo};
- }
- function drawHeader(doc,s,title,subtitle,logo){
-   const w=doc.internal.pageSize.getWidth();
-   setRgb(doc,'setFillColor',[7,6,4]);doc.rect(0,0,w,48,'F');
-   setRgb(doc,'setFillColor',[32,24,10]);doc.rect(0,48,w,3,'F');
-   drawLogo(doc,logo,w/2-12,6.5,24,s.rules?.name||'NG');
-   setRgb(doc,'setTextColor',PDF_COLORS.cream);doc.setFont('helvetica','bold');doc.setFontSize(15);doc.text(String(s.rules?.name||'New Generation'),w/2,34,{align:'center'});
-   setRgb(doc,'setTextColor',PDF_COLORS.gold2);doc.setFontSize(10);doc.text(String(title||'Report ufficiale'),w/2,40.5,{align:'center'});
-   setRgb(doc,'setTextColor',[210,190,140]);doc.setFont('helvetica','normal');doc.setFontSize(7.5);doc.text(String(subtitle||''),w/2,45.3,{align:'center'});
- }
- function addFooter(doc,s){
-   const pages=doc.internal.getNumberOfPages();
-   for(let i=1;i<=pages;i++){
-     doc.setPage(i);
-     const w=doc.internal.pageSize.getWidth(),h=doc.internal.pageSize.getHeight();
-     setRgb(doc,'setDrawColor',[225,184,80]);doc.setLineWidth(.2);doc.line(12,h-12,w-12,h-12);
-     setRgb(doc,'setTextColor',PDF_COLORS.muted);doc.setFontSize(7);doc.setFont('helvetica','normal');
-     doc.text(`${s.rules?.name||'New Generation'} · generato ${today()}`,12,h-7);
-     doc.text(`Pagina ${i}/${pages}`,w-12,h-7,{align:'right'});
-   }
- }
- function drawSectionIntro(doc,title,subtitle,y){
-   setRgb(doc,'setTextColor',PDF_COLORS.gold);doc.setFont('helvetica','bold');doc.setFontSize(8);doc.text('REPORT CENTER',12,y);
-   setRgb(doc,'setTextColor',PDF_COLORS.ink);doc.setFont('helvetica','bold');doc.setFontSize(14.5);doc.text(String(title||''),12,y+6);
-   setRgb(doc,'setTextColor',PDF_COLORS.muted);doc.setFont('helvetica','normal');doc.setFontSize(8.1);doc.text(String(subtitle||''),12,y+11,{maxWidth:doc.internal.pageSize.getWidth()-24});
-   return y+15;
- }
- function drawSummaryCards(doc,items,startY,cols=4){
-   const list=(items||[]).filter(Boolean); if(!list.length)return startY;
-   const left=12,right=12,gap=4,rowGap=4; const count=Math.max(1,Math.min(cols,list.length));
-   const cardW=(doc.internal.pageSize.getWidth()-left-right-gap*(count-1))/count; const cardH=18;
-   list.forEach((item,idx)=>{
-     const row=Math.floor(idx/count), col=idx%count;
-     const x=left+col*(cardW+gap), y=startY+row*(cardH+rowGap);
-     setRgb(doc,'setFillColor',[255,251,239]);setRgb(doc,'setDrawColor',PDF_COLORS.line);doc.roundedRect(x,y,cardW,cardH,3.2,3.2,'FD');
-     setRgb(doc,'setFillColor',item.tone==='accent'?PDF_COLORS.gold:PDF_COLORS.soft);doc.roundedRect(x,y,cardW,4.4,3.2,3.2,'F');
-     setRgb(doc,'setTextColor',PDF_COLORS.muted);doc.setFont('helvetica','bold');doc.setFontSize(6.4);doc.text(String(item.label||''),x+3,y+8);
-     setRgb(doc,'setTextColor',PDF_COLORS.ink);doc.setFont('helvetica','bold');doc.setFontSize(10.6);doc.text(String(item.value??'-'),x+3,y+14.2,{maxWidth:cardW-6});
-     if(item.note){doc.setFont('helvetica','normal');doc.setFontSize(6.3);setRgb(doc,'setTextColor',PDF_COLORS.muted);doc.text(String(item.note),x+3,y+17,{maxWidth:cardW-6});}
-   });
-   return startY + Math.ceil(list.length/count)*cardH + (Math.ceil(list.length/count)-1)*rowGap;
- }
- function drawReportNote(doc,text,startY,mode='info'){
-   if(!text)return startY;
-   const maxWidth=doc.internal.pageSize.getWidth()-34;
-   const lines=doc.splitTextToSize(String(text),maxWidth) || [''];
-   const boxH=Math.max(10,5+lines.length*4.1);
-   setRgb(doc,'setFillColor',mode==='warning'?[255,248,226]:[255,252,243]);
-   setRgb(doc,'setDrawColor',PDF_COLORS.line);
-   doc.roundedRect(12,startY,doc.internal.pageSize.getWidth()-24,boxH,3,3,'FD');
-   setRgb(doc,'setTextColor',PDF_COLORS.muted);doc.setFont('helvetica','normal');doc.setFontSize(7.4);
-   doc.text(lines,16,startY+5.5);
-   return startY+boxH;
- }
- function tableTheme(){return {theme:'grid',styles:{font:'helvetica',fontSize:8,cellPadding:2.1,lineColor:[232,210,150],lineWidth:.12,textColor:PDF_COLORS.ink,overflow:'linebreak',valign:'middle'},headStyles:{fillColor:PDF_COLORS.ink,textColor:PDF_COLORS.gold2,fontStyle:'bold',fontSize:7.5,halign:'center'},alternateRowStyles:{fillColor:[255,252,241]},margin:{left:12,right:12},showHead:'everyPage'};}
- function didDrawTeamLogo(logos,teamsByRow,colIndex=1){return function(data){if(data.section!=='body'||data.column.index!==colIndex)return;const row=teamsByRow[data.row.index];if(!row)return;drawLogo(data.doc,logos[row.teamId],data.cell.x+1.6,data.cell.y+1.4,6.2,row.name||row.teamName||row.team);};}
- function didParseTeamCell(colIndex=1){return function(data){if(data.section==='body'&&data.column.index===colIndex){data.cell.styles.cellPadding={top:2.1,right:2.1,bottom:2.1,left:10};data.cell.styles.fontStyle='bold';}};}
- function standingsRows(s,phase){return phase?store.selectors.calculateStandings(s,phase):(store.selectors.officialStandings?store.selectors.officialStandings(s):store.selectors.calculateStandings(s));}
+  // ---------------------------------------------------------------------
+  // Utility colori, formato date, slug
+  // ---------------------------------------------------------------------
+  function setRgb(doc, method, rgb){ doc[method](rgb[0],rgb[1],rgb[2]); }
+  function setFill(doc, rgb){ setRgb(doc,'setFillColor',rgb); }
+  function setDraw(doc, rgb){ setRgb(doc,'setDrawColor',rgb); }
+  function setText(doc, rgb){ setRgb(doc,'setTextColor',rgb); }
 
- async function pdfStandings(){
-   const s=currentPdfState(), logos=await preloadTeamLogos(s); const {doc}=await baseDoc(s,'Classifica generale','Impaginazione editoriale, leggibile e coerente con il visual del sito.','p');
-   const rows=standingsRows(s).map((r,i)=>({...r,rank:i+1}));
-   const liveCount=(s.matches||[]).filter(m=>m.status==='live').length;
-   const leader=rows[0]||null;
-   const bestAttack=rows.slice().sort((a,b)=>b.goalsFor-a.goalsFor||a.name.localeCompare(b.name))[0]||null;
-   const bestDefense=rows.slice().sort((a,b)=>a.goalsAgainst-b.goalsAgainst||a.name.localeCompare(b.name))[0]||null;
-   let y=58;
-   y=drawSectionIntro(doc,'Quadro classifica','La classifica ufficiale considera solo partite consolidate: gli incontri live restano fuori dai conteggi del PDF.',y);
-   y=drawSummaryCards(doc,[
-     {label:'Capolista',value:leader?leader.name:'—',note:leader?`${leader.points} pt · DR ${(leader.diff>0?'+':'')+leader.diff}`:'Nessun dato',tone:'accent'},
-     {label:'Miglior attacco',value:bestAttack?bestAttack.name:'—',note:bestAttack?`${bestAttack.goalsFor} gol fatti`:'Nessun dato'},
-     {label:'Miglior difesa',value:bestDefense?bestDefense.name:'—',note:bestDefense?`${bestDefense.goalsAgainst} gol subiti`:'Nessun dato'},
-     {label:'Partite consolidate',value:String((s.matches||[]).filter(m=>store.hasScore(s,m)).length),note:liveCount?`${liveCount} live escluse`:'Nessun live in corso'}
-   ],y,2)+5;
-   if(liveCount)y=drawReportNote(doc,'Le partite in stato Live non vengono riportate come concluse nel PDF e non modificano classifica o statistiche finché il referto non viene chiuso.',y,'warning')+4;
-   doc.autoTable({...tableTheme(),startY:y,columns:[{header:'#',dataKey:'rank'},{header:'Squadra',dataKey:'name'},{header:'Pt',dataKey:'points'},{header:'PG',dataKey:'played'},{header:'GF',dataKey:'goalsFor'},{header:'GS',dataKey:'goalsAgainst'},{header:'DR',dataKey:'diff'}],body:rows.length?rows.map(r=>({...r,diff:(r.diff>0?'+':'')+r.diff})):[{rank:'-',name:'Nessuna squadra disponibile',points:'-',played:'-',goalsFor:'-',goalsAgainst:'-',diff:'-',teamId:''}],columnStyles:{0:{halign:'center',cellWidth:10},1:{cellWidth:78},2:{halign:'center'},3:{halign:'center'},4:{halign:'center'},5:{halign:'center'},6:{halign:'center'}},didParseCell:didParseTeamCell(1),didDrawCell:didDrawTeamLogo(logos,rows,1)});
-   addFooter(doc,s); doc.save(pdfName(s,'classifica'));
- }
+  function today(){
+    return new Intl.DateTimeFormat('it-IT',{dateStyle:'medium',timeStyle:'short'}).format(new Date());
+  }
+  function todayShort(){
+    return new Intl.DateTimeFormat('it-IT',{dateStyle:'medium'}).format(new Date());
+  }
+  function slug(s){
+    return String(s||'report').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'').slice(0,60)||'report';
+  }
+  function pdfName(s, type){
+    return `${slug(s.rules?.name||'new-generation')}-${type}-${new Date().toISOString().slice(0,10)}.pdf`;
+  }
+  function fmtDate(m){ try { return UI.fmtDate(m) || '—'; } catch(_){ return '—'; } }
+  function fmtNum(n){ return (n==null||Number.isNaN(n))?'—':String(n); }
+  function fmtDiff(d){ if(d==null) return '—'; const n=Number(d)||0; return (n>0?'+':'')+n; }
 
- async function pdfScorers(){
-   const s=currentPdfState(), logos=await preloadTeamLogos(s); const {doc}=await baseDoc(s,'Classifica marcatori · Top 15','Lettura rapida in stile report sportivo, con sezione aggiuntiva per i presidenti se presente.', 'p');
-   const rows=store.selectors.scorers(s).slice(0,15).map((p,i)=>({...p,rank:i+1,player:p.name,team:p.teamName,year:p.birthYear||'-'}));
-   const stats=store.selectors.stats(s);
-   let y=58;
-   y=drawSectionIntro(doc,'Focus marcatori','La graduatoria considera solo dati ufficialmente consolidati. I match live restano fuori da gol e presenze del report.',y);
-   y=drawSummaryCards(doc,[
-     {label:'Capocannoniere',value:rows[0]?rows[0].player:'—',note:rows[0]?`${rows[0].goals} gol · ${rows[0].team}`:'Nessun gol registrato',tone:'accent'},
-     {label:'Giocatori in classifica',value:String(rows.length),note:'Top 15 del torneo'},
-     {label:'Gol torneo',value:String(stats.actualGoals||0),note:'Gol effettivi consolidati'},
-     {label:'Media gol / partita',value:(stats.matchesPlayed?((stats.scoreGoals||0)/stats.matchesPlayed).toFixed(2):'0.00'),note:'Punteggio ufficiale'}
-   ],y,2)+5;
-   doc.autoTable({...tableTheme(),startY:y,columns:[{header:'#',dataKey:'rank'},{header:'Calciatore',dataKey:'player'},{header:'Anno',dataKey:'year'},{header:'Squadra',dataKey:'team'},{header:'Gol',dataKey:'goals'},{header:'PG',dataKey:'played'},{header:'Gialli',dataKey:'yellow'},{header:'Rossi',dataKey:'red'}],body:rows.length?rows:[{rank:'-',player:'Nessun marcatore disponibile',year:'-',team:'-',goals:'-',played:'-',yellow:'-',red:'-',teamId:''}],columnStyles:{0:{halign:'center',cellWidth:10},1:{cellWidth:52,fontStyle:'bold'},2:{halign:'center',cellWidth:18},3:{cellWidth:54},4:{halign:'center',fontStyle:'bold'},5:{halign:'center'},6:{halign:'center'},7:{halign:'center'}},didParseCell:function(data){if(data.section==='body'&&data.column.index===3){data.cell.styles.cellPadding={top:2.1,right:2.1,bottom:2.1,left:10};data.cell.styles.fontStyle='bold';}},didDrawCell:function(data){if(data.section==='body'&&data.column.index===3){const r=rows[data.row.index];if(r)drawLogo(data.doc,logos[r.teamId],data.cell.x+1.6,data.cell.y+1.4,6.2,r.teamName||r.team);}}});
-   const pres=store.selectors.presidentScorers(s).slice(0,15).map((p,i)=>({...p,rank:i+1,president:p.name,team:p.teamName}));
-   const nextY=(doc.lastAutoTable?.finalY||y)+10;
-   setRgb(doc,'setTextColor',PDF_COLORS.ink);doc.setFont('helvetica','bold');doc.setFontSize(11.5);doc.text('Presidenti marcatori',12,nextY);
-   setRgb(doc,'setTextColor',PDF_COLORS.muted);doc.setFont('helvetica','normal');doc.setFontSize(7.6);doc.text('Sezione separata rispetto alla classifica calciatori, utile per i format con regole speciali.',12,nextY+4,{maxWidth:180});
-   doc.autoTable({...tableTheme(),startY:nextY+8,columns:[{header:'#',dataKey:'rank'},{header:'Presidente',dataKey:'president'},{header:'Squadra',dataKey:'team'},{header:'Gol',dataKey:'goals'},{header:'PG',dataKey:'played'}],body:pres.length?pres:[{rank:'-',president:'Nessun gol presidente disponibile',team:'-',goals:'-',played:'-',teamId:''}],columnStyles:{0:{halign:'center',cellWidth:10},1:{cellWidth:62,fontStyle:'bold'},2:{cellWidth:62},3:{halign:'center',fontStyle:'bold'},4:{halign:'center'}},didParseCell:function(data){if(data.section==='body'&&data.column.index===2){data.cell.styles.cellPadding={top:2.1,right:2.1,bottom:2.1,left:10};}},didDrawCell:function(data){if(data.section==='body'&&data.column.index===2){const r=pres[data.row.index];if(r)drawLogo(data.doc,logos[r.teamId],data.cell.x+1.6,data.cell.y+1.4,6.2,r.teamName||r.team);}}});
-   addFooter(doc,s); doc.save(pdfName(s,'marcatori'));
- }
+  // ---------------------------------------------------------------------
+  // Filtro centralizzato: una partita è "conclusa" se ha referto chiuso
+  //   - status === 'played'  (riferimento autoritativo)
+  //   - oppure hasScore(s,m) restituisce true E non è 'live'
+  //     (copre l'edge case workflow: gol inseriti ma status non flippato)
+  // Nessuna partita live, futura o non iniziata viene mai inclusa.
+  // ---------------------------------------------------------------------
+  function isConcluded(s, m){
+    if(!m) return false;
+    if(m.status === 'live') return false;
+    if(m.status === 'played') return true;
+    return Boolean(store.hasScore && store.hasScore(s, m));
+  }
 
- async function pdfGroups(){
-   const s=currentPdfState(), logos=await preloadTeamLogos(s); const {doc,logo}=await baseDoc(s,'Classifiche gironi','Una classifica dedicata per ogni girone, con sommari e stato del raggruppamento.', 'p');
-   const groups=store.selectors.groupedStandings(s);
-   if(!groups.length){doc.autoTable({...tableTheme(),startY:58,head:[['Info']],body:[['Questo torneo non contiene gironi.']]}); addFooter(doc,s); doc.save(pdfName(s,'classifiche-gironi')); return;}
-   let y=58;
-   y=drawSectionIntro(doc,'Panoramica gironi','I gironi vengono mostrati in blocchi separati; i match live restano esclusi dai conteggi del PDF.',y);
-   y=drawSummaryCards(doc,[
-     {label:'Gironi attivi',value:String(groups.length),note:'Blocchi classifica'},
-     {label:'Gironi completati',value:String(groups.filter(g=>g.completed).length),note:'Aggiornati al report'},
-     {label:'Squadre coinvolte',value:String((s.teams||[]).length),note:'Totale partecipanti'},
-     {label:'Formato',value:String(store.FORMAT_LABELS[s.rules?.format]||s.rules?.format||'-'),note:'Struttura torneo'}
-   ],y,2)+6;
-   groups.forEach((g,idx)=>{
-     if(idx>0){doc.addPage();drawHeader(doc,s,'Classifiche gironi','Report ufficiale dei raggruppamenti.',logo);y=58;}
-     const leader=g.rows?.[0]||null;
-     const bestAttack=(g.rows||[]).slice().sort((a,b)=>b.goalsFor-a.goalsFor||a.name.localeCompare(b.name))[0]||null;
-     const bestDefense=(g.rows||[]).slice().sort((a,b)=>a.goalsAgainst-b.goalsAgainst||a.name.localeCompare(b.name))[0]||null;
-     const qualifiers=(s.rules?.groupConfigs||[]).find(cfg=>cfg.name===g.name)?.qualifiers;
-     y=drawSectionIntro(doc,g.name,`Stato girone: ${g.completed?'completato':'in corso'}${qualifiers?` · Qualificate previste: ${qualifiers}`:''}`,y);
-     y=drawSummaryCards(doc,[
-       {label:'Capolista',value:leader?leader.name:'—',note:leader?`${leader.points} pt`:'Nessun dato',tone:'accent'},
-       {label:'Miglior attacco',value:bestAttack?bestAttack.name:'—',note:bestAttack?`${bestAttack.goalsFor} gol fatti`:'Nessun dato'},
-       {label:'Miglior difesa',value:bestDefense?bestDefense.name:'—',note:bestDefense?`${bestDefense.goalsAgainst} gol subiti`:'Nessun dato'},
-       {label:'Squadre nel girone',value:String((g.rows||[]).length),note:g.completed?'Girone chiuso':'Classifica aperta'}
-     ],y,2)+5;
-     const rows=(g.rows||[]).map((r,i)=>({...r,rank:i+1}));
-     doc.autoTable({...tableTheme(),startY:y,columns:[{header:'#',dataKey:'rank'},{header:'Squadra',dataKey:'name'},{header:'Pt',dataKey:'points'},{header:'PG',dataKey:'played'},{header:'GF',dataKey:'goalsFor'},{header:'GS',dataKey:'goalsAgainst'},{header:'DR',dataKey:'diff'}],body:rows.map(r=>({...r,diff:(r.diff>0?'+':'')+r.diff})),columnStyles:{0:{halign:'center',cellWidth:10},1:{cellWidth:78},2:{halign:'center'},3:{halign:'center'},4:{halign:'center'},5:{halign:'center'},6:{halign:'center'}},didParseCell:didParseTeamCell(1),didDrawCell:didDrawTeamLogo(logos,rows,1)});
-     y=(doc.lastAutoTable?.finalY||y)+10;
-   });
-   addFooter(doc,s); doc.save(pdfName(s,'classifiche-gironi'));
- }
+  // ---------------------------------------------------------------------
+  // Cache immagini (lato generazione): un solo decode per stemma anche se
+  // lo stesso URL compare più volte nel PDF.
+  // ---------------------------------------------------------------------
+  const imageCache = new Map();
+  function dataUrlFromImage(src){
+    if(!src) return Promise.resolve(null);
+    if(imageCache.has(src)) return imageCache.get(src);
+    const p = new Promise(resolve=>{
+      if(/^data:image\//i.test(src)){ resolve(src); return; }
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      let done = false;
+      const finish = (val)=>{ if(done) return; done=true; resolve(val); };
+      // Timeout di sicurezza: non blocco la generazione PDF se uno stemma
+      // remoto è lento o non raggiungibile.
+      setTimeout(()=>finish(null), 4000);
+      img.onload = ()=>{
+        try{
+          const c = document.createElement('canvas');
+          c.width = img.naturalWidth || img.width || 1;
+          c.height = img.naturalHeight || img.height || 1;
+          c.getContext('2d').drawImage(img, 0, 0);
+          finish(c.toDataURL('image/png'));
+        }catch(e){ finish(null); }
+      };
+      img.onerror = ()=>finish(null);
+      img.src = src;
+    });
+    imageCache.set(src, p);
+    return p;
+  }
+  async function preloadTeamLogos(s){
+    const out = {};
+    await Promise.all((s.teams||[]).map(async t => { out[t.id] = await dataUrlFromImage(t.logo); }));
+    return out;
+  }
+  function teamInitial(name){
+    return String(name||'?').trim().split(/\s+/).filter(Boolean).map(x=>x[0]).join('').slice(0,2).toUpperCase() || 'NG';
+  }
 
- function calendarRows(s){
-   const matches=[...s.matches].sort((a,b)=>(a.roundIndex-b.roundIndex)||String(a.date||'').localeCompare(String(b.date||''))||String(a.time||'').localeCompare(String(b.time||'')));
-   return matches.map(m=>({
-     phase:store.PHASE_LABELS[m.phase]||m.phase||'-',
-     round:m.round||'-',
-     home:store.teamName(s,m.homeTeamId,m.homeLabel),
-     away:store.teamName(s,m.awayTeamId,m.awayLabel),
-     homeTeamId:m.homeTeamId,
-     awayTeamId:m.awayTeamId,
-     field:m.field||'Campo da definire',
-     date:UI.fmtDate(m),
-     score:store.hasScore(s,m)?store.scoreText(s,m):'-',
-     status:store.hasScore(s,m)?'Giocata':'Da giocare',
-     isLive:m.status==='live'
-   }));
- }
- async function pdfCalendar(){
-   const s=currentPdfState(), logos=await preloadTeamLogos(s); const {doc}=await baseDoc(s,'Calendario completo','Programma gare con layout più leggibile e controllo logico sui match live.','l');
-   const rows=calendarRows(s);
-   const playedCount=rows.filter(r=>r.status==='Giocata').length;
-   const pendingCount=rows.length-playedCount;
-   const liveCount=rows.filter(r=>r.isLive).length;
-   let y=58;
-   y=drawSectionIntro(doc,'Panoramica calendario','Le partite in stato Live non vengono consolidate nel PDF: restano indicate come “Da giocare” fino al referto finale.',y);
-   y=drawSummaryCards(doc,[
-     {label:'Partite totali',value:String(rows.length),note:'Intero calendario'},
-     {label:'Giocate',value:String(playedCount),note:'Risultati ufficiali',tone:'accent'},
-     {label:'Da giocare',value:String(pendingCount),note:liveCount?`${liveCount} live non consolidate`:'In attesa di referto'},
-     {label:'Campi attivi',value:String(s.rules?.fieldCount||'-'),note:'Configurazione torneo'}
-   ],y,4)+5;
-   if(liveCount)y=drawReportNote(doc,'Controllo logico attivo: le partite live non vengono riportate con un risultato nel report PDF. Rimangono nello stato “Da giocare” finché il referto non viene chiuso.',y,'warning')+4;
-   doc.autoTable({...tableTheme(),startY:y,columns:[{header:'Fase',dataKey:'phase'},{header:'Giornata/turno',dataKey:'round'},{header:'Casa',dataKey:'home'},{header:'Ospite',dataKey:'away'},{header:'Campo',dataKey:'field'},{header:'Data e ora',dataKey:'date'},{header:'Risultato',dataKey:'score'},{header:'Stato',dataKey:'status'}],body:rows.length?rows:[{phase:'-',round:'-',home:'Nessuna partita disponibile',away:'-',field:'-',date:'-',score:'-',status:'-'}],columnStyles:{0:{cellWidth:28},1:{cellWidth:34},2:{cellWidth:46},3:{cellWidth:46},4:{cellWidth:35},5:{cellWidth:43},6:{cellWidth:26,halign:'center',fontStyle:'bold'},7:{cellWidth:24,halign:'center'}},didParseCell:function(data){if(data.section==='body'&&(data.column.index===2||data.column.index===3)){data.cell.styles.cellPadding={top:2,right:2,bottom:2,left:10};data.cell.styles.fontStyle='bold';} if(data.section==='body'&&data.column.index===7){const row=rows[data.row.index];if(row&&row.status==='Giocata'){data.cell.styles.fillColor=[255,248,226];data.cell.styles.textColor=PDF_COLORS.ink;}}},didDrawCell:function(data){if(data.section!=='body')return;const r=rows[data.row.index];if(!r)return;if(data.column.index===2)drawLogo(data.doc,logos[r.homeTeamId],data.cell.x+1.4,data.cell.y+1.3,6,r.home);if(data.column.index===3)drawLogo(data.doc,logos[r.awayTeamId],data.cell.x+1.4,data.cell.y+1.3,6,r.away);}});
-   addFooter(doc,s); doc.save(pdfName(s,'calendario-completo'));
- }
+  // ---------------------------------------------------------------------
+  // Disegno stemma: img reale oppure placeholder con iniziali su sfondo oro
+  // tenue. Non interrompe mai la generazione PDF.
+  // ---------------------------------------------------------------------
+  function drawLogo(doc, src, x, y, size, label){
+    if(src){
+      try { doc.addImage(src, 'PNG', x, y, size, size, undefined, 'FAST'); return; }
+      catch(_){ try { doc.addImage(src, 'JPEG', x, y, size, size, undefined, 'FAST'); return; } catch(__){} }
+    }
+    drawPlaceholderLogo(doc, x, y, size, label);
+  }
+  function drawPlaceholderLogo(doc, x, y, size, label){
+    setFill(doc, C.goldFaint);
+    setDraw(doc, C.hair);
+    doc.setLineWidth(0.18);
+    doc.roundedRect(x, y, size, size, size*0.18, size*0.18, 'FD');
+    setText(doc, C.gold);
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(Math.max(5, size*0.42));
+    doc.text(teamInitial(label), x + size/2, y + size*0.62, { align:'center' });
+  }
 
- function drawTeamLine(doc,s,logos,m,side,x,y,w,h){
-   const id=side==='home'?m.homeTeamId:m.awayTeamId;
-   const label=side==='home'?m.homeLabel:m.awayLabel;
-   const name=store.teamName(s,id,label||'Da definire');
-   const sc=store.matchGoals(s,m);
-   const score=store.hasScore(s,m)?(side==='home'?sc.home:sc.away):'';
-   const winner=store.winnerId?store.winnerId(s,m):'';
-   const isWinner=id&&winner===id;
-   setRgb(doc,'setFillColor',isWinner?[255,248,226]:[255,255,255]);
-   setRgb(doc,'setDrawColor',isWinner?PDF_COLORS.gold:PDF_COLORS.line);
-   doc.setLineWidth(isWinner?0.45:0.18);
-   doc.roundedRect(x,y,w,h,2.5,2.5,'FD');
-   drawLogo(doc,logos[id],x+2,y+1.4,h-2.8,name);
-   setRgb(doc,'setTextColor',PDF_COLORS.ink);
-   doc.setFont('helvetica',isWinner?'bold':'normal');
-   doc.setFontSize(7.2);
-   doc.text(String(name||'Da definire'),x+h+2.5,y+h/2+2.1,{maxWidth:w-h-15});
-   if(score!==''){
-     setRgb(doc,'setFillColor',isWinner?PDF_COLORS.ink:PDF_COLORS.soft);
-     setRgb(doc,'setDrawColor',isWinner?PDF_COLORS.ink:PDF_COLORS.line);
-     doc.circle(x+w-6,y+h/2,4,'FD');
-     setRgb(doc,'setTextColor',isWinner?PDF_COLORS.gold2:PDF_COLORS.ink);
-     doc.setFont('helvetica','bold');doc.setFontSize(7.5);
-     doc.text(String(score),x+w-6,y+h/2+2.5,{align:'center'});
-   }
- }
- function drawBracketPage(doc,s,logos,bracket,logo,addNewPage=true){
-   if(addNewPage)doc.addPage('a4','landscape');
-   drawHeader(doc,s,`Tabellone · ${bracket.name}`,'Fase finale: squadre, placeholder e risultati con percorsi evidenziati.',logo);
-   const w=doc.internal.pageSize.getWidth(),h=doc.internal.pageSize.getHeight();
-   const left=13,right=13,top=58,bottom=20;
-   const rounds=bracket.rounds||[];
-   const gap=8;
-   const colW=(w-left-right-gap*Math.max(0,rounds.length-1))/Math.max(1,rounds.length);
-   const cardRefs=[];
-   rounds.forEach((round,ri)=>{
-     const x=left+ri*(colW+gap);
-     setRgb(doc,'setFillColor',PDF_COLORS.ink);
-     setRgb(doc,'setDrawColor',PDF_COLORS.gold);
-     doc.roundedRect(x,top-10,colW,7,2.2,2.2,'FD');
-     setRgb(doc,'setTextColor',PDF_COLORS.gold2);
-     doc.setFont('helvetica','bold');doc.setFontSize(8);
-     doc.text(String(round.name||`Turno ${ri+1}`),x+colW/2,top-5.2,{align:'center',maxWidth:colW-2});
-     const count=Math.max((round.matches||[]).length,1);
-     const cardH=Math.max(22,Math.min(34,(h-top-bottom-(count-1)*7)/count));
-     const usable=h-top-bottom-cardH;
-     (round.matches||[]).forEach((m,mi)=>{
-       const y=top+(count===1?usable/2:(usable*mi/(count-1)));
-       setRgb(doc,'setFillColor',[213,184,94]);doc.roundedRect(x+1,y+1,colW,cardH,4,4,'F');
-       setRgb(doc,'setFillColor',[255,253,245]);setRgb(doc,'setDrawColor',PDF_COLORS.line);doc.setLineWidth(.22);doc.roundedRect(x,y,colW,cardH,4,4,'FD');
-       setRgb(doc,'setTextColor',PDF_COLORS.muted);doc.setFont('helvetica','normal');doc.setFontSize(5.9);
-       const meta=[m.round||round.name,m.field||'Campo da definire'].filter(Boolean).join(' · ');
-       doc.text(meta,x+2.4,y+4.3,{maxWidth:colW-4.8});
-       const rowH=(cardH-8.5)/2;
-       drawTeamLine(doc,s,logos,m,'home',x+2.2,y+6.4,colW-4.4,rowH);
-       drawTeamLine(doc,s,logos,m,'away',x+2.2,y+6.4+rowH+1.2,colW-4.4,rowH);
-       cardRefs.push({ri,mi,x,y,w:colW,h:cardH,mid:y+cardH/2});
-     });
-   });
-   setRgb(doc,'setDrawColor',PDF_COLORS.gold);doc.setLineWidth(.35);
-   cardRefs.forEach(ref=>{
-     const nextMatches=cardRefs.filter(r=>r.ri===ref.ri+1);
-     if(!nextMatches.length)return;
-     const target=nextMatches[Math.floor(ref.mi/2)]||nextMatches[0];
-     const x1=ref.x+ref.w, x2=target.x, xm=x1+(x2-x1)/2;
-     doc.line(x1,ref.mid,xm,ref.mid);
-     doc.line(xm,ref.mid,xm,target.mid);
-     doc.line(xm,target.mid,x2,target.mid);
-   });
-   const legendY=h-12;
-   setRgb(doc,'setTextColor',PDF_COLORS.muted);doc.setFont('helvetica','normal');doc.setFontSize(7);
-   doc.text('Nota: le partite live restano da giocare nei report; le righe evidenziate indicano la squadra qualificata/vincitrice.',left,legendY);
- }
- async function pdfBracket(){
-   const s=currentPdfState(), logos=await preloadTeamLogos(s); const {doc,logo}=await baseDoc(s,'Tabellone fase finale','Grafica del tabellone in stile report, coerente con calendario e classifiche.', 'l');
-   const data=store.bracketData(s);
-   if(!data.available){doc.autoTable({...tableTheme(),startY:58,head:[['Info']],body:[[data.message||'Nessun tabellone disponibile.']]});}
-   else {
-     const flat=(data.brackets||[]).flatMap(b=>(b.rounds||[]).flatMap(r=>r.matches||[]));
-     const liveCount=flat.filter(m=>m.status==='live').length;
-     let y=58;
-     y=drawSectionIntro(doc,'Lettura del tabellone','Nel PDF il tabellone segue la logica ufficiale del torneo: i match live non vengono mostrati come conclusi.',y);
-     y=drawSummaryCards(doc,[
-       {label:'Blocchi tabellone',value:String((data.brackets||[]).length),note:'Percorsi distinti'},
-       {label:'Match KO',value:String(flat.length),note:'Totale incontri'},
-       {label:'Match consolidati',value:String(flat.filter(m=>store.hasScore(s,m)).length),note:liveCount?`${liveCount} live escluse`:'Nessun live in corso',tone:'accent'},
-       {label:'Formato',value:String(store.FORMAT_LABELS[s.rules?.format]||s.rules?.format||'-'),note:'Formula torneo'}
-     ],y,4)+5;
-     if(liveCount)y=drawReportNote(doc,'Anche nel tabellone i match live restano visivamente “Da giocare” fino alla chiusura del referto, per mantenere coerenza con gli altri report.',y,'warning')+4;
-     // v118: il riepilogo del report resta sulla prima pagina. Ogni tabellone parte
-     // sempre da una pagina nuova e pulita, evitando sovrapposizioni con testo/card
-     // disegnati in precedenza sullo stesso canvas PDF.
-     data.brackets.forEach(b=>drawBracketPage(doc,s,logos,b,logo,true));
-   }
-   addFooter(doc,s); doc.save(pdfName(s,'tabellone-fase-finale'));
- }
+  // ---------------------------------------------------------------------
+  // Header e footer editoriali (bianco/oro)
+  //   - Topbar bianca con regola gold sotto
+  //   - Mini-brand a sinistra, titolo grande centrato, meta a destra
+  //   - Footer con pagina N/M e marca del documento
+  // ---------------------------------------------------------------------
+  function drawHeader(doc, ctx){
+    const W = doc.internal.pageSize.getWidth();
+    const margin = 14;
+    const headerH = 28;
+    // sfondo bianco esplicito (alcuni reader mostrano artefatti senza)
+    setFill(doc, C.white); doc.rect(0, 0, W, headerH + 6, 'F');
 
- async function runPdf(kind){
-   try{
-     if(!toolsReady()){toast('Librerie PDF non disponibili. Controlla la connessione e ricarica la pagina.','error');return;}
-     toast('Genero il PDF e avvio il download…');
-     if(kind==='standings')await pdfStandings();
-     else if(kind==='scorers')await pdfScorers();
-     else if(kind==='groups')await pdfGroups();
-     else if(kind==='bracket')await pdfBracket();
-     else await pdfCalendar();
-     toast('Download PDF avviato.');
-   }catch(err){console.error(err);toast('Non sono riuscito a generare il PDF: '+(err.message||err),'error');}
- }
- document.addEventListener('click',e=>{
-   const btn=e.target.closest('[data-report-kind]');
-   if(!btn)return;
-   e.preventDefault();
-   if(btn.disabled)return;
-   runPdf(btn.dataset.reportKind||'calendar');
- });
- window.NexoraAdminRefresh=function(){try{render();}catch(_){};};
- window.addEventListener('ng:admin-state-loaded',()=>window.NexoraAdminRefresh());
+    // logo brand a sinistra (se disponibile)
+    if(ctx.brandLogo){ try { doc.addImage(ctx.brandLogo, 'PNG', margin, 6, 16, 16, undefined, 'FAST'); } catch(_){} }
+
+    // mini-occhiello + nome competizione
+    setText(doc, C.gold); doc.setFont('helvetica','bold'); doc.setFontSize(7);
+    doc.text('NEW GENERATION · REPORT UFFICIALE', margin + 19, 9);
+    setText(doc, C.ink); doc.setFont('helvetica','bold'); doc.setFontSize(11);
+    doc.text(String(ctx.tournamentName||'New Generation'), margin + 19, 14.6, { maxWidth: W - margin*2 - 50 });
+    setText(doc, C.muted); doc.setFont('helvetica','normal'); doc.setFontSize(7.5);
+    if(ctx.subtitle) doc.text(String(ctx.subtitle), margin + 19, 19.4, { maxWidth: W - margin*2 - 50 });
+
+    // titolo documento a destra
+    setText(doc, C.ink); doc.setFont('helvetica','bold'); doc.setFontSize(14);
+    doc.text(String(ctx.title||''), W - margin, 13.5, { align:'right', maxWidth: W*0.5 });
+    setText(doc, C.muted); doc.setFont('helvetica','normal'); doc.setFontSize(7);
+    doc.text(`Generato il ${today()}`, W - margin, 19, { align:'right' });
+
+    // regola gold sotto l'header
+    setDraw(doc, C.rule); doc.setLineWidth(0.5);
+    doc.line(margin, headerH, W - margin, headerH);
+    setDraw(doc, C.hair); doc.setLineWidth(0.18);
+    doc.line(margin, headerH + 0.9, W - margin, headerH + 0.9);
+  }
+  function drawFooter(doc, ctx){
+    const total = doc.internal.getNumberOfPages();
+    for(let i = 1; i <= total; i++){
+      doc.setPage(i);
+      const W = doc.internal.pageSize.getWidth();
+      const H = doc.internal.pageSize.getHeight();
+      const margin = 14;
+      setDraw(doc, C.hair); doc.setLineWidth(0.18);
+      doc.line(margin, H - 11, W - margin, H - 11);
+      setText(doc, C.muted); doc.setFont('helvetica','normal'); doc.setFontSize(7);
+      doc.text(`${ctx.tournamentName||'New Generation'} · ${ctx.docKind||'Report'}`, margin, H - 6.5);
+      doc.text('newgeneration', W/2, H - 6.5, { align:'center' });
+      doc.text(`Pagina ${i} di ${total}`, W - margin, H - 6.5, { align:'right' });
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Sezione: occhiello + titolo + descrizione breve
+  // ---------------------------------------------------------------------
+  function drawSection(doc, eyebrow, title, descr, y){
+    if(eyebrow){
+      setText(doc, C.gold); doc.setFont('helvetica','bold'); doc.setFontSize(7.5);
+      doc.text(String(eyebrow).toUpperCase(), 14, y);
+      y += 4;
+    }
+    setText(doc, C.ink); doc.setFont('helvetica','bold'); doc.setFontSize(15);
+    doc.text(String(title||''), 14, y);
+    y += 5.4;
+    if(descr){
+      setText(doc, C.muted); doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
+      const w = doc.internal.pageSize.getWidth() - 28;
+      const lines = doc.splitTextToSize(String(descr), w);
+      doc.text(lines, 14, y);
+      y += lines.length * 4;
+    }
+    return y + 2;
+  }
+
+  // ---------------------------------------------------------------------
+  // Riepilogo a card (4 colonne tipiche)
+  // ---------------------------------------------------------------------
+  function drawSummary(doc, items, y, cols=4){
+    const list = (items||[]).filter(Boolean);
+    if(!list.length) return y;
+    const W = doc.internal.pageSize.getWidth();
+    const margin = 14, gap = 4;
+    const count = Math.max(1, Math.min(cols, list.length));
+    const cardW = (W - margin*2 - gap*(count-1)) / count;
+    const cardH = 20;
+    list.forEach((it, i)=>{
+      const row = Math.floor(i / count);
+      const col = i % count;
+      const x = margin + col*(cardW + gap);
+      const yy = y + row*(cardH + gap);
+      setFill(doc, it.tone==='accent' ? C.goldSoft : C.goldFaint);
+      setDraw(doc, C.hair); doc.setLineWidth(0.2);
+      doc.roundedRect(x, yy, cardW, cardH, 2.4, 2.4, 'FD');
+      // barretta laterale
+      setFill(doc, it.tone==='accent' ? C.gold : C.hair);
+      doc.rect(x, yy, 1.4, cardH, 'F');
+      setText(doc, C.muted); doc.setFont('helvetica','bold'); doc.setFontSize(6.6);
+      doc.text(String(it.label||'').toUpperCase(), x + 4, yy + 5.2, { maxWidth: cardW - 6 });
+      setText(doc, C.ink); doc.setFont('helvetica','bold'); doc.setFontSize(11);
+      doc.text(String(it.value??'—'), x + 4, yy + 11.6, { maxWidth: cardW - 6 });
+      if(it.note){
+        setText(doc, C.muted); doc.setFont('helvetica','normal'); doc.setFontSize(6.6);
+        const noteLines = doc.splitTextToSize(String(it.note), cardW - 6);
+        doc.text(noteLines.slice(0,2), x + 4, yy + 15.6);
+      }
+    });
+    const rows = Math.ceil(list.length / count);
+    return y + rows*cardH + (rows-1)*gap + 4;
+  }
+
+  function drawCallout(doc, text, y){
+    if(!text) return y;
+    const W = doc.internal.pageSize.getWidth();
+    const margin = 14;
+    const lines = doc.splitTextToSize(String(text), W - margin*2 - 6);
+    const h = Math.max(8, 5 + lines.length*4.1);
+    setFill(doc, C.goldFaint); setDraw(doc, C.gold); doc.setLineWidth(0.25);
+    doc.roundedRect(margin, y, W - margin*2, h, 2, 2, 'FD');
+    setText(doc, C.goldInk); doc.setFont('helvetica','italic'); doc.setFontSize(7.6);
+    doc.text(lines, margin + 4, y + 5);
+    return y + h + 3;
+  }
+
+  // ---------------------------------------------------------------------
+  // Tema tabelle autoTable
+  // ---------------------------------------------------------------------
+  function tableTheme(extra){
+    return Object.assign({
+      theme: 'plain',
+      styles: { font:'helvetica', fontSize:8.5, cellPadding:2.4, lineColor:C.hair, lineWidth:0.12, textColor:C.ink, overflow:'linebreak', valign:'middle' },
+      headStyles: { fillColor:C.ink, textColor:C.goldSoft, fontStyle:'bold', fontSize:7.8, halign:'center', cellPadding:{top:2.6,right:2.4,bottom:2.6,left:2.4} },
+      bodyStyles: { textColor:C.ink },
+      alternateRowStyles: { fillColor:C.paper },
+      margin: { left:14, right:14 },
+      showHead: 'everyPage',
+      tableLineColor: C.hair, tableLineWidth: 0.12,
+      pageBreak: 'auto'
+    }, extra||{});
+  }
+
+  // Hook: spazio extra a sinistra per il logo, nome team in bold
+  function teamCellParse(col){
+    return function(d){
+      if(d.section==='body' && d.column.index===col){
+        d.cell.styles.cellPadding = { top:2.4, right:2.4, bottom:2.4, left:10 };
+        d.cell.styles.fontStyle = 'bold';
+      }
+    };
+  }
+  function teamCellDrawLogo(rows, col, logos, sizeMm){
+    const size = sizeMm || 6.2;
+    return function(d){
+      if(d.section!=='body' || d.column.index!==col) return;
+      const r = rows[d.row.index];
+      if(!r) return;
+      const teamId = r.teamId || r.homeTeamId || r.awayTeamId;
+      const label  = r.name || r.team || r.teamName || r.home || r.away;
+      drawLogo(d.doc, logos[teamId], d.cell.x + 1.6, d.cell.y + (d.cell.height - size)/2, size, label);
+    };
+  }
+
+  // ---------------------------------------------------------------------
+  // Preparazione documento base
+  // ---------------------------------------------------------------------
+  async function makeDoc(s, orientation, title, subtitle, docKind){
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation, unit:'mm', format:'a4', compress:true });
+    const brandLogo = await dataUrlFromImage(BRAND_LOGO);
+    const ctx = {
+      brandLogo,
+      tournamentName: s.rules?.name || 'New Generation',
+      title,
+      subtitle,
+      docKind: docKind || title
+    };
+    // Metadata PDF
+    try {
+      doc.setProperties({
+        title: `${ctx.tournamentName} · ${title}`,
+        author: ctx.tournamentName,
+        subject: title,
+        creator: 'New Generation · Report Center',
+        keywords: `${ctx.tournamentName}, report, ${title}`
+      });
+    } catch(_){}
+    drawHeader(doc, ctx);
+    return { doc, ctx };
+  }
+
+  // ---------------------------------------------------------------------
+  // Snapshot dati coerente: tutti i PDF leggono lo stesso state e i loghi
+  // tutti dalla stessa cache.
+  // ---------------------------------------------------------------------
+  function currentPdfState(){
+    const s = A.state();
+    const repair = store.repairState(s);
+    A.save(s);
+    const report = store.integrityReport(s);
+    const blocking = (report.details||[]).filter(i => i.severity === 'error');
+    if(blocking.length){
+      throw new Error('Dati non coerenti per generare il PDF: ' + blocking.slice(0,3).map(i=>i.message).join(' · '));
+    }
+    if(repair.changed){
+      toast('Dati riallineati con le ultime modifiche. Download in corso…');
+      render();
+    }
+    return s;
+  }
+
+  function toast(msg, type='ok'){
+    const box = UI.$('#pdfStatus');
+    if(box) box.innerHTML = `<div class="message ${type}">${UI.esc(msg)}</div>`;
+  }
+  function toolsReady(){ return window.jspdf && window.jspdf.jsPDF; }
+
+  // ---------------------------------------------------------------------
+  // === PDF 1: CLASSIFICA GENERALE ======================================
+  // ---------------------------------------------------------------------
+  async function pdfStandings(){
+    const s = currentPdfState();
+    const logos = await preloadTeamLogos(s);
+    const { doc, ctx } = await makeDoc(s, 'p',
+      'Classifica generale',
+      'Classifica ufficiale aggregata · partite live escluse',
+      'Classifica');
+
+    const rows = standingsRows(s).map((r,i)=>({ ...r, rank:i+1, diff:fmtDiff(r.diff) }));
+    const concludedTotal = (s.matches||[]).filter(m => isConcluded(s,m)).length;
+    const leader = rows[0] || null;
+    const bestAtk = rows.slice().sort((a,b)=>(b.goalsFor-a.goalsFor)||a.name.localeCompare(b.name))[0]||null;
+    const bestDef = rows.slice().sort((a,b)=>(a.goalsAgainst-b.goalsAgainst)||a.name.localeCompare(b.name))[0]||null;
+
+    let y = 34;
+    y = drawSection(doc,
+      'Quadro classifica',
+      'Andamento del torneo',
+      'I valori riportati derivano esclusivamente dalle partite consolidate. Le partite in stato Live e quelle ancora da disputare non concorrono ai conteggi.',
+      y);
+    y = drawSummary(doc, [
+      { label:'Capolista',         value: leader?leader.name:'—', note: leader?`${leader.points} pt · DR ${fmtDiff(leader.diff)}`:'Nessun dato', tone:'accent' },
+      { label:'Miglior attacco',   value: bestAtk?bestAtk.name:'—', note: bestAtk?`${bestAtk.goalsFor} gol fatti`:'Nessun dato' },
+      { label:'Miglior difesa',    value: bestDef?bestDef.name:'—', note: bestDef?`${bestDef.goalsAgainst} gol subiti`:'Nessun dato' },
+      { label:'Partite concluse',  value: String(concludedTotal), note: 'Solo referto chiuso' }
+    ], y, 4);
+
+    doc.autoTable(Object.assign({}, tableTheme(), {
+      startY: y,
+      columns: [
+        { header:'#',          dataKey:'rank' },
+        { header:'Squadra',    dataKey:'name' },
+        { header:'Pt',         dataKey:'points' },
+        { header:'PG',         dataKey:'played' },
+        { header:'V',          dataKey:'wins' },
+        { header:'N',          dataKey:'draws' },
+        { header:'P',          dataKey:'losses' },
+        { header:'GF',         dataKey:'goalsFor' },
+        { header:'GS',         dataKey:'goalsAgainst' },
+        { header:'DR',         dataKey:'diff' }
+      ],
+      body: rows.length ? rows : [{ rank:'—', name:'Nessuna squadra disponibile', points:'—', played:'—', wins:'—', draws:'—', losses:'—', goalsFor:'—', goalsAgainst:'—', diff:'—', teamId:'' }],
+      columnStyles: {
+        0:{halign:'center', cellWidth:9,  fontStyle:'bold'},
+        1:{cellWidth:64},
+        2:{halign:'center', fontStyle:'bold'},
+        3:{halign:'center'},
+        4:{halign:'center'},
+        5:{halign:'center'},
+        6:{halign:'center'},
+        7:{halign:'center'},
+        8:{halign:'center'},
+        9:{halign:'center'}
+      },
+      didParseCell: function(d){
+        teamCellParse(1)(d);
+        if(d.section==='body' && d.column.index===0 && d.row.index<3 && rows[d.row.index]){
+          d.cell.styles.textColor = C.goldInk;
+          d.cell.styles.fillColor = C.goldFaint;
+        }
+      },
+      didDrawCell: teamCellDrawLogo(rows, 1, logos)
+    }));
+
+    drawFooter(doc, ctx);
+    doc.save(pdfName(s, 'classifica'));
+  }
+  function standingsRows(s, phase){
+    return phase
+      ? store.selectors.calculateStandings(s, phase)
+      : (store.selectors.officialStandings ? store.selectors.officialStandings(s) : store.selectors.calculateStandings(s));
+  }
+
+  // ---------------------------------------------------------------------
+  // === PDF 2: MARCATORI (TOP 15) ======================================
+  // ---------------------------------------------------------------------
+  async function pdfScorers(){
+    const s = currentPdfState();
+    const logos = await preloadTeamLogos(s);
+    const { doc, ctx } = await makeDoc(s, 'p',
+      'Marcatori',
+      'Top 15 calciatori del torneo · partite live escluse',
+      'Marcatori');
+
+    const rows = store.selectors.scorers(s).slice(0,15).map((p,i)=>({
+      ...p, rank:i+1, player:p.name, team:p.teamName, year:p.birthYear||'—'
+    }));
+    const stats = store.selectors.stats(s);
+
+    let y = 34;
+    y = drawSection(doc,
+      'Focus marcatori',
+      'Graduatoria del torneo',
+      'La classifica considera esclusivamente gol consolidati. I match live e i gol non ancora confermati non influiscono sui totali.',
+      y);
+    y = drawSummary(doc, [
+      { label:'Capocannoniere',       value: rows[0]?rows[0].player:'—', note: rows[0]?`${rows[0].goals} gol · ${rows[0].team}`:'Nessun gol registrato', tone:'accent' },
+      { label:'In classifica',        value: String(rows.length), note:'Top 15 visualizzata' },
+      { label:'Gol totali consolidati', value: String(stats.actualGoals||0), note:'Solo referto chiuso' },
+      { label:'Media gol/partita',    value: stats.matchesPlayed ? ((stats.scoreGoals||0)/stats.matchesPlayed).toFixed(2) : '0.00', note:'Calcolo ufficiale' }
+    ], y, 4);
+
+    doc.autoTable(Object.assign({}, tableTheme(), {
+      startY: y,
+      columns: [
+        { header:'#',         dataKey:'rank' },
+        { header:'Calciatore',dataKey:'player' },
+        { header:'Anno',      dataKey:'year' },
+        { header:'Squadra',   dataKey:'team' },
+        { header:'Gol',       dataKey:'goals' },
+        { header:'PG',        dataKey:'played' },
+        { header:'Gialli',    dataKey:'yellow' },
+        { header:'Rossi',     dataKey:'red' }
+      ],
+      body: rows.length ? rows : [{ rank:'—', player:'Nessun marcatore disponibile', year:'—', team:'—', goals:'—', played:'—', yellow:'—', red:'—', teamId:'' }],
+      columnStyles: {
+        0:{halign:'center', cellWidth:9, fontStyle:'bold'},
+        1:{cellWidth:54, fontStyle:'bold'},
+        2:{halign:'center', cellWidth:14},
+        3:{cellWidth:52},
+        4:{halign:'center', fontStyle:'bold'},
+        5:{halign:'center'},
+        6:{halign:'center'},
+        7:{halign:'center'}
+      },
+      didParseCell: teamCellParse(3),
+      didDrawCell: teamCellDrawLogo(rows, 3, logos)
+    }));
+
+    // Sezione presidenti — accodata, salta pagina se non c'è spazio
+    const pres = (store.selectors.presidentScorers ? store.selectors.presidentScorers(s) : [])
+      .slice(0,15).map((p,i)=>({ ...p, rank:i+1, president:p.name, team:p.teamName }));
+    let py = (doc.lastAutoTable?.finalY || y) + 10;
+    const H = doc.internal.pageSize.getHeight();
+    if(py > H - 60){
+      doc.addPage();
+      drawHeader(doc, ctx);
+      py = 34;
+    }
+    py = drawSection(doc, 'Sezione speciale', 'Presidenti marcatori',
+      'Classifica autonoma riservata ai format con regole speciali; non confluisce nella graduatoria calciatori.', py);
+
+    doc.autoTable(Object.assign({}, tableTheme(), {
+      startY: py,
+      columns: [
+        { header:'#',          dataKey:'rank' },
+        { header:'Presidente', dataKey:'president' },
+        { header:'Squadra',    dataKey:'team' },
+        { header:'Gol',        dataKey:'goals' },
+        { header:'PG',         dataKey:'played' }
+      ],
+      body: pres.length ? pres : [{ rank:'—', president:'Nessun gol presidente disponibile', team:'—', goals:'—', played:'—', teamId:'' }],
+      columnStyles: {
+        0:{halign:'center', cellWidth:9, fontStyle:'bold'},
+        1:{cellWidth:62, fontStyle:'bold'},
+        2:{cellWidth:62},
+        3:{halign:'center', fontStyle:'bold'},
+        4:{halign:'center'}
+      },
+      didParseCell: teamCellParse(2),
+      didDrawCell: teamCellDrawLogo(pres, 2, logos)
+    }));
+
+    drawFooter(doc, ctx);
+    doc.save(pdfName(s, 'marcatori'));
+  }
+
+  // ---------------------------------------------------------------------
+  // === PDF 3: CLASSIFICHE GIRONI ======================================
+  // ---------------------------------------------------------------------
+  async function pdfGroups(){
+    const s = currentPdfState();
+    const logos = await preloadTeamLogos(s);
+    const { doc, ctx } = await makeDoc(s, 'p',
+      'Classifiche gironi',
+      'Una classifica dedicata per ogni girone',
+      'Gironi');
+
+    const groups = store.selectors.groupedStandings(s);
+    if(!groups.length){
+      let y = 34;
+      y = drawSection(doc, 'Gironi', 'Nessun girone configurato',
+        'Il formato di questo torneo non prevede gironi. Configura i raggruppamenti dalle Regole per generare il documento.', y);
+      drawCallout(doc, 'Documento valido ma vuoto: il formato attuale non utilizza gironi.', y);
+      drawFooter(doc, ctx);
+      doc.save(pdfName(s, 'classifiche-gironi'));
+      return;
+    }
+
+    let y = 34;
+    y = drawSection(doc, 'Panoramica gironi',
+      'Quadro generale',
+      'Ogni girone viene riportato in una sezione dedicata. I dati sono calcolati esclusivamente sulle partite consolidate.', y);
+    y = drawSummary(doc, [
+      { label:'Gironi attivi',     value:String(groups.length),                            note:'Blocchi classifica' },
+      { label:'Gironi completati', value:String(groups.filter(g=>g.completed).length),    note:'Stato corrente', tone:'accent' },
+      { label:'Squadre coinvolte', value:String((s.teams||[]).length),                    note:'Totale partecipanti' },
+      { label:'Formato',           value:String(store.FORMAT_LABELS[s.rules?.format]||s.rules?.format||'—'), note:'Struttura del torneo' }
+    ], y, 4);
+
+    groups.forEach((g, idx) => {
+      if(idx>0){
+        doc.addPage();
+        drawHeader(doc, ctx);
+        y = 34;
+      }
+      const leader = g.rows?.[0] || null;
+      const bestAtk = (g.rows||[]).slice().sort((a,b)=>(b.goalsFor-a.goalsFor)||a.name.localeCompare(b.name))[0]||null;
+      const bestDef = (g.rows||[]).slice().sort((a,b)=>(a.goalsAgainst-b.goalsAgainst)||a.name.localeCompare(b.name))[0]||null;
+      const qualifiers = (s.rules?.groupConfigs||[]).find(c=>c.name===g.name)?.qualifiers;
+
+      y = drawSection(doc,
+        `Girone ${idx+1} di ${groups.length}`,
+        g.name || `Girone ${idx+1}`,
+        [`Stato: ${g.completed?'completato':'in corso'}`, qualifiers?`qualificate previste: ${qualifiers}`:null].filter(Boolean).join(' · '),
+        y);
+      y = drawSummary(doc, [
+        { label:'Capolista',       value: leader?leader.name:'—', note: leader?`${leader.points} pt`:'Nessun dato', tone:'accent' },
+        { label:'Miglior attacco', value: bestAtk?bestAtk.name:'—', note: bestAtk?`${bestAtk.goalsFor} gol fatti`:'—' },
+        { label:'Miglior difesa',  value: bestDef?bestDef.name:'—', note: bestDef?`${bestDef.goalsAgainst} gol subiti`:'—' },
+        { label:'Squadre',         value: String((g.rows||[]).length), note: g.completed?'Girone chiuso':'In aggiornamento' }
+      ], y, 4);
+
+      const rows = (g.rows||[]).map((r,i)=>({ ...r, rank:i+1, diff:fmtDiff(r.diff) }));
+      doc.autoTable(Object.assign({}, tableTheme(), {
+        startY: y,
+        columns: [
+          { header:'#',      dataKey:'rank' },
+          { header:'Squadra',dataKey:'name' },
+          { header:'Pt',     dataKey:'points' },
+          { header:'PG',     dataKey:'played' },
+          { header:'V',      dataKey:'wins' },
+          { header:'N',      dataKey:'draws' },
+          { header:'P',      dataKey:'losses' },
+          { header:'GF',     dataKey:'goalsFor' },
+          { header:'GS',     dataKey:'goalsAgainst' },
+          { header:'DR',     dataKey:'diff' }
+        ],
+        body: rows,
+        columnStyles: {
+          0:{halign:'center', cellWidth:9, fontStyle:'bold'},
+          1:{cellWidth:64},
+          2:{halign:'center', fontStyle:'bold'},
+          3:{halign:'center'},
+          4:{halign:'center'},
+          5:{halign:'center'},
+          6:{halign:'center'},
+          7:{halign:'center'},
+          8:{halign:'center'},
+          9:{halign:'center'}
+        },
+        didParseCell: function(d){
+          teamCellParse(1)(d);
+          if(qualifiers && d.section==='body' && d.column.index===0 && d.row.index < qualifiers){
+            d.cell.styles.textColor = C.goldInk;
+            d.cell.styles.fillColor = C.goldSoft;
+          }
+        },
+        didDrawCell: teamCellDrawLogo(rows, 1, logos)
+      }));
+      y = (doc.lastAutoTable?.finalY || y) + 8;
+    });
+
+    drawFooter(doc, ctx);
+    doc.save(pdfName(s, 'classifiche-gironi'));
+  }
+
+  // ---------------------------------------------------------------------
+  // === PDF 4: RECAP PARTITE CONCLUSE (verticale) ======================
+  //     Mostra SOLO m.status==='played' (con fallback hasScore && !live).
+  //     Una scheda per partita con: squadre + stemmi, risultato grande,
+  //     metadati (data/ora/campo/fase/giornata), marcatori, cartellini,
+  //     rigori KO se presenti.
+  // ---------------------------------------------------------------------
+  async function pdfRecap(){
+    const s = currentPdfState();
+    const logos = await preloadTeamLogos(s);
+    const { doc, ctx } = await makeDoc(s, 'p',
+      'Recap partite',
+      'Solo partite con referto chiuso',
+      'Recap partite');
+
+    // Filtro: SOLO partite concluse
+    const concluded = (s.matches||[])
+      .filter(m => isConcluded(s, m))
+      .sort((a,b)=>{
+        const da = String(a.date||'');
+        const db = String(b.date||'');
+        if(da !== db) return da.localeCompare(db);
+        const ta = String(a.time||'');
+        const tb = String(b.time||'');
+        if(ta !== tb) return ta.localeCompare(tb);
+        return (a.roundIndex||0) - (b.roundIndex||0);
+      });
+
+    let y = 34;
+    y = drawSection(doc, 'Recap ufficiale', 'Partite concluse',
+      'Documento riepilogativo delle partite con referto chiuso. Le partite live, future o sospese non sono incluse.', y);
+
+    // Statistiche aggregate calcolate SOLO sulle concluse incluse nel PDF
+    if(concluded.length){
+      const teams = new Set();
+      let totGoals = 0, totCards = 0;
+      concluded.forEach(m => {
+        if(m.homeTeamId) teams.add(m.homeTeamId);
+        if(m.awayTeamId) teams.add(m.awayTeamId);
+        totGoals += (m.goals||[]).filter(g => !g.ownGoal).length + (m.goals||[]).filter(g=>g.ownGoal).length;
+        // più semplice: gol = lunghezza array (autogol inclusi)
+        totGoals = totGoals; // no-op, già contato sopra (sostituisco sotto)
+        totCards += (m.cards||[]).length;
+      });
+      const totGoalsClean = concluded.reduce((acc,m)=>acc+(m.goals||[]).length,0);
+      y = drawSummary(doc, [
+        { label:'Partite concluse',  value:String(concluded.length), note:'Incluse nel PDF', tone:'accent' },
+        { label:'Squadre coinvolte', value:String(teams.size), note:'Partecipanti unici' },
+        { label:'Gol totali',        value:String(totGoalsClean), note:'Su partite incluse' },
+        { label:'Cartellini',        value:String(totCards), note:'Gialli + rossi' }
+      ], y, 4);
+    } else {
+      y = drawSummary(doc, [
+        { label:'Partite concluse', value:'0', note:'Nessuna ancora consolidata' },
+        { label:'Squadre iscritte', value:String((s.teams||[]).length), note:'Totale partecipanti' }
+      ], y, 4) + 2;
+      y = drawCallout(doc, 'Nessuna partita conclusa al momento. Quando i referti verranno chiusi compariranno qui in formato scheda dettagliata.', y);
+      drawFooter(doc, ctx);
+      doc.save(pdfName(s, 'recap-partite'));
+      return;
+    }
+
+    // Card una per partita
+    const W = doc.internal.pageSize.getWidth();
+    const H = doc.internal.pageSize.getHeight();
+    const margin = 14;
+    const cardW = W - margin*2;
+    const cardH = 50;
+    const cardGap = 4;
+
+    concluded.forEach(m => {
+      if(y + cardH > H - 18){
+        doc.addPage();
+        drawHeader(doc, ctx);
+        y = 34;
+      }
+      drawMatchCard(doc, s, logos, m, margin, y, cardW, cardH);
+      y += cardH + cardGap;
+    });
+
+    drawFooter(doc, ctx);
+    doc.save(pdfName(s, 'recap-partite'));
+  }
+
+  function drawMatchCard(doc, s, logos, m, x, y, w, h){
+    // Cornice
+    setFill(doc, C.white); setDraw(doc, C.hair); doc.setLineWidth(0.22);
+    doc.roundedRect(x, y, w, h, 2.4, 2.4, 'FD');
+    // Striscia gold a sinistra: segno "concluso" (oltre al testo)
+    setFill(doc, C.gold); doc.rect(x, y, 1.6, h, 'F');
+
+    // Meta in alto: fase · giornata · data · ora · campo
+    const phase = store.PHASE_LABELS?.[m.phase] || m.phase || '';
+    const round = m.round || '';
+    const date  = fmtDate(m);
+    const field = m.field || '';
+    const referee = m.referee || '';
+    const metaTop = [
+      phase || null,
+      round ? `${round}` : null,
+      date && date!=='—' ? date : null,
+      field ? `Campo: ${field}` : null
+    ].filter(Boolean).join('  ·  ');
+    setText(doc, C.muted); doc.setFont('helvetica','bold'); doc.setFontSize(6.8);
+    doc.text(String(metaTop).toUpperCase(), x + 5, y + 4.8, { maxWidth: w - 36 });
+    setText(doc, C.green); doc.setFont('helvetica','bold'); doc.setFontSize(6.8);
+    doc.text('GIOCATA', x + w - 5, y + 4.8, { align:'right' });
+
+    // Squadra HOME (sinistra)
+    const homeId   = m.homeTeamId;
+    const homeName = store.teamName(s, homeId, m.homeLabel) || 'Da definire';
+    const awayId   = m.awayTeamId;
+    const awayName = store.teamName(s, awayId, m.awayLabel) || 'Da definire';
+    const winnerId = store.winnerId ? store.winnerId(s, m) : '';
+    const sc = store.matchGoals ? store.matchGoals(s, m) : { home:0, away:0 };
+    const homeWin = winnerId && winnerId === homeId;
+    const awayWin = winnerId && winnerId === awayId;
+
+    const teamY = y + 11;
+    const logoSize = 13;
+
+    // Home logo + nome
+    drawLogo(doc, logos[homeId], x + 5, teamY, logoSize, homeName);
+    setText(doc, homeWin ? C.goldInk : C.ink); doc.setFont('helvetica','bold'); doc.setFontSize(11);
+    doc.text(String(homeName), x + 5 + logoSize + 3, teamY + 6, { maxWidth: (w/2) - 24 });
+    if(homeWin){
+      setText(doc, C.gold); doc.setFont('helvetica','bold'); doc.setFontSize(6.4);
+      doc.text('VINCITRICE', x + 5 + logoSize + 3, teamY + 11);
+    }
+
+    // Score box centrale
+    const scoreCx = x + w/2;
+    const scoreBoxW = 34, scoreBoxH = 16;
+    setFill(doc, C.ink);
+    doc.roundedRect(scoreCx - scoreBoxW/2, teamY - 1, scoreBoxW, scoreBoxH, 2, 2, 'F');
+    setText(doc, C.goldSoft); doc.setFont('helvetica','bold'); doc.setFontSize(16);
+    const scoreText = `${fmtNum(sc.home)} – ${fmtNum(sc.away)}`;
+    doc.text(scoreText, scoreCx, teamY + 9.6, { align:'center' });
+    // Rigori
+    if(m.penalties && (m.penalties.home != null || m.penalties.away != null)){
+      setText(doc, C.muted); doc.setFont('helvetica','italic'); doc.setFontSize(6.6);
+      doc.text(`Rigori ${fmtNum(m.penalties.home)} – ${fmtNum(m.penalties.away)}`, scoreCx, teamY + scoreBoxH + 2.4, { align:'center' });
+    }
+
+    // Away logo + nome (a destra, mirrored)
+    drawLogo(doc, logos[awayId], x + w - 5 - logoSize, teamY, logoSize, awayName);
+    setText(doc, awayWin ? C.goldInk : C.ink); doc.setFont('helvetica','bold'); doc.setFontSize(11);
+    doc.text(String(awayName), x + w - 5 - logoSize - 3, teamY + 6, { align:'right', maxWidth:(w/2) - 24 });
+    if(awayWin){
+      setText(doc, C.gold); doc.setFont('helvetica','bold'); doc.setFontSize(6.4);
+      doc.text('VINCITRICE', x + w - 5 - logoSize - 3, teamY + 11, { align:'right' });
+    }
+
+    // Linea separatore
+    setDraw(doc, C.hair); doc.setLineWidth(0.16);
+    doc.line(x + 5, y + h - 16, x + w - 5, y + h - 16);
+
+    // Eventi: marcatori + cartellini  (su due colonne)
+    const events = buildMatchEvents(s, m);
+    const goalsList = events.goals.length ? events.goals : [];
+    const cardsList = events.cards.length ? events.cards : [];
+    const evY = y + h - 13;
+
+    setText(doc, C.muted); doc.setFont('helvetica','bold'); doc.setFontSize(6.4);
+    doc.text('GOL', x + 5, evY);
+    setText(doc, C.ink); doc.setFont('helvetica','normal'); doc.setFontSize(7.4);
+    const goalsText = goalsList.length ? goalsList.map(g=>{
+      const own = g.ownGoal ? ' (AG)' : '';
+      const team = g.teamSide === 'home' ? '◀' : '▶';
+      return `${team} ${g.name}${own}`;
+    }).join('  ·  ') : '—';
+    const goalsLines = doc.splitTextToSize(goalsText, w/2 - 10);
+    doc.text(goalsLines.slice(0,2), x + 5, evY + 3.6);
+
+    setText(doc, C.muted); doc.setFont('helvetica','bold'); doc.setFontSize(6.4);
+    doc.text('CARTELLINI', x + w/2 + 2, evY);
+    setText(doc, C.ink); doc.setFont('helvetica','normal'); doc.setFontSize(7.4);
+    const cardsText = cardsList.length ? cardsList.map(c=>{
+      const sym = c.type==='red' ? '🟥' : '🟨';
+      const team = c.teamSide === 'home' ? '◀' : '▶';
+      return `${team} ${c.name} (${c.type==='red'?'R':'G'})`;
+    }).join('  ·  ') : '—';
+    const cardsLines = doc.splitTextToSize(cardsText, w/2 - 10);
+    doc.text(cardsLines.slice(0,2), x + w/2 + 2, evY + 3.6);
+
+    // Arbitro in basso a destra (se presente)
+    if(referee){
+      setText(doc, C.muted); doc.setFont('helvetica','italic'); doc.setFontSize(6.4);
+      doc.text(`Arbitro: ${referee}`, x + w - 5, y + h - 1.8, { align:'right' });
+    }
+  }
+  function buildMatchEvents(s, m){
+    const goals = (m.goals||[]).map(g => {
+      const team = g.teamId === m.homeTeamId ? 'home' : (g.teamId === m.awayTeamId ? 'away' : null);
+      let name = '—';
+      try {
+        const t = store.getTeam(s, g.teamId);
+        const p = (t?.roster||[]).find(x => x.id === g.playerId);
+        name = p?.name || (g.ownGoal ? '(autogol)' : '—');
+      } catch(_){ name = '—'; }
+      return { name, ownGoal:Boolean(g.ownGoal), teamSide:team };
+    });
+    const cards = (m.cards||[]).map(c => {
+      const team = c.teamId === m.homeTeamId ? 'home' : (c.teamId === m.awayTeamId ? 'away' : null);
+      let name = '—';
+      try {
+        const t = store.getTeam(s, c.teamId);
+        const p = (t?.roster||[]).find(x => x.id === c.playerId);
+        name = p?.name || '—';
+      } catch(_){ name = '—'; }
+      return { name, type:(c.type==='red'?'red':'yellow'), teamSide:team };
+    });
+    return { goals, cards };
+  }
+
+  // ---------------------------------------------------------------------
+  // === PDF 5: TABELLONE FASE FINALE (orizzontale) =====================
+  //     Layout a colonne per turno, header dei turni in alto, card per
+  //     incontro con due righe squadra + score box. Linee di connessione
+  //     gold sottili. Sezione vincitore finale se determinato.
+  // ---------------------------------------------------------------------
+  async function pdfBracket(){
+    const s = currentPdfState();
+    const logos = await preloadTeamLogos(s);
+    const { doc, ctx } = await makeDoc(s, 'l',
+      'Tabellone',
+      'Fase finale · eliminazione diretta',
+      'Tabellone');
+
+    const data = store.bracketData(s);
+    if(!data.available){
+      let y = 34;
+      y = drawSection(doc, 'Tabellone', 'Non disponibile',
+        data.message || 'Il formato di questo torneo non prevede una fase a eliminazione diretta.', y);
+      drawCallout(doc, 'Documento valido ma vuoto: il formato attuale non utilizza un tabellone a eliminazione.', y);
+      drawFooter(doc, ctx);
+      doc.save(pdfName(s, 'tabellone'));
+      return;
+    }
+
+    const brackets = data.brackets || [];
+    let firstBracketDone = false;
+    brackets.forEach(b => {
+      if(firstBracketDone){ doc.addPage('a4','landscape'); drawHeader(doc, ctx); }
+      drawBracketBlock(doc, s, logos, b, ctx);
+      firstBracketDone = true;
+    });
+
+    drawFooter(doc, ctx);
+    doc.save(pdfName(s, 'tabellone'));
+  }
+  function drawBracketBlock(doc, s, logos, bracket, ctx){
+    // Intro del singolo blocco di tabellone (può essere "Tabellone principale",
+    // "Coppa secondaria", "Supercoppa", ecc.)
+    let y = 34;
+    y = drawSection(doc, 'Bracket', String(bracket.name||'Tabellone'),
+      'Percorso eliminazione diretta. Le squadre evidenziate sono quelle qualificate al turno successivo.', y);
+
+    const W = doc.internal.pageSize.getWidth();
+    const H = doc.internal.pageSize.getHeight();
+    const margin = 13;
+    const top    = y + 2;
+    const bottom = 24; // footer + winner space
+    const rounds = bracket.rounds || [];
+
+    if(!rounds.length){
+      drawCallout(doc, 'Tabellone ancora senza abbinamenti. Gli incontri compariranno qui appena verranno generati.', top);
+      return;
+    }
+
+    const colGap = 10;
+    const colW = (W - margin*2 - colGap*Math.max(0, rounds.length-1)) / Math.max(1, rounds.length);
+    const headerH = 9;
+
+    // Disegno intestazione turni (chip oro)
+    rounds.forEach((round, ri) => {
+      const x = margin + ri*(colW + colGap);
+      setFill(doc, C.ink);
+      doc.roundedRect(x, top, colW, headerH, 1.6, 1.6, 'F');
+      setText(doc, C.goldSoft); doc.setFont('helvetica','bold'); doc.setFontSize(8.4);
+      doc.text(String(round.name || `Turno ${ri+1}`).toUpperCase(), x + colW/2, top + headerH*0.66, { align:'center', maxWidth: colW - 4 });
+    });
+
+    // Calcolo geometria card per turno
+    const matchSlots = []; // [{ri, mi, x, y, w, h, midY}]
+    rounds.forEach((round, ri) => {
+      const matches = round.matches || [];
+      const count = Math.max(1, matches.length);
+      const x = margin + ri*(colW + colGap);
+      const usableTop = top + headerH + 4;
+      const usableBottom = H - bottom;
+      const usableH = usableBottom - usableTop;
+      const cardH = Math.max(22, Math.min(30, (usableH - (count-1)*6) / count));
+      const totalH = count*cardH + (count-1)*6;
+      const startY = usableTop + (usableH - totalH)/2;
+      matches.forEach((m, mi) => {
+        const cy = startY + mi*(cardH + 6);
+        drawBracketMatchCard(doc, s, logos, m, x, cy, colW, cardH, mi);
+        matchSlots.push({ ri, mi, x, y:cy, w:colW, h:cardH, midY: cy + cardH/2 });
+      });
+    });
+
+    // Linee di collegamento gold (turno N → turno N+1)
+    setDraw(doc, C.gold); doc.setLineWidth(0.28);
+    matchSlots.forEach(slot => {
+      const targets = matchSlots.filter(t => t.ri === slot.ri + 1);
+      if(!targets.length) return;
+      // Coppia di partite (slot.mi e slot.mi+1) si uniscono nello slot floor(mi/2)
+      const targetIdx = Math.floor(slot.mi / 2);
+      const target = targets[targetIdx] || targets[0];
+      const x1 = slot.x + slot.w;
+      const x2 = target.x;
+      const xm = x1 + (x2 - x1)*0.55;
+      doc.line(x1, slot.midY, xm, slot.midY);
+      doc.line(xm, slot.midY, xm, target.midY);
+      doc.line(xm, target.midY, x2, target.midY);
+    });
+
+    // Sezione VINCITORE (se l'ultima partita del bracket è conclusa)
+    const lastRound = rounds[rounds.length - 1];
+    const finalMatch = lastRound?.matches?.[lastRound.matches.length - 1];
+    if(finalMatch && isConcluded(s, finalMatch)){
+      const winId = store.winnerId ? store.winnerId(s, finalMatch) : '';
+      const winTeam = winId ? store.getTeam(s, winId) : null;
+      if(winTeam){
+        const wy = H - bottom + 2;
+        const ww = 110;
+        const wx = (W - ww)/2;
+        setFill(doc, C.goldSoft); setDraw(doc, C.gold); doc.setLineWidth(0.5);
+        doc.roundedRect(wx, wy, ww, 16, 3, 3, 'FD');
+        drawLogo(doc, logos[winId], wx + 3, wy + 2, 12, winTeam.name);
+        setText(doc, C.gold); doc.setFont('helvetica','bold'); doc.setFontSize(7);
+        doc.text('CAMPIONE', wx + 18, wy + 6);
+        setText(doc, C.ink); doc.setFont('helvetica','bold'); doc.setFontSize(13);
+        doc.text(String(winTeam.name||'—'), wx + 18, wy + 12.6, { maxWidth: ww - 22 });
+      }
+    } else {
+      // Nota se il vincitore non è ancora determinato
+      const note = 'Vincitore da determinare: la finale non è ancora conclusa.';
+      const noteW = doc.getTextWidth(note);
+      setText(doc, C.muted); doc.setFont('helvetica','italic'); doc.setFontSize(7.6);
+      doc.text(note, (W - noteW)/2, H - 16);
+    }
+  }
+  function drawBracketMatchCard(doc, s, logos, m, x, y, w, h, mi){
+    // Card bianca con bordo hairline e numerazione discreta
+    setFill(doc, C.white); setDraw(doc, C.hair); doc.setLineWidth(0.22);
+    doc.roundedRect(x, y, w, h, 2, 2, 'FD');
+
+    // Numerazione incontro in alto a sinistra
+    setText(doc, C.muted); doc.setFont('helvetica','bold'); doc.setFontSize(5.8);
+    doc.text(`MATCH ${mi+1}`, x + 2.5, y + 3.6);
+    // Meta in alto a destra (giornata/round se utile)
+    if(m.field || m.date){
+      const meta = [m.date ? fmtDate(m) : null, m.field ? `· ${m.field}` : null].filter(Boolean).join(' ');
+      setText(doc, C.muted); doc.setFont('helvetica','normal'); doc.setFontSize(5.8);
+      doc.text(meta, x + w - 2.5, y + 3.6, { align:'right', maxWidth: w/1.6 });
+    }
+
+    // Due righe squadra
+    const homeId = m.homeTeamId;
+    const awayId = m.awayTeamId;
+    const homeName = m.homeTeamId ? store.teamName(s, m.homeTeamId, m.homeLabel) : (m.homeLabel || 'Da definire');
+    const awayName = m.awayTeamId ? store.teamName(s, m.awayTeamId, m.awayLabel) : (m.awayLabel || 'Da definire');
+    const sc = store.matchGoals ? store.matchGoals(s, m) : { home:'', away:'' };
+    const winnerId = store.winnerId ? store.winnerId(s, m) : '';
+
+    const rowH = (h - 6) / 2;
+    drawBracketRow(doc, logos, x + 1, y + 5,  w - 2, rowH, homeId, homeName, isConcluded(s,m) ? sc.home : '', winnerId === homeId);
+    drawBracketRow(doc, logos, x + 1, y + 5 + rowH, w - 2, rowH, awayId, awayName, isConcluded(s,m) ? sc.away : '', winnerId === awayId);
+  }
+  function drawBracketRow(doc, logos, x, y, w, h, teamId, name, score, isWinner){
+    if(isWinner){
+      setFill(doc, C.goldSoft);
+      doc.rect(x, y, w, h, 'F');
+      setFill(doc, C.gold);
+      doc.rect(x, y, 1.2, h, 'F');
+    }
+    const logoSize = Math.min(h - 2, 8);
+    drawLogo(doc, logos[teamId], x + 2.4, y + (h - logoSize)/2, logoSize, name);
+    setText(doc, isWinner ? C.goldInk : C.ink);
+    doc.setFont('helvetica', isWinner ? 'bold' : 'normal');
+    doc.setFontSize(7.6);
+    doc.text(String(name||'Da definire'), x + 2.4 + logoSize + 2, y + h/2 + 1.6, { maxWidth: w - logoSize - 18 });
+    if(score !== '' && score != null){
+      setText(doc, isWinner ? C.goldInk : C.ink);
+      doc.setFont('helvetica','bold'); doc.setFontSize(9);
+      doc.text(String(score), x + w - 4, y + h/2 + 1.8, { align:'right' });
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Dispatcher pulsanti pagina report
+  // ---------------------------------------------------------------------
+  function teamFilterOptions(s, selected){
+    return '<option value="">Tutte le squadre</option>' +
+      s.teams.map(t => `<option value="${t.id}" ${t.id===selected?'selected':''}>${UI.esc(t.name)}</option>`).join('');
+  }
+  function filteredPlayerStats(s){
+    const rows = store.selectors.playerStats(s);
+    return playerTeamFilter
+      ? rows.filter(p => p.teamId === playerTeamFilter)
+      : rows.filter(p => p.goals > 0).slice(0, 15);
+  }
+  function reportAvailability(s){
+    const matchCount = (s.matches||[]).length;
+    const teamCount  = (s.teams||[]).length;
+    const scorers    = store.selectors.scorers(s).length;
+    const hasGroups  = store.selectors.hasGroupStage(s);
+    const bracket    = store.bracketData(s);
+    const concluded  = (s.matches||[]).filter(m => isConcluded(s, m)).length;
+    return {
+      standings:{ enabled:teamCount>0, detail: teamCount?`${teamCount} squadre`:'Aggiungi squadre' },
+      scorers  :{ enabled:teamCount>0, detail: scorers?`${Math.min(scorers,15)} marcatori`:'Nessun gol: PDF vuoto' },
+      groups   :{ enabled:hasGroups,   detail: hasGroups?'Classifiche gironi':'Non previsto dal format' },
+      calendar :{ enabled:matchCount>0,detail: concluded ? `${concluded} partite concluse` : (matchCount?'0 concluse: PDF segnaposto':'Nessuna partita') },
+      bracket  :{ enabled: Boolean(bracket.available), detail: bracket.available?'Tabellone disponibile':(bracket.message||'Non previsto dal format') }
+    };
+  }
+  function renderReportButtons(s){
+    const avail = reportAvailability(s);
+    Object.entries(avail).forEach(([kind, meta])=>{
+      const btn = document.querySelector(`[data-report-kind="${kind}"]`);
+      if(!btn) return;
+      btn.disabled = !meta.enabled;
+      btn.title = meta.detail;
+      const small = btn.querySelector('small');
+      if(small) small.textContent = meta.detail;
+    });
+  }
+  function render(){
+    const s = A.state();
+    renderReportButtons(s);
+    UI.$('#adminStats').innerHTML = UI.statsGrid(store.selectors.stats(s));
+    const standingsMenu = UI.$('#adminStandingsMenu');
+    if(standingsMenu) standingsMenu.innerHTML = store.selectors.hasGroupStage(s) ? UI.groupStandingsSelector(s, standingsGroup, 'adminGroupStandingsFilter') : '';
+    UI.$('#adminStandings').innerHTML = store.selectors.hasGroupStage(s)
+      ? UI.groupStandingsTables(s, standingsGroup)
+      : UI.standingsTable((store.selectors.officialStandings ? store.selectors.officialStandings(s) : store.selectors.calculateStandings(s)), s);
+    const filter = UI.$('#adminPlayerTeamFilter');
+    if(filter){
+      filter.innerHTML = teamFilterOptions(s, playerTeamFilter);
+      if(playerTeamFilter && !s.teams.some(t=>t.id===playerTeamFilter)) playerTeamFilter = '';
+    }
+    UI.$('#adminPlayers').innerHTML = UI.playerStatsTable(filteredPlayerStats(s))
+      + (s.rules.isKingsLeague
+          ? '<div class="mini-section-title margin-top"><h3>Presidenti marcatori</h3></div>' + UI.presidentStatsTable(store.selectors.presidentScorers(s).slice(0,15))
+          : '');
+    UI.$('#adminCalendar').innerHTML = UI.matchList(s);
+    UI.$('#adminBracket').innerHTML = UI.bracketMarkup(s);
+  }
+  document.addEventListener('DOMContentLoaded', render);
+  UI.$('#adminPlayerTeamFilter')?.addEventListener('change', e => { playerTeamFilter = e.target.value; render(); });
+  document.addEventListener('change', e => {
+    if(e.target.id === 'adminGroupStandingsFilter'){ standingsGroup = e.target.value || 'all'; render(); }
+  });
+
+  async function runPdf(kind){
+    try{
+      if(!toolsReady()){
+        toast('Librerie PDF non disponibili. Controlla la connessione e ricarica la pagina.', 'error');
+        return;
+      }
+      toast('Genero il PDF e avvio il download…');
+      if     (kind === 'standings') await pdfStandings();
+      else if(kind === 'scorers')   await pdfScorers();
+      else if(kind === 'groups')    await pdfGroups();
+      else if(kind === 'bracket')   await pdfBracket();
+      else                          await pdfRecap();   // ex "calendar"
+      toast('Download PDF avviato.');
+    }catch(err){
+      console.error(err);
+      toast('Non sono riuscito a generare il PDF: ' + (err.message || err), 'error');
+    }
+  }
+  document.addEventListener('click', e => {
+    const btn = e.target.closest('[data-report-kind]');
+    if(!btn) return;
+    e.preventDefault();
+    if(btn.disabled) return;
+    runPdf(btn.dataset.reportKind || 'calendar');
+  });
+  window.NexoraAdminRefresh = function(){ try { render(); } catch(_){} };
+  window.addEventListener('ng:admin-state-loaded', () => window.NexoraAdminRefresh());
 })();
