@@ -76,6 +76,28 @@ assert.equal(hardSimplified.ok,false,'un vincolo obbligatorio impossibile non de
 assert.equal(hardSimplified.status,'NO_SOLUTION');
 assert.equal(hardImpossible.rules.calendarCustomization.firstRoundLocks[0].mode,'hard');
 
+const minDebut=baseState();
+minDebut.rules.calendarCustomization=store.normalizeCalendarCustomization({teamDebuts:[{teamId:'team_1',kind:'minTime',value:'10:00',mode:'hard'}]});
+const minDebutPreview=store.previewCalendar(minDebut);
+assert.equal(minDebutPreview.ok,true,minDebutPreview.message);
+const team1First=[...minDebutPreview.previewMatches].filter(m=>m.phase==='group'&&(m.homeTeamId==='team_1'||m.awayTeamId==='team_1')).sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.time).localeCompare(String(b.time))||String(a.field).localeCompare(String(b.field)))[0];
+assert.ok(team1First.time>='10:00','la prima partita di team_1 non deve iniziare prima delle 10:00');
+assert.ok(minDebutPreview.ruleReport.debutChecks.some(c=>c.rule==='Orario minimo'&&c.ok),'il report deve dichiarare applicato l orario minimo');
+
+const positionDebut=baseState();
+positionDebut.rules.calendarCustomization=store.normalizeCalendarCustomization({teamDebuts:[{teamId:'team_1',kind:'firstRoundPosition',value:'2',mode:'hard'}]});
+const positionPreview=store.previewCalendar(positionDebut);
+assert.equal(positionPreview.ok,true,positionPreview.message);
+const groupAFirst=positionPreview.previewMatches.filter(m=>m.phase==='group'&&m.groupName==='Girone A'&&Number(m.roundIndex)===0).sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.time).localeCompare(String(b.time))||String(a.field).localeCompare(String(b.field)));
+assert.ok(groupAFirst[1].homeTeamId==='team_1'||groupAFirst[1].awayTeamId==='team_1','team_1 deve esordire nella seconda partita cronologica del Girone A');
+assert.ok(positionPreview.ruleReport.debutChecks.some(c=>c.rule==='Posizione giornata 1'&&c.ok),'il report deve dichiarare applicata la posizione di esordio');
+
+const impossibleDebut=baseState();
+impossibleDebut.rules.calendarCustomization=store.normalizeCalendarCustomization({teamDebuts:[{teamId:'team_1',kind:'firstRoundPosition',value:'1',mode:'hard'},{teamId:'team_1',kind:'minTime',value:'16:00',mode:'hard'}]});
+const impossibleDebutPreview=store.previewCalendar(impossibleDebut);
+assert.equal(impossibleDebutPreview.ok,false,'posizione iniziale e orario minimo incompatibile devono bloccare la preview');
+assert.equal(impossibleDebut.matches.length,0,'una preview con vincoli di esordio incompatibili non deve salvare partite');
+
 const fieldEquality=baseState();
 fieldEquality.rules.calendarCustomization=store.normalizeCalendarCustomization({fieldBlocks:[{field:'Campo 1',date:'2026-07-01',time:'',mode:'hard'}]});
 const fieldEqualityPreview=store.previewCalendar(fieldEquality);
@@ -115,4 +137,4 @@ assert.match(adminRulesSource,/data-calendar-confirm-simplify/,'azione UI per co
 assert.ok(adminRulesSource.includes('localStorage.setItem(DRAFT_KEY'),'salvataggio bozza in localStorage presente');
 assert.ok(adminRulesSource.includes('localStorage.removeItem(DRAFT_KEY'),'eliminazione bozza in localStorage presente');
 
-console.log(JSON.stringify({ok:true,manualPreview:true,noAutoRepair:true,firstRoundLock:true,shareModuleStatic:true,simulationFormats:true,draftPersistence:true,infeasibleFlow:true,simplifiedPreview:true,hardConflictBlocked:true,fieldEquality:true,technicalStates:true},null,2));
+console.log(JSON.stringify({ok:true,manualPreview:true,noAutoRepair:true,firstRoundLock:true,shareModuleStatic:true,simulationFormats:true,draftPersistence:true,infeasibleFlow:true,simplifiedPreview:true,hardConflictBlocked:true,debutMinTime:true,debutPosition:true,debutConflict:true,fieldEquality:true,technicalStates:true},null,2));
