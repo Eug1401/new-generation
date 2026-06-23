@@ -1,81 +1,89 @@
-# Calendar Customization
+# Personalizzazione del calendario
 
-## Nuovo flusso
+## Flusso di generazione
 
-Il calendario non viene piu creato durante:
+Il calendario non viene creato durante il salvataggio delle regole, la modifica dei gironi, l'apertura delle pagine amministrative o la generazione di report.
 
-- salvataggio regole;
-- modifica gironi;
-- normalizzazione o riparazione dello stato;
-- apertura delle pagine admin;
-- generazione PDF/report.
-
-Il calendario viene creato solo in `admin-rules.html`, premendo `Configura e genera calendario`, analizzando la fattibilita e confermando `Conferma e crea calendario`.
-
-## Stati operativi
-
-- Calendario non ancora generato: lo stato contiene regole, squadre, gironi e configurazione, ma `matches` e vuoto.
-- Anteprima: `store.previewCalendar(state)` genera una copia non persistente.
-- Calendario generato: `store.generateCalendar(state)` viene chiamato solo alla conferma finale.
-- Calendario da rivedere: se regole/squadre/gironi cambiano, `calendarSignature` viene invalidata senza rigenerare partite.
-- Calendario non fattibile: lo store restituisce `SIMPLIFICATION_AVAILABLE`, `NO_SOLUTION`, `TIMEOUT` o `TECHNICAL_ERROR` con conflitti strutturati.
-- Calendario semplificato: `store.previewSimplifiedCalendar(state)` prova livelli progressivi e restituisce `SIMPLIFIED_SOLUTION` senza salvare partite.
-
-## Wizard
-
-Il wizard contiene:
+La creazione avviene esclusivamente nella pagina `admin-rules.html` tramite il wizard **Configura e genera calendario**:
 
 1. Prerequisiti.
-2. Preferenze e profilo.
-3. Prima giornata personalizzabile.
-4. Vincoli base.
-5. Analisi di fattibilita e anteprima.
+2. Preferenze.
+3. Prima giornata.
+4. Vincoli.
+5. Anteprima.
 
-Il wizard salva una bozza locale (`new-generation-calendar-draft-v1`) con preferenze e vincoli. La bozza puo essere recuperata riaprendo il wizard, modificata, salvata di nuovo o eliminata. La bozza non crea partite e viene rimossa dopo una generazione confermata con successo.
+`store.previewCalendar(state)` lavora su una copia dello stato e non modifica il calendario salvato. `store.generateCalendar(state)` viene eseguito soltanto dopo la conferma finale. Se esiste già un calendario, l'interfaccia richiede un consenso esplicito prima di sostituirlo.
 
-## Regole implementate
+## Stato temporaneo del wizard
 
-- Accoppiamenti fissati nella prima giornata.
-- Campo e orario richiesti per una partita fissata.
-- Indisponibilita squadra per data/ora.
-- Blocchi campo per data/ora.
-- Riposo minimo obbligatorio nei tornei in un giorno.
-- Esordio in prima giornata, giornata esatta, non prima di una giornata, entro una giornata, campo, orario o avversaria.
-- Seed variante per generare una proposta diversa in modo riproducibile.
-- Validazione conflitti rigidi prima del salvataggio.
-- Pannello di infattibilita con conflitti, suggerimenti, azioni di modifica e bozza conservata.
-- Semplificazione a livelli: preferenze secondarie, preferenze principali, calendario essenziale.
-- Campo 1 e Campo 2 sono equivalenti: non esiste una preferenza automatica per Campo 1.
+La bozza locale `new-generation-calendar-draft-v2` conserva preferenze, configurazione della prima giornata e vincoli mentre l'utente si sposta avanti e indietro nel wizard.
 
-## Semplificazione
+L'avvio di una nuova configurazione azzera la bozza e i vincoli temporanei. Una generazione confermata ricostruisce sempre tutte le partite da zero; non riordina né integra il calendario precedente.
 
-La generazione semplificata rilassa solo preferenze e mai regole obbligatorie. I livelli vengono provati in ordine:
+## Vincoli supportati
 
-1. Rilassa bilanciamento perfetto, attese e preferenze sui consecutivi.
-2. Rilassa accoppiamenti ed esordi indicati come preferiti.
-3. Rimuove seed/ordine preferenziale e usa il calendario essenziale.
+La sezione **Vincoli** espone esclusivamente due regole obbligatorie:
 
-Se restano conflitti hard, il risultato e `NO_SOLUTION`: il wizard non elimina vincoli obbligatori e permette di trasformare o rimuovere manualmente solo le regole modificabili.
+### Orario d'esordio della squadra
 
-## Backend/store
+La prima partita cronologica della squadra deve iniziare esattamente nell'orario selezionato. Gli orari disponibili sono ricavati dalle date, dalla fascia oraria, dalla durata delle partite e dal numero di campi configurati.
 
-Il progetto e statico, quindi il backend applicativo e lo store locale/Supabase:
+### Posizione nella prima giornata
 
-- `rules.calendarCustomization` contiene le regole.
-- `previewCalendar` lavora su clone e non salva.
-- `generateCalendar` valida i vincoli prima di mutare `matches`.
-- `repairState` non chiama piu `ensureFreshCalendar`.
-- `admin-groups.js` salva solo `groupAssignments`.
+La partita della squadra deve occupare la posizione richiesta nell'ordine cronologico complessivo della prima giornata. A parità di orario, l'ordinamento usa in modo deterministico campo, girone, coppia di squadre e identificativo della partita.
 
-## Modalita supportate nel flusso admin
+Le posizioni disponibili sono calcolate dal numero effettivo di partite della prima giornata.
 
-- Gironi + eliminazione diretta.
-- Classifica unica + eliminazione diretta (`league_knockout`).
+## Modello dati
 
-I formati legacy restano nel motore store per compatibilita con dati esistenti, ma non sono esposti nel select admin principale ne nel wizard di simulazione.
+I vincoli sono memorizzati in `rules.calendarCustomization.teamDebuts`:
 
-## Limiti conosciuti
+```json
+[
+  {
+    "id": "constraint-id",
+    "teamId": "team-id",
+    "kind": "exactTime",
+    "value": "10:40",
+    "mode": "hard"
+  },
+  {
+    "id": "constraint-id-2",
+    "teamId": "team-id-2",
+    "kind": "firstRoundPosition",
+    "value": 3,
+    "mode": "hard"
+  }
+]
+```
 
-- Non e stato introdotto un solver CP-SAT esterno: la soluzione resta deterministica e leggera, coerente con una app statica.
-- Le preferenze sono valutate e riportate, ma non tutte vengono ottimizzate globalmente.
-- L'anteprima si modifica tornando agli step precedenti del wizard; non e stato aggiunto drag/drop diretto sulla lista anteprima.
+I dati legacy `minTime`, `time`, indisponibilità squadra e blocchi campo vengono normalizzati: gli orari di esordio diventano `exactTime`, mentre i tipi non più esposti dal wizard non partecipano alla nuova configurazione.
+
+## Assegnazione dei campi
+
+Ogni girone mantiene come scelta predefinita il proprio campo. Con due gironi e due campi, il Girone A usa normalmente il Campo 1 e il Girone B il Campo 2.
+
+Una partita può essere spostata temporaneamente sull'altro campo soltanto quando:
+
+- il campo preferito è già occupato nello slot;
+- il secondo campo è libero;
+- il girone assegnato al secondo campo non ha una propria partita ancora da collocare nello stesso turno;
+- nessuna squadra viene sovrapposta;
+- riposo minimo, durata, date e orari restano validi.
+
+Con gironi della stessa dimensione non vengono effettuati spostamenti. Con gironi di dimensione diversa, il campo libero può essere usato dal girone più grande solo negli slot altrimenti inutilizzati.
+
+## Validazione
+
+La validazione viene eseguita sia nell'interfaccia sia nello store prima della generazione. Sono bloccanti, tra gli altri:
+
+- squadra inesistente o non selezionata;
+- orario non disponibile;
+- posizione fuori intervallo;
+- vincoli duplicati per la stessa squadra;
+- due partite diverse assegnate alla stessa posizione;
+- richieste di orario incompatibili nella stessa partita;
+- numero di esordi simultanei superiore ai campi disponibili;
+- soluzione completa non trovata.
+
+In caso di errore non viene salvato alcun calendario parziale e la bozza resta disponibile per le correzioni.

@@ -76,34 +76,46 @@ assert.equal(hardSimplified.ok,false,'un vincolo obbligatorio impossibile non de
 assert.equal(hardSimplified.status,'NO_SOLUTION');
 assert.equal(hardImpossible.rules.calendarCustomization.firstRoundLocks[0].mode,'hard');
 
-const minDebut=baseState();
-minDebut.rules.calendarCustomization=store.normalizeCalendarCustomization({teamDebuts:[{teamId:'team_1',kind:'minTime',value:'10:00',mode:'hard'}]});
-const minDebutPreview=store.previewCalendar(minDebut);
-assert.equal(minDebutPreview.ok,true,minDebutPreview.message);
-const team1First=[...minDebutPreview.previewMatches].filter(m=>m.phase==='group'&&(m.homeTeamId==='team_1'||m.awayTeamId==='team_1')).sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.time).localeCompare(String(b.time))||String(a.field).localeCompare(String(b.field)))[0];
-assert.ok(team1First.time>='10:00','la prima partita di team_1 non deve iniziare prima delle 10:00');
-assert.ok(minDebutPreview.ruleReport.debutChecks.some(c=>c.rule==='Orario minimo'&&c.ok),'il report deve dichiarare applicato l orario minimo');
+const exactDebut=baseState();
+exactDebut.rules.calendarCustomization=store.normalizeCalendarCustomization({teamDebuts:[{teamId:'team_1',kind:'exactTime',value:'10:20',mode:'hard'}]});
+const exactDebutPreview=store.previewCalendar(exactDebut);
+assert.equal(exactDebutPreview.ok,true,exactDebutPreview.message);
+const team1First=[...exactDebutPreview.previewMatches].filter(m=>m.phase==='group'&&(m.homeTeamId==='team_1'||m.awayTeamId==='team_1')).sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.time).localeCompare(String(b.time))||String(a.field).localeCompare(String(b.field)))[0];
+assert.equal(team1First.time,'10:20','la prima partita di team_1 deve iniziare esattamente alle 10:20');
+assert.ok(exactDebutPreview.ruleReport.debutChecks.some(c=>c.rule==='Orario esatto'&&c.ok),'il report deve dichiarare applicato l orario esatto');
 
 const positionDebut=baseState();
 positionDebut.rules.calendarCustomization=store.normalizeCalendarCustomization({teamDebuts:[{teamId:'team_1',kind:'firstRoundPosition',value:'2',mode:'hard'}]});
 const positionPreview=store.previewCalendar(positionDebut);
 assert.equal(positionPreview.ok,true,positionPreview.message);
-const groupAFirst=positionPreview.previewMatches.filter(m=>m.phase==='group'&&m.groupName==='Girone A'&&Number(m.roundIndex)===0).sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.time).localeCompare(String(b.time))||String(a.field).localeCompare(String(b.field)));
-assert.ok(groupAFirst[1].homeTeamId==='team_1'||groupAFirst[1].awayTeamId==='team_1','team_1 deve esordire nella seconda partita cronologica del Girone A');
-assert.ok(positionPreview.ruleReport.debutChecks.some(c=>c.rule==='Posizione giornata 1'&&c.ok),'il report deve dichiarare applicata la posizione di esordio');
+const overallFirst=positionPreview.previewMatches.filter(m=>m.phase==='group'&&Number(m.roundIndex)===0).sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.time).localeCompare(String(b.time))||(Number(String(a.field).match(/\d+/)?.[0])||0)-(Number(String(b.field).match(/\d+/)?.[0])||0)||String(a.id).localeCompare(String(b.id)));
+assert.ok(overallFirst[1].homeTeamId==='team_1'||overallFirst[1].awayTeamId==='team_1','team_1 deve occupare la seconda posizione cronologica complessiva della prima giornata');
+assert.ok(positionPreview.ruleReport.debutChecks.some(c=>c.rule==='Posizione giornata 1'&&c.ok),'il report deve dichiarare applicata la posizione');
 
 const impossibleDebut=baseState();
-impossibleDebut.rules.calendarCustomization=store.normalizeCalendarCustomization({teamDebuts:[{teamId:'team_1',kind:'firstRoundPosition',value:'1',mode:'hard'},{teamId:'team_1',kind:'minTime',value:'16:00',mode:'hard'}]});
+impossibleDebut.rules.calendarCustomization=store.normalizeCalendarCustomization({teamDebuts:[{id:'position_a',teamId:'team_1',kind:'firstRoundPosition',value:'1',mode:'hard'},{id:'position_b',teamId:'team_5',kind:'firstRoundPosition',value:'1',mode:'hard'}]});
 const impossibleDebutPreview=store.previewCalendar(impossibleDebut);
-assert.equal(impossibleDebutPreview.ok,false,'posizione iniziale e orario minimo incompatibile devono bloccare la preview');
-assert.equal(impossibleDebut.matches.length,0,'una preview con vincoli di esordio incompatibili non deve salvare partite');
+assert.equal(impossibleDebutPreview.ok,false,'due partite diverse nella stessa posizione devono bloccare la preview');
+assert.equal(impossibleDebut.matches.length,0,'una preview con vincoli incompatibili non deve salvare partite');
 
-const fieldEquality=baseState();
-fieldEquality.rules.calendarCustomization=store.normalizeCalendarCustomization({fieldBlocks:[{field:'Campo 1',date:'2026-07-01',time:'',mode:'hard'}]});
-const fieldEqualityPreview=store.previewCalendar(fieldEquality);
-assert.equal(fieldEqualityPreview.ok,true,'Campo 1 bloccato non deve essere un vincolo bloccante se Campo 2 e disponibile');
-assert.ok(fieldEqualityPreview.previewMatches.every(m=>m.field==='Campo 2'),'con Campo 1 bloccato il calendario puo usare Campo 2');
-assert.ok(!(fieldEqualityPreview.ruleReport?.warnings||[]).some(w=>w.rule==='Campo 1'),'Campo 1 non deve comparire come preferenza o avviso');
+const fieldFallback=store.emptyState();
+fieldFallback.rules.format='groups_knockout';
+fieldFallback.rules.oneDay=true;
+fieldFallback.rules.startDate='2026-07-01';
+fieldFallback.rules.startTime='09:00';
+fieldFallback.rules.fieldCount=2;
+fieldFallback.rules.groupFieldPolicy='fixed_by_group';
+fieldFallback.rules.matchDuration=30;
+fieldFallback.rules.breakMinutes=10;
+fieldFallback.rules.groupConfigs=[{name:'Girone A',size:5,qualifiers:1},{name:'Girone B',size:4,qualifiers:1}];
+fieldFallback.teams=Array.from({length:9},(_,i)=>team(i+1));
+fieldFallback.rules.groupAssignments=Object.fromEntries(fieldFallback.teams.map((t,i)=>[t.id,i<5?'Girone A':'Girone B']));
+const fieldFallbackPreview=store.previewCalendar(store.normalizeState(fieldFallback));
+assert.equal(fieldFallbackPreview.ok,true,fieldFallbackPreview.message);
+const groupMatches=fieldFallbackPreview.previewMatches.filter(m=>m.phase==='group');
+const borrowed=groupMatches.filter(m=>m.groupName==='Girone A'&&m.field==='Campo 2');
+assert.ok(borrowed.length>0,'il girone più grande deve poter usare il campo libero');
+for(const match of borrowed)assert.equal(groupMatches.some(other=>other.groupName==='Girone B'&&other.date===match.date&&other.time===match.time),false,'il campo del Girone B può essere usato solo quando il Girone B non gioca nello slot');
 
 const timeoutPreview=store.previewCalendar(baseState(),{forceTimeout:true,maxMs:1});
 assert.equal(timeoutPreview.status,'TIMEOUT','il timeout deve essere distinto dall infattibilita');
@@ -173,4 +185,4 @@ assert.match(adminRulesSource,/data-calendar-confirm-simplify/,'azione UI per co
 assert.ok(adminRulesSource.includes('localStorage.setItem(DRAFT_KEY'),'salvataggio bozza in localStorage presente');
 assert.ok(adminRulesSource.includes('localStorage.removeItem(DRAFT_KEY'),'eliminazione bozza in localStorage presente');
 
-console.log(JSON.stringify({ok:true,manualPreview:true,noAutoRepair:true,firstRoundLock:true,shareModuleStatic:true,bracketImageLayout:true,simulationFormats:true,draftPersistence:true,infeasibleFlow:true,simplifiedPreview:true,hardConflictBlocked:true,debutMinTime:true,debutPosition:true,debutConflict:true,fieldEquality:true,technicalStates:true},null,2));
+console.log(JSON.stringify({ok:true,manualPreview:true,noAutoRepair:true,firstRoundLock:true,shareModuleStatic:true,bracketImageLayout:true,simulationFormats:true,draftPersistence:true,infeasibleFlow:true,simplifiedPreview:true,hardConflictBlocked:true,debutExactTime:true,debutPosition:true,debutConflict:true,fieldFallback:true,technicalStates:true},null,2));

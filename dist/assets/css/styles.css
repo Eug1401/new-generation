@@ -7987,3 +7987,12 @@ a.article-card-main{cursor:pointer;}
 .calendar-debut-checks h4{margin:0 0 8px;color:var(--gold)}
 .calendar-debut-checks table{min-width:680px}
 .calendar-rule-summary{grid-column:1/-1;margin:0;color:var(--muted);font-weight:750;line-height:1.35}
+
+/* Wizard calendario: vincoli supportati */
+.calendar-constraint-block{border:1px solid rgba(215,164,45,.18);border-radius:18px;padding:14px;background:rgba(255,255,255,.025)}
+.calendar-constraint-block h3{margin-top:0}
+.calendar-editor-row.debut.constraint-row{grid-template-columns:minmax(180px,1.2fr) minmax(220px,1fr) auto;align-items:end}
+.constraint-row-actions{display:flex;align-items:flex-end;justify-content:flex-end}
+.calendar-field-error{display:block;margin-top:6px;color:#fb7185;font-weight:750;line-height:1.35}
+#calendarWizardModal [aria-invalid="true"]{border-color:#fb7185!important;box-shadow:0 0 0 3px rgba(251,113,133,.14)!important}
+@media(max-width:760px){.calendar-editor-row.debut.constraint-row{grid-template-columns:1fr}.constraint-row-actions{justify-content:stretch}.constraint-row-actions .btn{width:100%}}

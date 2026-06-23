@@ -50,25 +50,25 @@ Genera la cartella `dist/` con tutti i file statici versionati pronti per il dep
 npm test          # validatore: file richiesti, link interni, sintassi JS, regole CSS
 npm run lint      # alias di npm test in modalità lint
 npm run test:ui   # test di stabilità UI in Chromium headless (richiede Chromium)
-npm run test:calendar-share # test mirato su calendario manuale e moduli immagine
+npm run test:calendar       # 9 scenari sui vincoli e sulla generazione
+npm run test:calendar-share # regressioni calendario manuale e moduli immagine
 ```
 
 ## Calendario e condivisione immagini
 
 - La generazione calendario è manuale e confermata dall'amministratore: prima si configurano formato, gironi e vincoli, poi si analizza l'anteprima, infine si salva.
-- Sono supportati i flussi `groups_knockout` e `league_knockout`, con personalizzazione di prima giornata, campi, orari, indisponibilità e regole di debutto.
+- Sono supportati i flussi `groups_knockout` e `league_knockout`, con personalizzazione della prima giornata e due vincoli espliciti: orario esatto d'esordio e posizione nella prima giornata.
 - Il wizard conserva una bozza locale delle regole calendario: si puo uscire, rientrare, modificarla, eliminarla o confermare la generazione senza creare partite intermedie.
-- Se il calendario personalizzato non e fattibile, il wizard mostra conflitti e suggerimenti, propone una generazione semplificata a livelli e salva solo dopo conferma finale.
+- Se il calendario personalizzato non è fattibile, il wizard mostra conflitti comprensibili, conserva la bozza e permette di tornare ai vincoli senza salvare un calendario parziale.
 - Il sito pubblico può esportare e condividere PNG dedicati per classifica generale, classifica di girone, tabellone e singola partita tramite Web Share API o download fallback.
 
 Documentazione tecnica:
 
 - `CALENDAR_CUSTOMIZATION.md`
-- `CALENDAR_INFEASIBLE_HANDLING.md`
 - `CALENDAR_RULES_REFERENCE.md`
 - `SHAREABLE_IMAGES.md`
 - `ONLINE_RESEARCH_CALENDAR.md`
-- `TEST_REPORT.md`
+- `IMPLEMENTATION_REPORT_CALENDAR_WIZARD.md`
 
 ## Variabili d'ambiente
 
@@ -164,8 +164,3 @@ Tutti i test eseguibili in CI passano. `npm run test:ui` è stato eseguito stori
 ## Note finali
 
 Il report tecnico completo della revisione UI è in `REPORT_MODIFICHE_UI.md` (allegato nel pacchetto). Quel documento elenca problemi rilevati, soluzioni applicate, file modificati e problemi residui.
-# Aggiornamenti tabellone e vincoli esordio
-
-- `BRACKET_LAYOUT.md` descrive layout tabellone, loghi, fallback, PDF e immagine.
-- `DEBUT_CONSTRAINTS.md` descrive orario minimo e posizione dell'esordio.
-- `CALENDAR_REGENERATION.md` descrive invalidazione anteprima, rigenerazione globale e atomicita.
