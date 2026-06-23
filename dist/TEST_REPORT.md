@@ -1,44 +1,35 @@
-# Test Report
+# Test report
 
-## Eseguiti
+## Comandi eseguiti
 
-| Suite | Totale | Superati | Falliti | Saltati |
-| --- | ---: | ---: | ---: | ---: |
-| Sintassi JS modificati via `vm.Script` | 6 | 6 | 0 | 0 |
-| Test store calendario/share `tools/test-calendar-share.mjs` | 12 | 12 | 0 | 0 |
-| Validazione progetto `tools/validate-project.mjs` | 2 | 2 | 0 | 0 |
-| Build statica `tools/build-static.mjs` | 1 | 1 | 0 | 0 |
+- `node tools/test-calendar-share.mjs`
+- `node tools/validate-project.mjs`
+- `node tools/build-static.mjs`
+- `node tools/test-ui-stability.mjs` tentato, non eseguibile: cerca `/usr/bin/chromium` su ambiente Windows.
+- Controllo browser in-app su `http://127.0.0.1:4179/visual-bracket-check-http.html`.
 
-## Dettaglio verifiche
+## Copertura
 
-- `store.previewCalendar` genera una proposta senza mutare `matches`.
-- `store.generateCalendar` salva solo su chiamata esplicita.
-- `store.repairState` non rigenera piu il calendario.
-- La partita fissata Team 1 vs Team 2 resta in `Girone A · Giornata 1`, Campo 1, ore 09:00.
-- Un doppio uso della stessa squadra nella prima giornata blocca la preview.
-- Il modulo `share-images.js` espone `window.NGShareImages`, usa canvas PNG e Web Share API.
-- Il wizard di simulazione espone solo `groups_knockout` e `league_knockout`.
-- Il wizard calendario ha salvataggio, recupero ed eliminazione bozza senza persistenza di partite.
-- Il calendario personalizzato non fattibile restituisce conflitti strutturati e `SIMPLIFICATION_AVAILABLE`.
-- Una preferenza di prima giornata incompatibile genera una proposta `SIMPLIFIED_SOLUTION` al livello 2.
-- Un vincolo obbligatorio incompatibile resta bloccato con `NO_SOLUTION`.
-- Campo 1 e Campo 2 sono equivalenti; se Campo 1 e bloccato il calendario usa Campo 2 senza warning/preferenze automatiche.
-- Timeout ed errore tecnico sono distinti dall infattibilita.
-- Le pagine `index.html`, `admin-rules.html`, `admin-groups.html` risolvono i riferimenti locali.
-- `dist/` e stato rigenerato e validato.
+| Area | Esito | Note |
+| --- | --- | --- |
+| Tabellone web | Automatico + visuale | Browser check: 3 card, 6 righe squadra, 2 turni, `overlaps: []`. |
+| Loghi/fallback | Automatico + statico | Slot stabile e placeholder neutro per squadre non determinate. |
+| PDF tabellone | Build | Pagina panoramica dinamica e card con spazi minimi. |
+| Immagine tabellone | Statico | Canvas panoramico con card piu ampie e placeholder neutro. |
+| Orario minimo esordio | Automatico | La prima partita della squadra non inizia prima dell'orario richiesto. |
+| Posizione esordio | Automatico | La squadra occupa la posizione cronologica richiesta nella giornata 1. |
+| Combinazione incompatibile | Automatico | Preview bloccata e nessuna partita salvata. |
+| Rigenerazione globale | Automatico | Preview lavora su bozza e non persiste partite. |
+| Infattibilita | Automatico | Conflitti strutturati e azioni di modifica/rimozione. |
 
-## Non eseguiti
+## Artefatti visuali
 
-| Suite | Motivo |
-| --- | --- |
-| Browser visuale / E2E reale | Browser integrato bloccato da policy URL su `127.0.0.1:8788`, `localhost` e `file://`; non e stato aggirato. |
-| Test Android/iOS reali | Dispositivi non disponibili nell'ambiente. |
-| Test E2E UI completo | Il flusso e coperto da test store/build, ma l E2E visuale richiede browser locale accessibile; l'ambiente corrente blocca l'apertura del target statico. |
+- Screenshot controllo tabellone: `outputs/bracket-visual-check.png`.
 
-## Comandi consigliati
+## Non eseguiti nell'ambiente
 
-```bash
-npm run test
-npm run test:calendar-share
-npm run build
-```
+- Verifica manuale browser a zoom 200%.
+- Apertura reale del PDF in un viewer esterno.
+- Stampa fisica.
+
+Questi controlli richiedono browser/viewer interattivi esterni.

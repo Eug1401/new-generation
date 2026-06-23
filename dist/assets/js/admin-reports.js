@@ -358,9 +358,9 @@
   // ---------------------------------------------------------------------
   // Preparazione documento base
   // ---------------------------------------------------------------------
-  async function makeDoc(s, orientation, title, subtitle, docKind){
+  async function makeDoc(s, orientation, title, subtitle, docKind, format='a4'){
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation, unit:'mm', format:'a4', compress:true });
+    const doc = new jsPDF({ orientation, unit:'mm', format, compress:true });
     const brandLogo = await dataUrlFromImage(BRAND_LOGO);
     const ctx = {
       brandLogo,
@@ -1040,12 +1040,15 @@
   async function pdfBracket(){
     const s = currentPdfState();
     const logos = await preloadTeamLogos(s);
+    const data = store.bracketData(s);
+    const roundsMax = data.available ? Math.max(1,...(data.brackets||[]).map(b=>(b.rounds||[]).length)) : 1;
+    const matchesMax = data.available ? Math.max(1,...(data.brackets||[]).flatMap(b=>(b.rounds||[]).map(r=>(r.matches||[]).length))) : 1;
+    const bracketFormat = data.available ? [Math.max(297, 42 + roundsMax*72 + Math.max(0,roundsMax-1)*16), Math.max(210, 78 + matchesMax*34)] : 'a4';
     const { doc, ctx } = await makeDoc(s, 'l',
       'Tabellone',
       'Fase finale · eliminazione diretta',
-      'Tabellone');
-
-    const data = store.bracketData(s);
+      'Tabellone',
+      bracketFormat);
     if(!data.available){
       let y = 34;
       y = drawSection(doc, 'Tabellone', 'Non disponibile',
@@ -1059,7 +1062,7 @@
     const brackets = data.brackets || [];
     let firstBracketDone = false;
     brackets.forEach(b => {
-      if(firstBracketDone){ doc.addPage('a4','landscape'); drawHeader(doc, ctx); }
+      if(firstBracketDone){ doc.addPage(bracketFormat,'landscape'); drawHeader(doc, ctx); }
       drawBracketBlock(doc, s, logos, b, ctx);
       firstBracketDone = true;
     });
@@ -1086,9 +1089,9 @@
       return;
     }
 
-    const colGap = 10;
+    const colGap = 14;
     const colW = (W - margin*2 - colGap*Math.max(0, rounds.length-1)) / Math.max(1, rounds.length);
-    const headerH = 9;
+    const headerH = 11;
 
     // Disegno intestazione turni (chip oro)
     rounds.forEach((round, ri) => {
@@ -1108,11 +1111,12 @@
       const usableTop = top + headerH + 4;
       const usableBottom = H - bottom;
       const usableH = usableBottom - usableTop;
-      const cardH = Math.max(22, Math.min(30, (usableH - (count-1)*6) / count));
-      const totalH = count*cardH + (count-1)*6;
+      const gapY = Math.max(8, Math.min(14, (usableH - count*30) / Math.max(1,count+1)));
+      const cardH = Math.max(30, Math.min(42, (usableH - (count-1)*gapY) / count));
+      const totalH = count*cardH + (count-1)*gapY;
       const startY = usableTop + (usableH - totalH)/2;
       matches.forEach((m, mi) => {
-        const cy = startY + mi*(cardH + 6);
+        const cy = startY + mi*(cardH + gapY);
         drawBracketMatchCard(doc, s, logos, m, x, cy, colW, cardH, mi);
         matchSlots.push({ ri, mi, x, y:cy, w:colW, h:cardH, midY: cy + cardH/2 });
       });

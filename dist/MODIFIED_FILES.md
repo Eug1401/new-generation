@@ -21,3 +21,19 @@
 | `CALENDAR_RULES_REFERENCE.md` | Nuova documentazione | Riferimento regole |
 | `ONLINE_RESEARCH_CALENDAR.md` | Nuova documentazione | Ricerca online |
 | `TEST_REPORT.md` | Nuova documentazione | Risultati test |
+# Modifiche prompt tabellone e vincoli esordio
+
+| File | Modifica | Motivazione |
+| --- | --- | --- |
+| `assets/js/store.js` | Aggiunti vincoli `minTime` e `firstRoundPosition`, validazione, report `debutChecks`, scheduling che scarta slot prima dell'orario minimo e riordino prima giornata. | Applicare realmente i due vincoli nel motore autorevole. |
+| `assets/js/admin-rules.js` | Wizard vincoli aggiornato, posizioni dinamiche, preview obsoleta e conferma disabilitata dopo modifiche. | Collegare UI, bozza, preview e conferma atomica. |
+| `assets/js/ui.js` | Righe tabellone con struttura `logo | nome | risultato` e placeholder neutro. | Eliminare collisioni e integrare loghi reali/fallback. |
+| `assets/css/styles.css` | Override layout tabellone e tabella controllo vincoli. | Prevenire sovrapposizioni su web, print e mobile. |
+| `assets/js/admin-reports.js` | PDF tabellone con pagina panoramica dinamica e spazi card aumentati. | Mantenere il tabellone su una pagina leggibile per blocco. |
+| `assets/js/share-images.js` | Export immagine tabellone con card piu grandi e placeholder neutro. | Coerenza tra web, PDF e immagine condivisibile. |
+| `tools/test-calendar-share.mjs` | Test su orario minimo, posizione esordio e combinazione incompatibile. | Verifica automatica dei vincoli reali. |
+| `BRACKET_LAYOUT.md` | Nuova documentazione layout tabellone. | Documentare web, PDF, immagine, loghi e fallback. |
+| `DEBUT_CONSTRAINTS.md` | Nuova documentazione vincoli esordio. | Documentare definizione, dati, conflitti e report. |
+| `CALENDAR_REGENERATION.md` | Nuova documentazione rigenerazione. | Documentare invalidazione, ricalcolo globale e atomicita. |
+| `TEST_REPORT.md` | Report test aggiornato. | Tracciare verifiche eseguite e non eseguite. |
+| `README.md` | Link alla nuova documentazione. | Rendere rintracciabili le nuove guide. |

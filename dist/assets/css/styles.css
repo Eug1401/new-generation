@@ -7964,3 +7964,26 @@ a.article-card-main{cursor:pointer;}
   .calendar-editor-row,.calendar-editor-row.debut,.calendar-editor-row.block,.calendar-preview-grid,.calendar-report-grid{grid-template-columns:1fr}
   .share-preview-stage img{max-width:100%;height:auto}
 }
+/* Bracket layout hardening: stable logo | name | score rows, no text/line overlap. */
+.bracket-block{overflow:visible}
+.bracket-scroll{overflow-x:auto;overflow-y:visible;padding:6px 4px 14px}
+.bracket-grid{align-items:stretch;gap:34px}
+.bracket-round{min-width:clamp(250px,24vw,330px);gap:16px}
+.bracket-round h4{min-height:32px;display:flex;align-items:flex-end;line-height:1.15}
+.bracket-matches{gap:22px;align-content:space-around}
+.bracket-match{min-height:132px;padding:13px 14px 12px;overflow:visible}
+.bracket-match:after{right:-34px;width:34px;top:50%;background:rgba(215,164,45,.42)}
+.bracket-match-head{min-height:28px}
+.bracket-team{display:grid!important;grid-template-columns:38px minmax(0,1fr) 42px;align-items:center;gap:9px;min-height:44px;padding:7px 9px!important;justify-content:normal!important}
+.bracket-team .team-logo-wrap,.bracket-team .team-logo-fallback,.bracket-logo-neutral{width:32px;height:32px;border-radius:10px;flex:0 0 auto}
+.bracket-logo-neutral{display:grid;place-items:center;background:#fff8df;border:1px solid rgba(215,164,45,.42);color:#9a6c12;font-weight:950}
+.bracket-team-name{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:normal!important;text-overflow:clip!important;line-height:1.12;min-width:0}
+.bracket-score-slot{justify-self:end;min-width:34px;text-align:right;font-variant-numeric:tabular-nums;margin-left:0!important}
+.bracket-penalty-row{grid-column:1/-1}
+.bracket-list-teams span{overflow-wrap:anywhere}
+@media(max-width:720px){.bracket-grid{gap:14px}.bracket-round{min-width:230px}.bracket-match:after{display:none}.bracket-team{grid-template-columns:34px minmax(0,1fr) 36px}}
+@media print{.bracket-grid{gap:14px!important}.bracket-round{min-width:170px!important}.bracket-match:after{display:none}.bracket-team{grid-template-columns:24px minmax(0,1fr) 24px!important;min-height:28px!important}.bracket-team .team-logo-wrap,.bracket-team .team-logo-fallback,.bracket-logo-neutral{width:22px!important;height:22px!important}}
+.calendar-debut-checks{margin-top:12px;overflow:auto}
+.calendar-debut-checks h4{margin:0 0 8px;color:var(--gold)}
+.calendar-debut-checks table{min-width:680px}
+.calendar-rule-summary{grid-column:1/-1;margin:0;color:var(--muted);font-weight:750;line-height:1.35}

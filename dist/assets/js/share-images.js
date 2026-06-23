@@ -105,6 +105,7 @@
   async function drawTeamLogo(ctx,state,teamId,label,x,y,size){
     const team=store.getTeam(state,teamId);
     roundRect(ctx,x,y,size,size,16,'#fff',LINE);
+    if(!teamId){ctx.fillStyle=GOLD;ctx.font=`900 ${Math.max(18,size*.42)}px ${FONT}`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('?',x+size/2,y+size/2);return;}
     const img=await loadImage(team?.logo||'');
     if(img)drawContain(ctx,img,x+8,y+8,size-16,size-16);
     else drawInitials(ctx,x+size/2,y+size/2,size-16,label);
@@ -185,7 +186,7 @@
     for(const bracket of data.brackets){
       const rounds=bracket.rounds||[];
       const firstCount=Math.max(1,...rounds.map(r=>(r.matches||[]).length));
-      const roundW=330,gap=120,matchH=116,step=160;
+      const roundW=380,gap=150,matchH=132,step=184;
       const blockW=120+rounds.length*roundW+Math.max(0,rounds.length-1)*gap+120;
       const blockH=Math.max(520,firstCount*step+150);
       width=Math.max(width,blockW);
@@ -250,7 +251,8 @@
     const winner=store.winnerId(state,m)===id&&id;
     roundRect(ctx,x,y,w,h,10,winner?'#fff1bf':'#ffffff','rgba(215,164,45,.25)');
     await drawTeamLogo(ctx,state,id,label,x+6,y+4,24);
-    ctx.fillStyle=INK;ctx.font=`850 ${fitFont(ctx,label,w-78,16,11,'850')}px ${FONT}`;ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(label,x+38,y+h/2,w-78);
+    const nameW=w-104;
+    ctx.fillStyle=INK;ctx.font=`850 ${fitFont(ctx,label,nameW,16,11,'850')}px ${FONT}`;ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(label,x+42,y+h/2,nameW);
     ctx.textAlign='right';ctx.font=`950 18px ${FONT}`;ctx.fillText(String(score||''),x+w-10,y+h/2);
   }
   async function matchImage(state,{matchId,match}={}){

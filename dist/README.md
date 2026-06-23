@@ -164,3 +164,8 @@ Tutti i test eseguibili in CI passano. `npm run test:ui` è stato eseguito stori
 ## Note finali
 
 Il report tecnico completo della revisione UI è in `REPORT_MODIFICHE_UI.md` (allegato nel pacchetto). Quel documento elenca problemi rilevati, soluzioni applicate, file modificati e problemi residui.
+# Aggiornamenti tabellone e vincoli esordio
+
+- `BRACKET_LAYOUT.md` descrive layout tabellone, loghi, fallback, PDF e immagine.
+- `DEBUT_CONSTRAINTS.md` descrive orario minimo e posizione dell'esordio.
+- `CALENDAR_REGENERATION.md` descrive invalidazione anteprima, rigenerazione globale e atomicita.

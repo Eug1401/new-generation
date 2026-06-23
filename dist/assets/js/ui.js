@@ -102,10 +102,20 @@
   function bracketMarkup(state, compact=false){
     const data=store.bracketData(state);
     if(!data.available)return `<div class="empty">${esc(data.message)}</div>`;
+    function neutralLogo(label){
+      return `<span class="bracket-logo-neutral" role="img" aria-label="${esc(label||'Squadra da determinare')}"><span>?</span></span>`;
+    }
     function teamLabel(match,side){
       const id=side==='home'?match.homeTeamId:match.awayTeamId;
       const label=side==='home'?match.homeLabel:match.awayLabel;
-      const t=store.getTeam(state,id);return `${logo(t,false)}<span>${esc(store.teamName(state,id,label||'Da definire'))}</span>`;
+      const t=store.getTeam(state,id);
+      const name=store.teamName(state,id,label||'Da determinare');
+      return `${t?logo(t,false):neutralLogo(name)}<span class="bracket-team-name" title="${esc(name)}">${esc(name)}</span>`;
+    }
+    function teamRow(match,side){
+      const score=store.hasScore(state,match)?store.matchGoals(state,match)[side]:'';
+      const status=store.hasScore(state,match)?String(score):(match.status==='live'?'Live':'');
+      return `<div class="bracket-team ${resultClass(match,side)}">${teamLabel(match,side)}<strong class="bracket-score-slot">${esc(status)}</strong></div>`;
     }
     function teamText(match,side){
       const id=side==='home'?match.homeTeamId:match.awayTeamId;
@@ -148,8 +158,8 @@
                 ${round.matches.map(m=>`
                   <article class="bracket-match bracket-detail-trigger" data-match-detail="${esc(m.id)}" role="button" tabindex="0" aria-label="Apri dettaglio ${teamText(m,'home')} contro ${teamText(m,'away')}">
                     <div class="bracket-match-head"><span class="bracket-meta">${esc(m.round)}</span><span class="bracket-open-hint">Dettaglio</span></div>
-                    <div class="bracket-team ${resultClass(m,'home')}">${teamLabel(m,'home')}<strong>${store.hasScore(state,m)?store.matchGoals(state,m).home:''}</strong></div>
-                    <div class="bracket-team ${resultClass(m,'away')}">${teamLabel(m,'away')}<strong>${store.hasScore(state,m)?store.matchGoals(state,m).away:''}</strong></div>
+                    ${teamRow(m,'home')}
+                    ${teamRow(m,'away')}
                     ${penaltyBadge(m)}
                     <small>${esc(m.field||'Campo da definire')} · ${esc(fmtDate(m))}</small>
                   </article>`).join('')}
