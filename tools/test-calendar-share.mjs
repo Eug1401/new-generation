@@ -121,6 +121,42 @@ const shareSource=fs.readFileSync(path.join(root,'assets/js/share-images.js'),'u
 assert.match(shareSource,/window\.NGShareImages/,'modulo immagini pubblico esposto');
 assert.match(shareSource,/navigator\.share/,'condivisione nativa tramite Web Share API presente');
 assert.match(shareSource,/canvas\.toBlob/,'export immagine PNG tramite canvas presente');
+vm.runInContext(shareSource,context,{filename:'assets/js/share-images.js'});
+const layoutBuilder=context.NGShareImages?.__test?.buildBracketLayout;
+assert.equal(typeof layoutBuilder,'function','helper geometrico del tabellone esposto per i test');
+const headerColumns=context.NGShareImages?.__test?.headerColumns;
+assert.equal(typeof headerColumns,'function','helper delle colonne intestazione esposto per i test');
+for(const width of [1080,1920,2400]){
+  const columns=headerColumns(width);
+  assert.ok(columns.leftX+columns.leftW+columns.gap<=columns.rightStart+1,`intestazione sovrapposta a ${width}px`);
+  assert.ok(columns.leftW>=260&&columns.rightW>=300,`colonne intestazione troppo strette a ${width}px`);
+}
+const generatedBracket=store.bracketData(s);
+const layout=layoutBuilder(generatedBracket);
+assert.ok(layout.blocks.length>0,'il layout deve contenere almeno un blocco tabellone');
+assert.ok(layout.blocks[0].y>layout.geometry.headerBottom,'il primo blocco non deve sovrapporsi all intestazione');
+for(let bi=0;bi<layout.blocks.length;bi++){
+  const block=layout.blocks[bi];
+  const cardsStart=block.y+layout.geometry.blockTitleHeight+layout.geometry.roundTitleHeight+layout.geometry.titleToCardsGap;
+  const all=block.positions.flat();
+  assert.equal(all.length,block.rounds.reduce((sum,round)=>sum+round.matches.length,0),'ogni partita deve avere una sola posizione');
+  for(const round of block.positions){
+    for(let i=0;i<round.length;i++){
+      const pos=round[i];
+      assert.ok(pos.x>=layout.geometry.sidePadding,'card fuori dal margine sinistro');
+      assert.ok(pos.x+layout.geometry.roundWidth<=layout.width-layout.geometry.sidePadding,'card fuori dal margine destro');
+      assert.ok(pos.cy-layout.geometry.matchHeight/2>=cardsStart,'card sovrapposta ai titoli del turno');
+      assert.ok(pos.cy+layout.geometry.matchHeight/2<=block.y+block.blockHeight-layout.geometry.blockBottomPadding+1,'card oltre il blocco assegnato');
+      if(i>0)assert.ok(pos.cy-round[i-1].cy>=layout.geometry.matchHeight+28,'card dello stesso turno sovrapposte');
+    }
+  }
+  if(bi>0)assert.ok(block.y>=layout.blocks[bi-1].y+layout.blocks[bi-1].blockHeight+layout.geometry.blockGap,'blocchi tabellone sovrapposti');
+}
+const malformedLayout=layoutBuilder({brackets:[{name:'Indici duplicati',rounds:[
+  {name:'Semifinali',matches:[{id:'m1',bracketMatchIndex:0},{id:'m2',bracketMatchIndex:0}]},
+  {name:'Finale',matches:[{id:'m3',bracketMatchIndex:0}]}
+]}]});
+assert.equal(malformedLayout.blocks[0].positions.flat().length,3,'gli indici mancanti o duplicati non devono far collassare le card');
 
 const simulationSource=fs.readFileSync(path.join(root,'assets/js/admin-simulation.js'),'utf8');
 assert.match(simulationSource,/const FORMATS=\['groups_knockout','league_knockout'\]/,'la simulazione espone solo i due formati ammessi');
@@ -137,4 +173,4 @@ assert.match(adminRulesSource,/data-calendar-confirm-simplify/,'azione UI per co
 assert.ok(adminRulesSource.includes('localStorage.setItem(DRAFT_KEY'),'salvataggio bozza in localStorage presente');
 assert.ok(adminRulesSource.includes('localStorage.removeItem(DRAFT_KEY'),'eliminazione bozza in localStorage presente');
 
-console.log(JSON.stringify({ok:true,manualPreview:true,noAutoRepair:true,firstRoundLock:true,shareModuleStatic:true,simulationFormats:true,draftPersistence:true,infeasibleFlow:true,simplifiedPreview:true,hardConflictBlocked:true,debutMinTime:true,debutPosition:true,debutConflict:true,fieldEquality:true,technicalStates:true},null,2));
+console.log(JSON.stringify({ok:true,manualPreview:true,noAutoRepair:true,firstRoundLock:true,shareModuleStatic:true,bracketImageLayout:true,simulationFormats:true,draftPersistence:true,infeasibleFlow:true,simplifiedPreview:true,hardConflictBlocked:true,debutMinTime:true,debutPosition:true,debutConflict:true,fieldEquality:true,technicalStates:true},null,2));

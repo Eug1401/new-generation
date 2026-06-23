@@ -429,6 +429,12 @@ async function testTeamLogoRendering(){
   await client.send('Network.setCacheDisabled',{cacheDisabled:false});
 
   await click('[data-tab="teams"]');await inspect('pubblico card squadre e roster');
+  await click('[data-favorite-team="team_a"]');await delay(80);
+  const favoriteAdded=await evaluate(`(()=>{const logo=document.querySelector('.team-disclosure[data-team-id="team_a"] .team-logo-wrap[data-team-id="team_a"]');const card=document.querySelector('.team-disclosure[data-team-id="team_a"]');const button=document.querySelector('[data-favorite-team="team_a"]');return {logoVisible:!!logo&&getComputedStyle(logo).backgroundImage!=='none',logoHighlighted:!!logo?.classList.contains('is-favorite-team'),cardHighlighted:!!card?.classList.contains('is-favorite-team'),buttonActive:!!button?.classList.contains('active'),pressed:button?.getAttribute('aria-pressed')||''};})()`);
+  if(!favoriteAdded.logoVisible||favoriteAdded.logoHighlighted||!favoriteAdded.cardHighlighted||!favoriteAdded.buttonActive||favoriteAdded.pressed!=='true')failures.push('aggiunta preferito altera lo stemma o non aggiorna correttamente la card: '+JSON.stringify(favoriteAdded));
+  await click('[data-favorite-team="team_a"]');await delay(80);
+  const favoriteRemoved=await evaluate(`(()=>{const logo=document.querySelector('.team-disclosure[data-team-id="team_a"] .team-logo-wrap[data-team-id="team_a"]');const card=document.querySelector('.team-disclosure[data-team-id="team_a"]');const button=document.querySelector('[data-favorite-team="team_a"]');return {logoVisible:!!logo&&getComputedStyle(logo).backgroundImage!=='none',logoHighlighted:!!logo?.classList.contains('is-favorite-team'),cardHighlighted:!!card?.classList.contains('is-favorite-team'),buttonActive:!!button?.classList.contains('active'),pressed:button?.getAttribute('aria-pressed')||''};})()`);
+  if(!favoriteRemoved.logoVisible||favoriteRemoved.logoHighlighted||favoriteRemoved.cardHighlighted||favoriteRemoved.buttonActive||favoriteRemoved.pressed!=='false')failures.push('rimozione preferito altera lo stemma o lascia associazioni stale: '+JSON.stringify(favoriteRemoved));
   await click('[data-team-detail="team_a"]');await inspect('pubblico dettaglio squadra e modale');await pressKey('Escape');
   await click('[data-tab="matches"]');await inspect('pubblico card partite e calendario');
   await click('[data-match-detail="match_1"]');await inspect('pubblico dettaglio partita e modale');await pressKey('Escape');
@@ -812,11 +818,14 @@ async function run(){
   await launchBrowser();
   const articlesOnly=process.argv.includes('--articles-only');
   const acceptanceOnly=process.argv.includes('--acceptance-only');
+  const logosOnly=process.argv.includes('--logos-only');
   try{
     if(acceptanceOnly){
       await testArticleAndPhotoAcceptance();
     }else if(articlesOnly){
       await testArticlesEndToEnd();
+    }else if(logosOnly){
+      await testTeamLogoRendering();
     }else{
       await testPageLoads();
       await testResponsive();
@@ -836,7 +845,7 @@ async function run(){
     if(server)await new Promise(resolve=>server.close(resolve));
     try{if(fixtureRoot)fs.rmSync(fixtureRoot,{recursive:true,force:true});}catch{}
   }
-  console.log(JSON.stringify({root,pages:pages.length,widths,mode:acceptanceOnly?'acceptance':(articlesOnly?'articles':'ui'),results,runtimeErrors,localNetworkErrors},null,2));
+  console.log(JSON.stringify({root,pages:pages.length,widths,mode:acceptanceOnly?'acceptance':(articlesOnly?'articles':(logosOnly?'logos':'ui')),results,runtimeErrors,localNetworkErrors},null,2));
   if(results.some(r=>r.result==='FAIL'))process.exitCode=1;
 }
 run().catch(error=>{console.error(error.stack||error);try{browser?.kill('SIGTERM');}catch{}try{server?.close();}catch{}process.exit(1);});
