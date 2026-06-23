@@ -1238,7 +1238,7 @@ body.modal-open{overflow:hidden;}
 .favorite-team-grid small{color:var(--muted);font-weight:800;}
 .favorite-team-btn.active{background:linear-gradient(135deg,#fff176,#d7a42d);color:#171006;border-color:transparent;box-shadow:0 0 0 3px rgba(255,224,112,.12);}
 .favorite-team-btn{white-space:nowrap;}
-.is-favorite-team{box-shadow:inset 4px 0 0 rgba(255,224,112,.95),0 0 0 1px rgba(255,224,112,.24)!important;background:linear-gradient(90deg,rgba(255,224,112,.12),rgba(255,255,255,.02))!important;}
+.is-favorite-team:not(.team-logo-wrap){box-shadow:inset 4px 0 0 rgba(255,224,112,.95),0 0 0 1px rgba(255,224,112,.24)!important;background:linear-gradient(90deg,rgba(255,224,112,.12),rgba(255,255,255,.02))!important;}
 tr.is-favorite-team td:first-child{position:relative;}
 tr.is-favorite-team td:first-child:before{content:'★';position:absolute;left:5px;top:50%;transform:translateY(-50%);color:#ffe070;font-size:.8rem;}
 .is-favorite-match{outline:2px solid rgba(255,224,112,.45);box-shadow:0 0 0 5px rgba(255,224,112,.08)!important;}

@@ -134,7 +134,12 @@
   function loadFavoriteTeamId(){try{return localStorage.getItem(FAVORITE_TEAM_KEY)||'';}catch(_){return '';}}
   function persistFavoriteTeamId(){try{favoriteTeamId?localStorage.setItem(FAVORITE_TEAM_KEY,favoriteTeamId):localStorage.removeItem(FAVORITE_TEAM_KEY);}catch(_){}}
   function sanitizeFavoriteTeam(){if(favoriteTeamId&&!store.getTeam(state,favoriteTeamId)){favoriteTeamId='';persistFavoriteTeamId();}}
-  function setFavoriteTeam(teamId){favoriteTeamId=teamId||'';persistFavoriteTeamId();render();}
+  function setFavoriteTeam(teamId){
+    const team=teamId?store.getTeam(state,teamId):null;
+    favoriteTeamId=team?.id||'';
+    persistFavoriteTeamId();
+    render();
+  }
   function clearFavoriteTeam(){favoriteTeamId='';persistFavoriteTeamId();render();}
   function isFavoriteTeam(teamId){return !!favoriteTeamId&&teamId===favoriteTeamId;}
   function favoriteButton(teamId,label='Segui squadra'){
@@ -267,8 +272,20 @@
   function decorateFavoriteUI(){
     sanitizeFavoriteTeam();
     document.querySelectorAll('.is-favorite-team,.is-favorite-match').forEach(el=>el.classList.remove('is-favorite-team','is-favorite-match'));
+    document.querySelectorAll('[data-favorite-team]').forEach(button=>{
+      const active=isFavoriteTeam(button.dataset.favoriteTeam||'');
+      button.classList.toggle('active',active);
+      button.setAttribute('aria-pressed',active?'true':'false');
+      button.textContent=active?'★ Preferita':'☆ Segui';
+    });
     if(!favoriteTeamId)return;
-    document.querySelectorAll(`[data-team-detail="${CSS.escape(favoriteTeamId)}"], [data-team-id="${CSS.escape(favoriteTeamId)}"]`).forEach(el=>el.classList.add('is-favorite-team'));
+    const id=CSS.escape(favoriteTeamId);
+    const favoriteContainers=[
+      `.team-disclosure[data-team-id="${id}"]`,
+      `.search-team-result[data-team-id="${id}"]`,
+      `tr.standings-team-row[data-team-id="${id}"]`
+    ].join(',');
+    document.querySelectorAll(favoriteContainers).forEach(el=>el.classList.add('is-favorite-team'));
     document.querySelectorAll('[data-match-detail]').forEach(el=>{const m=state.matches.find(x=>x.id===el.dataset.matchDetail);if(m&&(m.homeTeamId===favoriteTeamId||m.awayTeamId===favoriteTeamId))el.classList.add('is-favorite-match');});
   }
   function renderHome(){

@@ -70,6 +70,14 @@
     do{ctx.font=`${weight} ${size}px ${FONT}`;if(ctx.measureText(String(text||'')).width<=maxWidth||size<=min)break;size-=2;}while(size>min);
     return size;
   }
+  function headerColumns(width){
+    const leftX=166,rightX=width-54;
+    const rightW=Math.max(300,Math.min(620,width*.34));
+    const rightStart=rightX-rightW;
+    const gap=44;
+    const leftW=Math.max(260,rightStart-leftX-gap);
+    return {leftX,leftW,rightX,rightW,rightStart,gap};
+  }
   function drawHeader(ctx,state,title,subtitle,width){
     ctx.fillStyle=PAPER;ctx.fillRect(0,0,width,190);
     ctx.fillStyle='rgba(215,164,45,.16)';ctx.fillRect(0,0,width,12);
@@ -77,11 +85,14 @@
     return loadImage(state?.site?.logo||BRAND_LOGO).then(img=>{
       if(img)drawContain(ctx,img,62,54,68,68);
       else drawInitials(ctx,96,88,56,'NG');
-      ctx.fillStyle=GOLD;ctx.font=`900 22px ${FONT}`;ctx.textAlign='left';ctx.fillText('NEW GENERATION',166,64);
-      ctx.fillStyle=INK;ctx.font=`900 40px ${FONT}`;ctx.fillText(siteTitle(state),166,106,width-420);
-      ctx.fillStyle=MUTED;ctx.font=`700 20px ${FONT}`;ctx.fillText(subtitle||phaseLabel(state),166,140,width-420);
-      ctx.textAlign='right';ctx.fillStyle=INK;ctx.font=`900 38px ${FONT}`;ctx.fillText(title,width-54,82,width*.44);
-      ctx.fillStyle=MUTED;ctx.font=`700 18px ${FONT}`;ctx.fillText('Generata '+nowLabel(),width-54,118,width*.38);
+      const {leftX,leftW,rightX,rightW}=headerColumns(width);
+      const tournament=siteTitle(state),sub=subtitle||phaseLabel(state),exportTitle=String(title||'');
+      ctx.textBaseline='alphabetic';ctx.textAlign='left';
+      ctx.fillStyle=GOLD;ctx.font=`900 22px ${FONT}`;ctx.fillText('NEW GENERATION',leftX,64,leftW);
+      ctx.fillStyle=INK;ctx.font=`900 ${fitFont(ctx,tournament,leftW,40,24,'900')}px ${FONT}`;ctx.fillText(tournament,leftX,106,leftW);
+      ctx.fillStyle=MUTED;ctx.font=`700 ${fitFont(ctx,sub,leftW,20,14,'700')}px ${FONT}`;ctx.fillText(sub,leftX,140,leftW);
+      ctx.textAlign='right';ctx.fillStyle=INK;ctx.font=`900 ${fitFont(ctx,exportTitle,rightW,38,24,'900')}px ${FONT}`;ctx.fillText(exportTitle,rightX,82,rightW);
+      ctx.fillStyle=MUTED;ctx.font=`700 18px ${FONT}`;ctx.fillText('Generata '+nowLabel(),rightX,118,rightW);
       ctx.strokeStyle=GOLD;ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(50,178);ctx.lineTo(width-50,178);ctx.stroke();
     });
   }
@@ -178,65 +189,119 @@
     }
     return false;
   }
+  const BRACKET_GEOMETRY={
+    minWidth:1920,
+    headerBottom:190,
+    firstBlockTop:242,
+    sidePadding:72,
+    roundWidth:380,
+    roundGap:150,
+    matchHeight:132,
+    matchStep:184,
+    blockTitleHeight:48,
+    roundTitleHeight:38,
+    titleToCardsGap:26,
+    blockBottomPadding:54,
+    blockGap:88,
+    footerSpace:126
+  };
+  function orderedRoundMatches(round){
+    return [...(round?.matches||[])].sort((a,b)=>{
+      const ai=Number(a?.bracketMatchIndex),bi=Number(b?.bracketMatchIndex);
+      const aValid=Number.isFinite(ai)&&ai>0,bValid=Number.isFinite(bi)&&bi>0;
+      if(aValid&&bValid&&ai!==bi)return ai-bi;
+      if(aValid!==bValid)return aValid?-1:1;
+      return String(a?.id||'').localeCompare(String(b?.id||''));
+    });
+  }
+  function previousMatchRange(previousCount,currentCount,index){
+    if(previousCount<=0||currentCount<=0)return {start:0,end:-1};
+    const start=Math.ceil(index*previousCount/currentCount);
+    const end=Math.max(start,Math.ceil((index+1)*previousCount/currentCount)-1);
+    return {start:Math.min(previousCount-1,start),end:Math.min(previousCount-1,end)};
+  }
+  function buildBracketLayout(data){
+    const g=BRACKET_GEOMETRY;
+    const blocks=[];
+    let width=g.minWidth,y=g.firstBlockTop;
+    for(const bracket of data.brackets||[]){
+      const rounds=(bracket.rounds||[]).map(round=>({...round,matches:orderedRoundMatches(round)}));
+      const firstCount=Math.max(1,...rounds.map(round=>round.matches.length));
+      const contentWidth=Math.max(g.roundWidth,rounds.length*g.roundWidth+Math.max(0,rounds.length-1)*g.roundGap);
+      const cardsTop=y+g.blockTitleHeight+g.roundTitleHeight+g.titleToCardsGap;
+      const blockHeight=g.blockTitleHeight+g.roundTitleHeight+g.titleToCardsGap+g.matchHeight+Math.max(0,firstCount-1)*g.matchStep+g.blockBottomPadding;
+      const block={bracket:{...bracket,rounds},rounds,y,cardsTop,contentWidth,blockHeight,positions:[]};
+      rounds.forEach((round,roundIndex)=>{
+        const x=roundIndex*(g.roundWidth+g.roundGap);
+        const centers=[];
+        round.matches.forEach((match,matchIndex)=>{
+          let center;
+          if(roundIndex===0){
+            center=cardsTop+g.matchHeight/2+matchIndex*g.matchStep;
+          }else{
+            const previous=block.positions[roundIndex-1]||[];
+            const range=previousMatchRange(previous.length,round.matches.length,matchIndex);
+            const linked=previous.slice(range.start,range.end+1);
+            center=linked.length
+              ? linked.reduce((sum,item)=>sum+item.cy,0)/linked.length
+              : cardsTop+g.matchHeight/2+matchIndex*g.matchStep;
+            const prior=centers[centers.length-1];
+            if(Number.isFinite(prior))center=Math.max(center,prior+g.matchHeight+28);
+          }
+          centers.push(center);
+          block.positions[roundIndex] ||= [];
+          block.positions[roundIndex].push({match,matchIndex,roundIndex,x,cy:center});
+        });
+      });
+      blocks.push(block);
+      width=Math.max(width,contentWidth+g.sidePadding*2);
+      y+=blockHeight+g.blockGap;
+    }
+    const height=Math.max(1080,y-g.blockGap+g.footerSpace);
+    for(const block of blocks){
+      block.x0=Math.round((width-block.contentWidth)/2);
+      block.positions.forEach(round=>round.forEach(pos=>{pos.x=block.x0+pos.x;}));
+    }
+    return {width,height,blocks,geometry:g};
+  }
   async function bracketImage(state){
     const data=store.bracketData(state);
     if(!data.available)throw new Error(data.message||'Tabellone non disponibile.');
-    const blocks=[];
-    let width=1920,totalHeight=170;
-    for(const bracket of data.brackets){
-      const rounds=bracket.rounds||[];
-      const firstCount=Math.max(1,...rounds.map(r=>(r.matches||[]).length));
-      const roundW=380,gap=150,matchH=132,step=184;
-      const blockW=120+rounds.length*roundW+Math.max(0,rounds.length-1)*gap+120;
-      const blockH=Math.max(520,firstCount*step+150);
-      width=Math.max(width,blockW);
-      blocks.push({bracket,roundW,gap,matchH,step,blockW,blockH,y:totalHeight});
-      totalHeight+=blockH+80;
-    }
-    const height=Math.max(1080,totalHeight+110);
+    const layout=buildBracketLayout(data);
+    const {width,height,blocks}=layout;
     const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;const ctx=canvas.getContext('2d');
     ctx.fillStyle=PAPER;ctx.fillRect(0,0,width,height);
     await drawHeader(ctx,state,'Tabellone',phaseLabel(state),width);
-    for(const block of blocks)await drawBracketBlock(ctx,state,block,width);
+    for(const block of blocks)await drawBracketBlock(ctx,state,block,width,layout.geometry);
     drawFooter(ctx,width,height,'Tabellone completo esportato come immagine panoramica');
     const blob=await canvasBlob(canvas);
     return {blob,width,height,title:'Tabellone',fileName:`tabellone-${safeName(siteTitle(state))}.png`,text:'Tabellone · '+siteTitle(state)};
   }
-  async function drawBracketBlock(ctx,state,block,width){
-    const {bracket,roundW,gap,matchH,step,y}=block;
-    const x0=60;
-    ctx.fillStyle=INK;ctx.font=`950 34px ${FONT}`;ctx.textAlign='left';ctx.fillText(bracket.name,x0,y+20,width-120);
-    const positions=new Map();
-    const rounds=bracket.rounds||[];
-    rounds.forEach((round,ri)=>{
-      const x=x0+ri*(roundW+gap);
-      ctx.fillStyle=GOLD;ctx.font=`900 22px ${FONT}`;ctx.fillText(round.name,x,y+64,roundW);
-      (round.matches||[]).forEach((m,mi)=>{
-        let cy;
-        if(ri===0)cy=y+120+mi*step;
-        else{
-          const p1=positions.get(`${m.bracketRoundIndex-1}:${(m.bracketMatchIndex-1)*2+1}`);
-          const p2=positions.get(`${m.bracketRoundIndex-1}:${(m.bracketMatchIndex-1)*2+2}`);
-          cy=p1&&p2?(p1.cy+p2.cy)/2:y+120+mi*step*Math.pow(2,ri);
-        }
-        positions.set(`${m.bracketRoundIndex}:${m.bracketMatchIndex}`,{x,cy});
-      });
+  async function drawBracketBlock(ctx,state,block,width,g){
+    const {bracket,rounds,y,x0,positions}=block;
+    ctx.fillStyle=INK;ctx.font=`950 34px ${FONT}`;ctx.textAlign='left';ctx.textBaseline='top';ctx.fillText(bracket.name,x0,y,width-x0-g.sidePadding);
+    rounds.forEach((round,roundIndex)=>{
+      const x=x0+roundIndex*(g.roundWidth+g.roundGap);
+      ctx.fillStyle=GOLD;ctx.font=`900 22px ${FONT}`;ctx.textAlign='center';ctx.textBaseline='top';ctx.fillText(round.name,x+g.roundWidth/2,y+g.blockTitleHeight,g.roundWidth);
     });
-    for(const round of rounds){
-      for(const m of round.matches||[]){
-        const pos=positions.get(`${m.bracketRoundIndex}:${m.bracketMatchIndex}`);
-        if(!pos||m.bracketRoundIndex>=rounds.length)continue;
-        const next=positions.get(`${m.bracketRoundIndex+1}:${Math.ceil(m.bracketMatchIndex/2)}`);
-        if(!next)continue;
-        const sx=pos.x+roundW, sy=pos.cy, mx=sx+gap/2, ex=next.x, ey=next.cy;
-        ctx.strokeStyle='rgba(215,164,45,.62)';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(mx,sy);ctx.lineTo(mx,ey);ctx.lineTo(ex,ey);ctx.stroke();
+    for(let roundIndex=0;roundIndex<positions.length-1;roundIndex++){
+      const current=positions[roundIndex]||[],nextRound=positions[roundIndex+1]||[];
+      current.forEach((pos,index)=>{
+        const nextIndex=Math.min(nextRound.length-1,Math.floor(index*Math.max(1,nextRound.length)/Math.max(1,current.length)));
+        const next=nextRound[nextIndex];
+        if(!next)return;
+        const sx=pos.x+g.roundWidth,sy=pos.cy,mx=sx+g.roundGap/2,ex=next.x,ey=next.cy;
+        ctx.strokeStyle='rgba(215,164,45,.62)';ctx.lineWidth=4;ctx.lineJoin='round';ctx.lineCap='round';ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(mx,sy);ctx.lineTo(mx,ey);ctx.lineTo(ex,ey);ctx.stroke();
+      });
+    }
+    for(const roundPositions of positions){
+      for(const pos of roundPositions){
+        await drawBracketMatch(ctx,state,pos.match,pos.x,pos.cy-g.matchHeight/2,g.roundWidth,g.matchHeight);
       }
     }
-    for(const round of rounds){
-      for(const m of round.matches||[]){
-        const pos=positions.get(`${m.bracketRoundIndex}:${m.bracketMatchIndex}`);
-        await drawBracketMatch(ctx,state,m,pos.x,pos.cy-matchH/2,roundW,matchH);
-      }
+    const separatorY=y+block.blockHeight+g.blockGap/2;
+    if(separatorY<ctx.canvas.height-g.footerSpace){
+      ctx.strokeStyle='rgba(215,164,45,.22)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(g.sidePadding,separatorY);ctx.lineTo(width-g.sidePadding,separatorY);ctx.stroke();
     }
   }
   async function drawBracketMatch(ctx,state,m,x,y,w,h){
@@ -253,7 +318,7 @@
     await drawTeamLogo(ctx,state,id,label,x+6,y+4,24);
     const nameW=w-104;
     ctx.fillStyle=INK;ctx.font=`850 ${fitFont(ctx,label,nameW,16,11,'850')}px ${FONT}`;ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(label,x+42,y+h/2,nameW);
-    ctx.textAlign='right';ctx.font=`950 18px ${FONT}`;ctx.fillText(String(score||''),x+w-10,y+h/2);
+    ctx.textAlign='right';ctx.font=`950 18px ${FONT}`;ctx.fillText(score===''?'':String(score),x+w-10,y+h/2);
   }
   async function matchImage(state,{matchId,match}={}){
     const m=match||state.matches.find(x=>x.id===matchId);
@@ -374,5 +439,5 @@
     try{const result=await generate(kind,state,payload);await openPreview(result,button);return result;}
     finally{if(button){button.disabled=false;button.textContent=button.dataset.originalLabel||'Esporta e condividi';delete button.dataset.originalLabel;}}
   }
-  window.NGShareImages={generate,generateAndPreview,openPreview,closePreview,shareCurrent,downloadCurrent};
+  window.NGShareImages={generate,generateAndPreview,openPreview,closePreview,shareCurrent,downloadCurrent,__test:{buildBracketLayout,headerColumns}};
 })();
