@@ -1,0 +1,94 @@
+
+> new-generation-tournament@1.26.17 test:photos
+> node tools/test-photo-system.mjs
+
+[Foto] {
+  scope: 'team-photos',
+  event: 'request-ok',
+  method: 'GET',
+  phase: 'gallery-read',
+  status: 200,
+  durationMs: 2
+}
+[photos] PASS · GET pubblico usa apikey gateway senza Authorization utente
+[Foto] {
+  scope: 'team-photos',
+  event: 'request-ok',
+  method: 'POST',
+  phase: 'upload',
+  status: 201,
+  durationMs: 0
+}
+[photos] PASS · upload multipart usa access token sessione e boundary del browser
+[photos] PASS · chiave pubblicabile non viene usata al posto della sessione
+[photos] PASS · errore di rete/CORS classificato senza Failed to fetch grezzo
+[Foto] {
+  scope: 'team-photos',
+  event: 'request-ok',
+  method: 'GET',
+  phase: 'health',
+  status: 200,
+  durationMs: 0
+}
+[photos] PASS · health check distingue configurazione backend senza esporre segreti
+[photos] PASS · validazione rifiuta formato e firma binaria incoerenti
+[photos] PASS · JPEG, PNG e WebP validi superano firma e decodifica
+[photos] PASS · limiti per file e batch vengono applicati prima della rete
+[photos] PASS · interruzione upload produce errore recuperabile distinto
+[photos] PASS · download singolo e ZIP passano dalla Edge Function Foto
+[photos] PASS · backend Foto separato da endpoint e modelli Articoli
+[photos] PASS · UI upload dichiara limiti e soli JPEG/PNG/WebP
+{
+  "root": "/mnt/data/article_ui_review/new-generation-main",
+  "tests": 12,
+  "results": [
+    {
+      "name": "GET pubblico usa apikey gateway senza Authorization utente",
+      "result": "PASS"
+    },
+    {
+      "name": "upload multipart usa access token sessione e boundary del browser",
+      "result": "PASS"
+    },
+    {
+      "name": "chiave pubblicabile non viene usata al posto della sessione",
+      "result": "PASS"
+    },
+    {
+      "name": "errore di rete/CORS classificato senza Failed to fetch grezzo",
+      "result": "PASS"
+    },
+    {
+      "name": "health check distingue configurazione backend senza esporre segreti",
+      "result": "PASS"
+    },
+    {
+      "name": "validazione rifiuta formato e firma binaria incoerenti",
+      "result": "PASS"
+    },
+    {
+      "name": "JPEG, PNG e WebP validi superano firma e decodifica",
+      "result": "PASS"
+    },
+    {
+      "name": "limiti per file e batch vengono applicati prima della rete",
+      "result": "PASS"
+    },
+    {
+      "name": "interruzione upload produce errore recuperabile distinto",
+      "result": "PASS"
+    },
+    {
+      "name": "download singolo e ZIP passano dalla Edge Function Foto",
+      "result": "PASS"
+    },
+    {
+      "name": "backend Foto separato da endpoint e modelli Articoli",
+      "result": "PASS"
+    },
+    {
+      "name": "UI upload dichiara limiti e soli JPEG/PNG/WebP",
+      "result": "PASS"
+    }
+  ]
+}

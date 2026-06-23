@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#070b12"><meta name="color-scheme" content="dark"><link rel="preconnect" href="https://mcksxqtgibkazxnkdfra.supabase.co" crossorigin><link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin><link rel="dns-prefetch" href="https://mcksxqtgibkazxnkdfra.supabase.co"><link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
   <title>New Generation · Regole</title>
-  <link rel="stylesheet" href="assets/css/styles.css?v=v125-ui-stable">
+  <link rel="stylesheet" href="assets/css/styles.css?v=v128-infeasible-calendar">
 </head>
 <body><a class="skip-link" href="#main-content">Vai al contenuto principale</a>
 <div class="shell">
   <header class="site-header">
-    <div class="brand"><div data-brand-logo><div class="logo"><span></span></div></div><div><h1 data-brand-title>New Generation · Regole</h1><p data-brand-subtitle>Formato torneo, fasi, campi e generazione automatica.</p></div></div>
+    <div class="brand"><div data-brand-logo><div class="logo"><span></span></div></div><div><h1 data-brand-title>New Generation · Regole</h1><p data-brand-subtitle>Formato torneo, fasi, campi e generazione manuale del calendario.</p></div></div>
     <div class="actions"><button class="btn primary" id="simulateTournamentBtn" type="button">Simula</button><button class="btn danger" id="resetAllBtn" type="button">Reset</button></div>
   </header>
   <nav class="admin-nav" aria-label="Navigazione amministrazione"><a href="admin.html">Dashboard</a><a href="admin-rules.html" class="active">Regole & calendario</a><a href="admin-groups.html">Gironi</a><a href="admin-teams.html">Squadre</a><a href="admin-players.html">Giocatori</a><a href="admin-matches.html">Partite & referti</a><a href="admin-articles.html">Articoli</a><a href="admin-photos.html" class="">Foto</a><a href="admin-reports.html">Report & PDF</a></nav>
@@ -19,7 +19,7 @@
         <h2>Regole torneo</h2>
         <form id="rulesForm" class="form-grid">
           <div><label>Nome torneo</label><input name="name" id="ruleName" required></div>
-          <div><label>Formato</label><select name="format" id="ruleFormat"><option value="league">Campionato all'italiana</option><option value="knockout">Eliminazione diretta</option><option value="groups_knockout">Gironi + eliminazione diretta</option><option value="league_knockout">Campionato + eliminazione diretta</option></select></div>
+          <div><label>Formato</label><select name="format" id="ruleFormat"><option value="groups_knockout">Gironi + eliminazione diretta</option><option value="league_knockout">Classifica unica + eliminazione diretta</option></select></div>
           <div id="formatHint" class="field-full"></div>
           <div class="field-full"><label><input type="checkbox" name="isKingsLeague" id="isKingsLeague" style="width:auto"> Modalità Kings League</label><p class="muted">Se attiva, nel referto partita ogni gol può valere 1 oppure 2. Il risultato e la classifica usano il peso selezionato.</p></div>
 
@@ -59,15 +59,15 @@
               </div>
             </div>
           </div>
-          <div class="field-full split-actions"><button class="btn primary" type="submit">Salva regole</button><button class="btn" id="generateCalendarBtn" type="button">Genera calendario automatico</button><button class="btn" id="generateAlternativeCalendarBtn" type="button">Genera calendario alternativo</button></div>
+          <div class="field-full split-actions"><button class="btn primary" type="submit">Salva regole</button><button class="btn" id="generateCalendarBtn" type="button">Configura e genera calendario</button><button class="btn" id="generateAlternativeCalendarBtn" type="button">Configura variante calendario</button></div>
         </form>
         <div id="rulesMessage" class="margin-top"></div>
       </article>
-      <article class="card pad span-5"><h2>Riepilogo</h2><div id="tournamentSummary"></div><div id="generationPreview" class="margin-top"></div><div id="calendarAdvisor" class="margin-top"></div><div class="help-box margin-top">Per i gironi puoi personalizzare dimensione e qualificate. Le assegnazioni manuali sono nella nuova pagina <a href="admin-groups.html">Gironi</a>. Per tornei giornalieri l’ora fine viene calcolata dall’app in base a partite, campi, durata e pause.</div></article>
+      <article class="card pad span-5"><h2>Riepilogo</h2><div id="tournamentSummary"></div><div id="generationPreview" class="margin-top"></div><div id="calendarAdvisor" class="margin-top"></div><div class="help-box margin-top">Salvare le regole non crea partite. Per i gironi puoi personalizzare dimensione e qualificate; le assegnazioni manuali sono nella pagina <a href="admin-groups.html">Gironi</a>. Il calendario viene salvato solo dopo anteprima e conferma nel wizard.</div></article>
       <article class="card pad span-12"><h2>Calendario generato</h2><div id="generatedCalendar" class="stack"></div></article>
     </div>
   </main>
 </div>
-<script defer src="assets/js/store.js?v=v125-ui-stable"></script><script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script defer src="assets/js/supabase-config.js?v=v125-ui-stable"></script><script defer src="assets/js/supabase-sync.js?v=v125-ui-stable"></script><script defer src="assets/js/ui.js?v=v125-ui-stable"></script><script defer src="assets/js/ux-a11y.js?v=v125-ui-stable"></script><script defer src="assets/js/admin-common.js?v=v126-15-common"></script><script defer src="assets/js/admin-simulation.js?v=v126-15-wizard"></script><script defer src="assets/js/admin-rules.js?v=v125-ui-stable"></script>
+<script defer src="assets/js/store.js?v=v128-infeasible-calendar"></script><script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script defer src="assets/js/supabase-config.js?v=v125-ui-stable"></script><script defer src="assets/js/supabase-sync.js?v=v125-ui-stable"></script><script defer src="assets/js/ui.js?v=v125-ui-stable"></script><script defer src="assets/js/ux-a11y.js?v=v125-ui-stable"></script><script defer src="assets/js/admin-common.js?v=v126-15-common"></script><script defer src="assets/js/admin-simulation.js?v=v126-15-wizard"></script><script defer src="assets/js/admin-rules.js?v=v128-infeasible-calendar"></script>
 </body>
 </html>

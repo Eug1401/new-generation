@@ -1,0 +1,82 @@
+
+> new-generation-tournament@1.26.17 test:ui
+> node tools/test-ui-stability.mjs
+
+{
+  "root": "/mnt/data/article_ui_review/new-generation-main",
+  "pages": 13,
+  "widths": [
+    320,
+    360,
+    375,
+    390,
+    412,
+    430,
+    480,
+    768,
+    1024,
+    1280,
+    1440,
+    1920
+  ],
+  "mode": "ui",
+  "results": [
+    {
+      "test": "Avvio e caricamento delle 13 pagine HTML",
+      "result": "PASS",
+      "details": "13/13 caricate; errori runtime nuovi 0; richieste locali fallite 0"
+    },
+    {
+      "test": "Responsive e overflow orizzontale",
+      "result": "PASS",
+      "details": "320px, 360px, 375px, 390px, 412px, 430px, 480px, 768px, 1024px, 1280px, 1440px, 1920px"
+    },
+    {
+      "test": "Stemmi web: niente forma dorata, contain, associazione stabile, accessibilità, caricamento e responsive",
+      "result": "PASS",
+      "details": "[{\"label\":\"pubblico primo caricamento lento / classifica\",\"wrapperCount\":26,\"withLogoCount\":23,\"fallbackCount\":3},{\"label\":\"pubblico card squadre e roster\",\"wrapperCount\":26,\"withLogoCount\":23,\"fallbackCount\":3},{\"label\":\"pubblico dettaglio squadra e modale\",\"wrapperCount\":27,\"withLogoCount\":24,\"fallbackCount\":3},{\"label\":\"pubblico card partite e calendario\",\"wrapperCount\":27,\"withLogoCount\":24,\"fallbackCount\":3},{\"label\":\"pubblico dettaglio partita e modale\",\"wrapperCount\":29,\"withLogoCount\":26,\"fallbackCount\":3},{\"label\":\"pubblico tabellone\",\"wrapperCount\":29,\"withLogoCount\":26,\"fallbackCount\":3},{\"label\":\"pubblico ricerca e filtro\",\"wrapperCount\":34,\"withLogoCount\":31,\"fallbackCount\":3},{\"label\":\"pubblico ordinamento invertito e associazione squadra-stemma\",\"wrapperCount\":26,\"withLogoCount\":23,\"fallbackCount\":3},{\"label\":\"pubblico tablet\",\"wrapperCount\":26,\"withLogoCount\":23,\"fallbackCount\":3},{\"label\":\"pubblico smartphone verticale\",\"wrapperCount\":26,\"withLogoCount\":23,\"fallbackCount\":3},{\"label\":\"pubblico smartphone orizzontale\",\"wrapperCount\":26,\"withLogoCount\":23,\"fallbackCount\":3},{\"label\":\"admin admin.html\",\"wrapperCount\":0,\"withLogoCount\":0,\"fallbackCount\":0},{\"label\":\"admin admin-teams.html\",\"wrapperCount\":6,\"withLogoCount\":5,\"fallbackCount\":1},{\"label\":\"admin admin-players.html\",\"wrapperCount\":6,\"withLogoCount\":5,\"fallbackCount\":1},{\"label\":\"admin admin-matches.html\",\"wrapperCount\":6,\"withLogoCount\":5,\"fallbackCount\":1},{\"label\":\"admin admin-groups.html\",\"wrapperCount\":0,\"withLogoCount\":0,\"fallbackCount\":0},{\"label\":\"admin admin-photos.html\",\"wrapperCount\":6,\"withLogoCount\":5,\"fallbackCount\":1},{\"label\":\"pubblico ritorno pagina / cache popolata\",\"wrapperCount\":26,\"withLogoCount\":23,\"fallbackCount\":3},{\"label\":\"pubblico refresh completo\",\"wrapperCount\":26,\"withLogoCount\":23,\"fallbackCount\":3}]"
+    },
+    {
+      "test": "Pulsante loading: dimensioni stabili e click multipli bloccati",
+      "result": "PASS",
+      "details": "{\"first\":true,\"second\":false,\"disabled\":true,\"before\":{\"w\":74.921875,\"h\":42.390625},\"during\":{\"w\":75,\"h\":43},\"after\":{\"w\":74.921875,\"h\":42.390625},\"busy\":false}"
+    },
+    {
+      "test": "Modale reset: apertura/chiusura, 10 cicli, doppio click, Escape, backdrop, focus e scroll",
+      "result": "PASS",
+      "details": "{\"focusButton\":true,\"cyclesOk\":true,\"doubleOk\":true,\"escapeOk\":true,\"backdropOk\":true,\"scrollBefore\":240,\"scrollAfter\":240,\"noShift\":true,\"geometryBefore\":{\"headerX\":24,\"headerW\":1232,\"buttonX\":1164.078125,\"buttonW\":74.921875},\"geometryOpen\":{\"headerX\":24,\"headerW\":1232,\"buttonX\":1164.078125,\"buttonW\":74.921875},\"geometryAfter\":{\"headerX\":24,\"headerW\":1232,\"buttonX\":1164.078125,\"buttonW\":74.921875},\"residual\":{\"exists\":true,\"open\":false,\"count\":1,\"bodyLocked\":false,\"overflow\":\"hidden auto\",\"activeId\":\"resetAllBtn\",\"activeText\":\"Reset\",\"scrollY\":240,\"clientWidth\":1270,\"scrollWidth\":1260}}"
+    },
+    {
+      "test": "Procedura Simula: nessun avvio anticipato, wizard completo, payload esplicito, avvio finale unico e ricaricamento",
+      "result": "PASS",
+      "details": "{\"openOk\":true,\"escapeOk\":true,\"cyclesOk\":true,\"doubleOk\":true,\"backdropOk\":true,\"wizardOk\":true,\"noEarlyStart\":true,\"initial\":{\"title\":\"Vuoi utilizzare le squadre già presenti nel sistema?\",\"steps\":5,\"generated\":true,\"existingDisabled\":true},\"beforeChoice\":{\"step\":0,\"running\":false,\"operation\":\"\"},\"afterChoice\":{\"step\":0,\"running\":false,\"operation\":\"\",\"title\":\"Vuoi utilizzare le squadre già presenti nel sistema?\"},\"afterEnter\":{\"step\":0,\"running\":false,\"operation\":\"\"},\"summaryBefore\":{\"summary\":\"Squadre8 squadre simulate con stemmi localiGiocatori40 totali · esattamente 5 per squadraFormatoEliminazione direttaKingsSì · presidente obbligatorio per ogni squadraDurataUn solo giornoDate2026-06-21Partite previste7Dati sostituitiSquadre partecipanti, roster, calendario, referti, classifiche e tabelloneDati mantenutiArticoli, personalizzazione del sito e account amministrativi\",\"disabled\":true,\"label\":\"Genera torneo simulato\",\"step\":4},\"summaryAfter\":{\"enabled\":true,\"label\":\"Genera torneo simulato\",\"kings\":true,\"payload\":{\"teamMode\":\"generated\",\"selectedTeamIds\":[],\"generatedTeamCount\":8,\"format\":\"knockout\",\"kings\":true,\"presidentMode\":\"default_per_team\",\"duration\":\"one_day\",\"replaceTournamentConfirmed\":true,\"replacePlayersConfirmed\":false,\"replaceTeamsConfirmed\":true,\"requestSource\":\"wizard-final-confirmation\"}},\"backState\":{\"step\":3,\"duration\":true},\"payloadOk\":true,\"selectionsKept\":true,\"completed\":{\"teams\":8,\"players\":40,\"matches\":7,\"winner\":\"Urban Dragons\",\"articlesSame\":true,\"running\":false},\"completionOk\":true}"
+    },
+    {
+      "test": "Menu mobile: 10 cicli, doppio click, Escape, backdrop, focus e larghezza pagina",
+      "result": "PASS",
+      "details": "{\"escapeOk\":true,\"cyclesOk\":true,\"doubleOk\":true,\"backdropOk\":true,\"widthBefore\":390,\"widthAfter\":390,\"residual\":{\"exists\":true,\"open\":false,\"count\":1,\"bodyLocked\":false,\"overflow\":\"hidden auto\",\"activeId\":\"\",\"activeText\":\"☰Altro\",\"scrollY\":142,\"clientWidth\":390,\"scrollWidth\":390}}"
+    },
+    {
+      "test": "Filtri e modali pubbliche: apertura, Escape, backdrop e assenza residui",
+      "result": "PASS",
+      "details": "{\"filterOpen\":true,\"filterBackdrop\":true,\"filterEscape\":true,\"matchOpen\":true,\"matchBackdrop\":true,\"matchEscape\":true,\"teamOpen\":true,\"teamEscape\":true,\"articleOpen\":true,\"articleBackdrop\":true,\"residual\":0}"
+    },
+    {
+      "test": "Foto: conferma, lightbox, anteprima locale, doppio click upload e apertura pubblica da tastiera",
+      "result": "PASS",
+      "details": "{\"doubleOk\":true,\"escapeOk\":true,\"cyclesOk\":true,\"backdropOk\":true,\"lightOpen\":true,\"lightEscape\":true,\"lightCycles\":true,\"staging\":{\"panel\":true,\"name\":\"nuova foto speciale.png\",\"dimensions\":\"2×2 · 95 B · non ancora caricata\",\"confirmDisabled\":false},\"removedBeforeUpload\":true,\"upload\":{\"calls\":1,\"busy\":false,\"summary\":\"1/1 caricate · 0.1s\",\"failed\":0},\"stagingOk\":true,\"publicCard\":{\"role\":\"button\",\"tabindex\":\"0\",\"aria\":\"Apri fotografia Foto test accessibile\",\"alt\":\"Foto test accessibile\"},\"publicOpen\":{\"exists\":true,\"open\":true,\"count\":1,\"bodyLocked\":true,\"overflow\":\"hidden\",\"activeId\":\"\",\"activeText\":\"×\",\"scrollY\":14,\"clientWidth\":1270,\"scrollWidth\":1260},\"publicClosed\":{\"exists\":true,\"open\":false,\"count\":1,\"bodyLocked\":false,\"overflow\":\"hidden auto\",\"activeId\":\"\",\"activeText\":\"Recupero dati, attendere…\\n        \\n        \\n          📷\\n          Foto non disponibile\\n          Riprova\\n        \\n      \\n      \\n        photo-1.jpg\\n        ⬇\",\"scrollY\":14,\"clientWidth\":1270,\"scrollWidth\":1260},\"publicFocus\":true,\"publicKeyboardOk\":true,\"confirm\":{\"exists\":false,\"open\":false,\"count\":0,\"bodyLocked\":false,\"overflow\":\"hidden auto\",\"activeId\":\"\",\"activeText\":\"Elimina\",\"scrollY\":868,\"clientWidth\":1270,\"scrollWidth\":1260},\"light\":{\"exists\":true,\"open\":false,\"count\":1,\"bodyLocked\":false,\"overflow\":\"hidden auto\",\"activeId\":\"\",\"activeText\":\"\",\"scrollY\":868,\"clientWidth\":1270,\"scrollWidth\":1260}}"
+    },
+    {
+      "test": "Ridimensionamento e scroll con modale aperta",
+      "result": "PASS",
+      "details": "{\"measure\":{\"open\":true,\"left\":0,\"right\":304,\"width\":304,\"vw\":320,\"overflow\":0,\"locked\":true},\"whileOpen\":300,\"after\":{\"exists\":true,\"open\":false,\"count\":1,\"bodyLocked\":false,\"overflow\":\"hidden auto\",\"activeId\":\"\",\"activeText\":\"Campionato · Giornata 1Da giocareAurora FCVSNova United🗓️ 20 giu 2026, 18:00📍 Campo 1👤 Arbitro Test⚽ nessun marcatore🟨 nessuno🟥 nessuno\",\"scrollY\":300,\"clientWidth\":320,\"scrollWidth\":320}}"
+    },
+    {
+      "test": "Console JavaScript e richieste locali",
+      "result": "PASS",
+      "details": "{\"runtimeErrors\":[],\"localNetworkErrors\":[]}"
+    }
+  ],
+  "runtimeErrors": [],
+  "localNetworkErrors": []
+}

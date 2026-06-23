@@ -48,7 +48,7 @@
     const lines=s.rules.groupConfigs.map(g=>{const diff=c[g.name]-g.size;const cls=diff===0?'ok':diff>0?'error':'warn';const txt=diff===0?'Capienza corretta':diff>0?`${diff} squadra/e in più`:`${Math.abs(diff)} posto/i vuoti`;return `<div class="health-line ${cls}"><strong>${UI.esc(g.name)}</strong><span>${txt}</span></div>`;}).join('');
     const validation=store.validateGroupAssignments(s,assignments);
     const played=hasPlayedGroupData(s);
-    UI.$('#groupHealth').innerHTML=`${lines}<div class="help-box ${validation.ok?'':'warn'}">${UI.esc(validation.message)}</div>${played?'<div class="message error">Attenzione: esistono già risultati o referti nei gironi. Applicando le modifiche verranno sostituite le partite della fase a gironi.</div>':''}`;
+    UI.$('#groupHealth').innerHTML=`${lines}<div class="help-box ${validation.ok?'':'warn'}">${UI.esc(validation.message)}</div>${played?'<div class="message warn">Esistono gia risultati o referti nei gironi. Le assegnazioni verranno salvate, ma il calendario non sara rigenerato automaticamente.</div>':''}`;
   }
   function renderPreview(s){
     const temp=store.normalizeState({...s,rules:{...s.rules,groupAssignments:{...assignments}},matches:[]});
@@ -91,12 +91,10 @@
     const s=A.state();
     const v=store.validateGroupAssignments(s,assignments);
     if(!v.ok){A.flash('#groupsMessage',v.message,'error');render();return;}
-    if(hasPlayedGroupData(s)&&!confirm('Ci sono risultati/referti nei gironi. Applicando le modifiche saranno eliminati perché il calendario viene rigenerato. Continuare?'))return;
     s.rules.groupAssignments={...assignments};
-    const res=store.generateCalendar(s,{preserveResults:true});
-    if(!res.ok){A.flash('#groupsMessage',res.message,'error');return;}
+    if(!store.isCalendarFresh(s))s.calendarSignature='';
     A.save(s);
-    A.flash('#groupsMessage','Gironi applicati e calendario rigenerato correttamente.','ok');
+    A.flash('#groupsMessage','Gironi applicati. Nessun calendario e stato rigenerato automaticamente: vai in Regole & calendario per creare una nuova anteprima e confermarla.','ok');
     assignments=initialAssignments();
     render();
   }

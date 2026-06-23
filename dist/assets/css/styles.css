@@ -7902,3 +7902,65 @@ a.article-card-main{cursor:pointer;}
   .photos-sidebar .team-pick-logo{width:44px;height:44px;padding:3px}
   .photos-sidebar .team-pick-name{font-size:.91rem}
 }
+/* v127 - immagini condivisibili pubbliche e wizard calendario manuale */
+.share-action-row{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;align-items:center}
+.share-action-row .btn{white-space:normal}
+.share-preview-modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.76);z-index:140;padding:18px}
+.share-preview-modal.open{display:flex}
+.share-preview-panel{width:min(1120px,100%);max-height:92vh;display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:14px;background:var(--panel);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow);padding:16px}
+.share-preview-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.share-preview-head h2{margin:0}
+.share-preview-head p{margin:4px 0 0;color:var(--muted)}
+.share-preview-stage{overflow:auto;border:1px solid rgba(215,164,45,.24);border-radius:18px;background:#0b0905;min-height:220px;display:grid;place-items:start center;padding:12px}
+.share-preview-stage img{display:block;max-width:none;width:auto;max-height:68vh;border-radius:12px;background:#fff}
+.share-preview-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.share-preview-message{color:var(--muted);font-weight:700}
+.calendar-status-card{border:1px solid rgba(215,164,45,.24);border-radius:18px;background:rgba(255,246,218,.045);padding:14px;margin-bottom:12px}
+.calendar-status-card strong{display:block;color:var(--gold);margin-bottom:4px}
+.calendar-wizard-modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.74);z-index:130;padding:16px}
+.calendar-wizard-modal.open{display:flex}
+.calendar-wizard-panel{width:min(1180px,100%);max-height:92vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow);padding:18px}
+.calendar-wizard-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px}
+.calendar-wizard-head h2{margin:0}
+.calendar-wizard-steps{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:12px 0 16px}
+.calendar-wizard-step{border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:8px 10px;background:rgba(255,255,255,.045);color:var(--muted);font-weight:850;text-align:center}
+.calendar-wizard-step.active{background:linear-gradient(135deg,var(--primary),var(--blue));color:#1a1408;border-color:transparent}
+.calendar-wizard-body{display:grid;gap:14px}
+.calendar-check-list,.calendar-rule-list{display:grid;gap:9px}
+.calendar-check{display:flex;justify-content:space-between;gap:12px;border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:10px 12px;background:rgba(255,255,255,.035)}
+.calendar-check.ok{border-color:rgba(85,220,150,.32)}
+.calendar-check.warn{border-color:rgba(255,215,106,.42)}
+.calendar-editor-row{display:grid;grid-template-columns:1fr 1fr 1fr .8fr .8fr auto;gap:10px;align-items:end;border:1px solid rgba(215,164,45,.18);border-radius:16px;padding:12px;background:rgba(255,255,255,.035)}
+.calendar-editor-row.debut{grid-template-columns:1.2fr 1fr 1fr .8fr auto}
+.calendar-editor-row.block{grid-template-columns:1fr 1fr 1fr auto}
+.calendar-preview-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,.45fr);gap:14px}
+.calendar-preview-list{max-height:460px;overflow:auto}
+.calendar-conflict{border:1px solid rgba(229,83,95,.42);background:rgba(229,83,95,.09);border-radius:14px;padding:10px 12px}
+.calendar-conflict.warn{border-color:rgba(255,215,106,.42);background:rgba(255,215,106,.08)}
+.calendar-conflict.hard{border-color:rgba(229,83,95,.72);background:rgba(229,83,95,.14)}
+.calendar-conflict small{display:block;color:var(--muted);font-weight:750;margin-top:6px;line-height:1.35}
+.calendar-conflict-list{display:grid;gap:10px;margin-top:12px}
+.calendar-conflict-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.calendar-infeasible-panel{display:grid;gap:12px;border:1px solid rgba(229,83,95,.42);border-radius:18px;background:rgba(229,83,95,.07);padding:16px}
+.calendar-infeasible-panel h3{margin:0;color:#ffb6bd}
+.calendar-infeasible-panel p{margin:0;color:var(--muted);line-height:1.5}
+.calendar-wizard-actions.inline{justify-content:flex-start;margin-top:10px}
+.calendar-simplification-level{display:grid;gap:5px;border:1px solid rgba(255,215,106,.28);border-radius:14px;background:rgba(255,215,106,.07);padding:11px}
+.calendar-simplification-level strong{color:var(--gold)}
+.calendar-simplification-level span{color:var(--muted);font-weight:750}
+.calendar-rule-report{margin-top:14px;border:1px solid rgba(215,164,45,.22);border-radius:18px;background:rgba(255,246,218,.04);padding:14px}
+.calendar-rule-report h3{margin:0 0 10px}
+.calendar-report-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.calendar-report-grid h4{margin:0 0 8px;color:var(--gold)}
+.calendar-report-row{display:block;border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:8px 10px;margin-bottom:6px;font-weight:800}
+.calendar-report-row small{display:block;color:var(--muted);font-weight:700;margin-top:3px;line-height:1.35}
+.calendar-report-row.ok{background:rgba(85,220,150,.08);border-color:rgba(85,220,150,.24)}
+.calendar-report-row.warn{background:rgba(255,215,106,.08);border-color:rgba(255,215,106,.28)}
+.calendar-wizard-actions{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:16px}
+@media(max-width:760px){
+  .share-preview-panel,.calendar-wizard-panel{border-radius:18px;padding:12px}
+  .share-preview-actions,.calendar-wizard-actions{display:grid;grid-template-columns:1fr}
+  .calendar-wizard-steps{grid-template-columns:1fr}
+  .calendar-editor-row,.calendar-editor-row.debut,.calendar-editor-row.block,.calendar-preview-grid,.calendar-report-grid{grid-template-columns:1fr}
+  .share-preview-stage img{max-width:100%;height:auto}
+}
