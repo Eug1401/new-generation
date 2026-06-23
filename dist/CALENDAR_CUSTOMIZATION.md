@@ -2,9 +2,7 @@
 
 ## Flusso di generazione
 
-Il calendario non viene creato durante il salvataggio delle regole, la modifica dei gironi, l'apertura delle pagine amministrative o la generazione di report.
-
-La creazione avviene esclusivamente nella pagina `admin-rules.html` tramite il wizard **Configura e genera calendario**:
+Il calendario viene configurato nella pagina `admin-rules.html` tramite il wizard **Configura e genera calendario**:
 
 1. Prerequisiti.
 2. Preferenze.
@@ -16,27 +14,17 @@ La creazione avviene esclusivamente nella pagina `admin-rules.html` tramite il w
 
 ## Stato temporaneo del wizard
 
-La bozza locale `new-generation-calendar-draft-v2` conserva preferenze, configurazione della prima giornata e vincoli mentre l'utente si sposta avanti e indietro nel wizard.
+La bozza locale `new-generation-calendar-draft-v1` conserva preferenze, configurazione della prima giornata e vincoli mentre l'utente si sposta avanti e indietro nel wizard.
 
-L'avvio di una nuova configurazione azzera la bozza e i vincoli temporanei. Una generazione confermata ricostruisce sempre tutte le partite da zero; non riordina né integra il calendario precedente.
+L'avvio di una nuova configurazione azzera la bozza temporanea. Una generazione confermata ricostruisce tutte le partite da zero; non integra e non riordina parzialmente il calendario precedente.
 
-## Vincoli supportati
+## Vincolo supportato
 
-La sezione **Vincoli** espone esclusivamente due regole obbligatorie:
+La sezione **Vincoli** espone esclusivamente l'**orario d'esordio della squadra**.
 
-### Orario d'esordio della squadra
+La prima partita cronologica della squadra deve iniziare esattamente nell'orario selezionato. Gli orari proposti sono ricavati dalla data, dall'ora iniziale, dalla durata delle partite, dalla pausa e dal numero di campi configurati.
 
-La prima partita cronologica della squadra deve iniziare esattamente nell'orario selezionato. Gli orari disponibili sono ricavati dalle date, dalla fascia oraria, dalla durata delle partite e dal numero di campi configurati.
-
-### Posizione nella prima giornata
-
-La partita della squadra deve occupare la posizione richiesta nell'ordine cronologico complessivo della prima giornata. A parità di orario, l'ordinamento usa in modo deterministico campo, girone, coppia di squadre e identificativo della partita.
-
-Le posizioni disponibili sono calcolate dal numero effettivo di partite della prima giornata.
-
-## Modello dati
-
-I vincoli sono memorizzati in `rules.calendarCustomization.teamDebuts`:
+La struttura dati è memorizzata in `rules.calendarCustomization.teamDebuts`:
 
 ```json
 [
@@ -46,44 +34,37 @@ I vincoli sono memorizzati in `rules.calendarCustomization.teamDebuts`:
     "kind": "exactTime",
     "value": "10:40",
     "mode": "hard"
-  },
-  {
-    "id": "constraint-id-2",
-    "teamId": "team-id-2",
-    "kind": "firstRoundPosition",
-    "value": 3,
-    "mode": "hard"
   }
 ]
 ```
 
-I dati legacy `minTime`, `time`, indisponibilità squadra e blocchi campo vengono normalizzati: gli orari di esordio diventano `exactTime`, mentre i tipi non più esposti dal wizard non partecipano alla nuova configurazione.
+Durante la normalizzazione vengono mantenute soltanto le regole `exactTime`. Tipi precedenti, indisponibilità squadra, blocchi campo ed eventi usati come vincoli non vengono caricati né applicati allo scheduler.
 
-## Assegnazione dei campi
+## Assegnazione dei campi ai gironi
 
-Ogni girone mantiene come scelta predefinita il proprio campo. Con due gironi e due campi, il Girone A usa normalmente il Campo 1 e il Girone B il Campo 2.
+Con la modalità `fixed_by_group`, ogni girone utilizza prioritariamente il proprio campo. Con due gironi e due campi, il Girone A usa normalmente il Campo 1 e il Girone B il Campo 2.
 
-Una partita può essere spostata temporaneamente sull'altro campo soltanto quando:
+Per ogni fascia oraria lo scheduler opera in questo ordine:
 
-- il campo preferito è già occupato nello slot;
-- il secondo campo è libero;
-- il girone assegnato al secondo campo non ha una propria partita ancora da collocare nello stesso turno;
-- nessuna squadra viene sovrapposta;
-- riposo minimo, durata, date e orari restano validi.
+1. applica le eventuali assegnazioni esplicite della sezione **Prima giornata**;
+2. cerca una partita valida per il girone proprietario di ciascun campo;
+3. soltanto sui campi rimasti liberi cerca una seconda partita pronta dell'altro girone;
+4. consente il prestito solo se il campo naturale del girone che prende in prestito è già occupato da una sua partita nello stesso slot;
+5. non usa il campo alternativo quando il girone proprietario ha una partita valida da disputare.
 
-Con gironi della stessa dimensione non vengono effettuati spostamenti. Con gironi di dimensione diversa, il campo libero può essere usato dal girone più grande solo negli slot altrimenti inutilizzati.
+Una partita è considerata pronta quando entrambe le squadre hanno già completato le rispettive partite precedenti. Questo permette di utilizzare una partita di una giornata successiva quando è realmente compatibile, senza anticipare l'ordine delle giornate della singola squadra.
+
+Restano sempre obbligatorie l'assenza di sovrapposizioni di squadra e campo, la durata degli incontri, gli slot disponibili, il riposo minimo configurato e l'unicità di ogni partita.
 
 ## Validazione
 
-La validazione viene eseguita sia nell'interfaccia sia nello store prima della generazione. Sono bloccanti, tra gli altri:
+La validazione viene eseguita sia nel wizard sia nello store. Sono bloccanti, tra gli altri:
 
-- squadra inesistente o non selezionata;
-- orario non disponibile;
-- posizione fuori intervallo;
-- vincoli duplicati per la stessa squadra;
-- due partite diverse assegnate alla stessa posizione;
-- richieste di orario incompatibili nella stessa partita;
-- numero di esordi simultanei superiore ai campi disponibili;
-- soluzione completa non trovata.
+- squadra assente o non selezionata;
+- più vincoli di esordio per la stessa squadra;
+- orario non appartenente agli slot disponibili;
+- richieste diverse per le due squadre della stessa prima partita;
+- numero di esordi distinti nello stesso orario superiore ai campi disponibili;
+- impossibilità di costruire un calendario completo.
 
 In caso di errore non viene salvato alcun calendario parziale e la bozza resta disponibile per le correzioni.

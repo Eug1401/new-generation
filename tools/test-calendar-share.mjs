@@ -84,18 +84,31 @@ const team1First=[...exactDebutPreview.previewMatches].filter(m=>m.phase==='grou
 assert.equal(team1First.time,'10:20','la prima partita di team_1 deve iniziare esattamente alle 10:20');
 assert.ok(exactDebutPreview.ruleReport.debutChecks.some(c=>c.rule==='Orario esatto'&&c.ok),'il report deve dichiarare applicato l orario esatto');
 
-const positionDebut=baseState();
-positionDebut.rules.calendarCustomization=store.normalizeCalendarCustomization({teamDebuts:[{teamId:'team_1',kind:'firstRoundPosition',value:'2',mode:'hard'}]});
-const positionPreview=store.previewCalendar(positionDebut);
-assert.equal(positionPreview.ok,true,positionPreview.message);
-const overallFirst=positionPreview.previewMatches.filter(m=>m.phase==='group'&&Number(m.roundIndex)===0).sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.time).localeCompare(String(b.time))||(Number(String(a.field).match(/\d+/)?.[0])||0)-(Number(String(b.field).match(/\d+/)?.[0])||0)||String(a.id).localeCompare(String(b.id)));
-assert.ok(overallFirst[1].homeTeamId==='team_1'||overallFirst[1].awayTeamId==='team_1','team_1 deve occupare la seconda posizione cronologica complessiva della prima giornata');
-assert.ok(positionPreview.ruleReport.debutChecks.some(c=>c.rule==='Posizione giornata 1'&&c.ok),'il report deve dichiarare applicata la posizione');
+const legacyConstraints=store.normalizeCalendarCustomization({
+  teamDebuts:[
+    {id:'keep_exact',teamId:'team_1',kind:'exactTime',value:'10:20',mode:'hard'},
+    {id:'drop_position',teamId:'team_2',kind:'firstRoundPosition',value:'2',mode:'hard'},
+    {id:'drop_other',teamId:'team_3',kind:'field',value:'Campo 1',mode:'hard'}
+  ],
+  teamUnavailability:[{teamId:'team_1',date:'2026-07-01',time:'09:00'}],
+  fieldBlocks:[{field:'Campo 1',date:'2026-07-01',time:'09:00'}],
+  events:[{date:'2026-07-01',time:'09:00'}]
+});
+assert.deepEqual(legacyConstraints.teamDebuts.map(rule=>rule.kind),['exactTime'],'solo l orario esatto deve restare nel modello');
+assert.equal('teamUnavailability' in legacyConstraints,false);
+assert.equal('fieldBlocks' in legacyConstraints,false);
+assert.equal('events' in legacyConstraints,false);
 
 const impossibleDebut=baseState();
-impossibleDebut.rules.calendarCustomization=store.normalizeCalendarCustomization({teamDebuts:[{id:'position_a',teamId:'team_1',kind:'firstRoundPosition',value:'1',mode:'hard'},{id:'position_b',teamId:'team_5',kind:'firstRoundPosition',value:'1',mode:'hard'}]});
+impossibleDebut.rules.calendarCustomization=store.normalizeCalendarCustomization({
+  firstRoundLocks:[{id:'locked_pair',groupName:'Girone A',homeTeamId:'team_1',awayTeamId:'team_2',mode:'hard'}],
+  teamDebuts:[
+    {id:'time_a',teamId:'team_1',kind:'exactTime',value:'09:00',mode:'hard'},
+    {id:'time_b',teamId:'team_2',kind:'exactTime',value:'10:20',mode:'hard'}
+  ]
+});
 const impossibleDebutPreview=store.previewCalendar(impossibleDebut);
-assert.equal(impossibleDebutPreview.ok,false,'due partite diverse nella stessa posizione devono bloccare la preview');
+assert.equal(impossibleDebutPreview.ok,false,'orari esatti incompatibili per la stessa partita devono bloccare la preview');
 assert.equal(impossibleDebut.matches.length,0,'una preview con vincoli incompatibili non deve salvare partite');
 
 const fieldFallback=store.emptyState();
@@ -107,15 +120,19 @@ fieldFallback.rules.fieldCount=2;
 fieldFallback.rules.groupFieldPolicy='fixed_by_group';
 fieldFallback.rules.matchDuration=30;
 fieldFallback.rules.breakMinutes=10;
-fieldFallback.rules.groupConfigs=[{name:'Girone A',size:5,qualifiers:1},{name:'Girone B',size:4,qualifiers:1}];
-fieldFallback.teams=Array.from({length:9},(_,i)=>team(i+1));
-fieldFallback.rules.groupAssignments=Object.fromEntries(fieldFallback.teams.map((t,i)=>[t.id,i<5?'Girone A':'Girone B']));
+fieldFallback.rules.groupConfigs=[{name:'Girone A',size:4,qualifiers:1},{name:'Girone B',size:6,qualifiers:1}];
+fieldFallback.teams=Array.from({length:10},(_,i)=>team(i+1));
+fieldFallback.rules.groupAssignments=Object.fromEntries(fieldFallback.teams.map((t,i)=>[t.id,i<4?'Girone A':'Girone B']));
 const fieldFallbackPreview=store.previewCalendar(store.normalizeState(fieldFallback));
 assert.equal(fieldFallbackPreview.ok,true,fieldFallbackPreview.message);
 const groupMatches=fieldFallbackPreview.previewMatches.filter(m=>m.phase==='group');
-const borrowed=groupMatches.filter(m=>m.groupName==='Girone A'&&m.field==='Campo 2');
+const borrowed=groupMatches.filter(m=>m.groupName==='Girone B'&&m.field==='Campo 1');
 assert.ok(borrowed.length>0,'il girone più grande deve poter usare il campo libero');
-for(const match of borrowed)assert.equal(groupMatches.some(other=>other.groupName==='Girone B'&&other.date===match.date&&other.time===match.time),false,'il campo del Girone B può essere usato solo quando il Girone B non gioca nello slot');
+for(const match of borrowed){
+  const sameSlot=groupMatches.filter(other=>other.date===match.date&&other.time===match.time);
+  assert.ok(sameSlot.some(other=>other.id!==match.id&&other.groupName==='Girone B'&&other.field==='Campo 2'),'il prestito deve avvenire soltanto mentre il campo naturale è occupato');
+  assert.equal(sameSlot.some(other=>other.groupName==='Girone A'),false,'il campo del Girone A non può essere prestato quando il proprietario gioca');
+}
 
 const timeoutPreview=store.previewCalendar(baseState(),{forceTimeout:true,maxMs:1});
 assert.equal(timeoutPreview.status,'TIMEOUT','il timeout deve essere distinto dall infattibilita');
@@ -185,4 +202,4 @@ assert.match(adminRulesSource,/data-calendar-confirm-simplify/,'azione UI per co
 assert.ok(adminRulesSource.includes('localStorage.setItem(DRAFT_KEY'),'salvataggio bozza in localStorage presente');
 assert.ok(adminRulesSource.includes('localStorage.removeItem(DRAFT_KEY'),'eliminazione bozza in localStorage presente');
 
-console.log(JSON.stringify({ok:true,manualPreview:true,noAutoRepair:true,firstRoundLock:true,shareModuleStatic:true,bracketImageLayout:true,simulationFormats:true,draftPersistence:true,infeasibleFlow:true,simplifiedPreview:true,hardConflictBlocked:true,debutExactTime:true,debutPosition:true,debutConflict:true,fieldFallback:true,technicalStates:true},null,2));
+console.log(JSON.stringify({ok:true,manualPreview:true,noAutoRepair:true,firstRoundLock:true,shareModuleStatic:true,bracketImageLayout:true,simulationFormats:true,draftPersistence:true,infeasibleFlow:true,simplifiedPreview:true,hardConflictBlocked:true,debutExactTime:true,legacyConstraintsRemoved:true,debutConflict:true,fieldFallback:true,technicalStates:true},null,2));

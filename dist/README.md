@@ -50,14 +50,14 @@ Genera la cartella `dist/` con tutti i file statici versionati pronti per il dep
 npm test          # validatore: file richiesti, link interni, sintassi JS, regole CSS
 npm run lint      # alias di npm test in modalità lint
 npm run test:ui   # test di stabilità UI in Chromium headless (richiede Chromium)
-npm run test:calendar       # 9 scenari sui vincoli e sulla generazione
+npm run test:calendar       # 10 scenari sullo scheduler, i vincoli e la generazione
 npm run test:calendar-share # regressioni calendario manuale e moduli immagine
 ```
 
 ## Calendario e condivisione immagini
 
 - La generazione calendario è manuale e confermata dall'amministratore: prima si configurano formato, gironi e vincoli, poi si analizza l'anteprima, infine si salva.
-- Sono supportati i flussi `groups_knockout` e `league_knockout`, con personalizzazione della prima giornata e due vincoli espliciti: orario esatto d'esordio e posizione nella prima giornata.
+- Sono supportati i flussi `groups_knockout` e `league_knockout`, con personalizzazione della prima giornata e un solo vincolo esplicito nella sezione Vincoli: l'orario esatto d'esordio.
 - Il wizard conserva una bozza locale delle regole calendario: si puo uscire, rientrare, modificarla, eliminarla o confermare la generazione senza creare partite intermedie.
 - Se il calendario personalizzato non è fattibile, il wizard mostra conflitti comprensibili, conserva la bozza e permette di tornare ai vincoli senza salvare un calendario parziale.
 - Il sito pubblico può esportare e condividere PNG dedicati per classifica generale, classifica di girone, tabellone e singola partita tramite Web Share API o download fallback.
