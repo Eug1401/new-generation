@@ -280,14 +280,25 @@
     const standingsMenu=$('#publicStandingsMenu');
     if(standingsMenu)setHtmlStable(standingsMenu,store.selectors.hasGroupStage(state)?UI.groupStandingsSelector(state,standingsGroup,'publicGroupStandingsFilter'):'');
     setHtmlStable('#publicStandings',store.selectors.hasGroupStage(state)?UI.groupStandingsTables(state,standingsGroup,{includeLive:true}):UI.standingsTable((store.selectors.officialStandings?store.selectors.officialStandings(state,{includeLive:true}):store.selectors.calculateStandings(state,undefined,{includeLive:true})),state));
-    setHtmlStable('#publicPlayersMini',UI.playerStatsTable(store.selectors.playerStats(state).filter(p=>p.goals>0).slice(0,10))+(state.rules.isKingsLeague?'<div class="mini-section-title margin-top"><h3>Presidenti marcatori</h3></div>'+UI.presidentStatsTable(store.selectors.presidentScorers(state).slice(0,10)):''));
+    renderStandingsShareActions();
+    setHtmlStable('#publicPlayersMini',UI.playerStatsTable(store.selectors.playerStats(state).filter(p=>p.goals>0).slice(0,10))+(state.rules.isKingsLeague?'<div class="mini-section-title margin-top"><h3>Presidenti marcatori</h3></div>'+UI.presidentStatsTable(store.selectors.presidentScorers(state).slice(0,10)):'')); 
     decorateFavoriteUI();
+  }
+  function renderStandingsShareActions(){
+    const box=$('#publicStandingsActions');if(!box)return;
+    if(store.selectors.hasGroupStage(state)){
+      const groups=store.selectors.groupedStandings(state,{includeLive:true}).filter(g=>(g.rows||[]).length);
+      setHtmlStable(box,groups.length?`<div class="share-action-row">${groups.map(g=>`<button class="btn small primary" type="button" data-share-export="standings-group" data-share-group="${UI.esc(g.name)}">Esporta e condividi ${UI.esc(g.name)}</button>`).join('')}</div>`:'');
+      return;
+    }
+    const rows=store.selectors.officialStandings?store.selectors.officialStandings(state,{includeLive:true}):store.selectors.calculateStandings(state,undefined,{includeLive:true});
+    setHtmlStable(box,rows.length?'<div class="share-action-row"><button class="btn small primary" type="button" data-share-export="standings-general">Esporta e condividi classifica</button></div>':'');
   }
   function renderTeams(){ setHtmlStable('#publicTeams',UI.teamGrid(state).replaceAll('data-favorite-placeholder="','data-favorite-team="')); decorateFavoriteUI(); }
   function renderPlayers(){ resetFiltersForNewState(); persistPublicFilters(); renderPlayerFilter(); setHtmlStable('#publicPlayers',UI.playerStatsTable(filteredPlayerStats())); }
   function renderPublicMatchCenter(){const slot=document.getElementById('publicMatchCenter');if(slot)slot.remove();}
   function renderMatches(){const slot=document.getElementById('publicMatchCenter');if(slot)slot.remove();resetFiltersForNewState();persistPublicFilters();renderFilters();setHtmlStable('#publicMatches',UI.matchList(state,filteredMatches(),true));decorateFavoriteUI();}
-  function renderBracket(){const el=$('#publicBracket');if(el)setHtmlStable(el,UI.bracketMarkup(state));decorateFavoriteUI();}
+  function renderBracket(){const el=$('#publicBracket');if(el)setHtmlStable(el,UI.bracketMarkup(state));const box=$('#publicBracketActions');if(box){const data=store.bracketData(state);setHtmlStable(box,data.available?'<div class="share-action-row"><button class="btn small primary" type="button" data-share-export="bracket">Esporta e condividi tabellone</button></div>':'');}decorateFavoriteUI();}
   function renderArticles(){
     const all=store.selectors.articles(state);
     const categories=store.selectors.articleCategories(state);
@@ -942,59 +953,9 @@
     if(!items.length)return `<div class="public-match-empty">${UI.esc(emptyLabel)}</div>`;
     return items.map(item=>`<div class="public-match-event-item"><span class="event-dot ${UI.esc(item.kind||'')}">${UI.esc(item.icon||'•')}</span><div><strong>${UI.esc(item.name)}</strong>${item.meta?`<small>${UI.esc(item.meta)}</small>`:''}</div></div>`).join('');
   }
-  function shareMatchText(m){
-    const home=store.teamName(state,m.homeTeamId,m.homeLabel), away=store.teamName(state,m.awayTeamId,m.awayLabel);
-    const played=isMatchPlayed(m), sc=store.matchGoals(state,m);
-    return `${home} vs ${away}${played?` · ${sc.home}-${sc.away}`:''} · ${UI.fmtDate(m)} · ${m.field||'Campo da definire'}`;
-  }
-  function getTeamLogoImage(team){return new Promise(resolve=>{if(!team?.logo){resolve(null);return;}const img=new Image();img.crossOrigin='anonymous';img.onload=()=>resolve(img);img.onerror=()=>resolve(null);img.src=team.logo;});}
-  function roundRectPath(ctx,x,y,w,h,r){const rr=Math.min(r,w/2,h/2);ctx.beginPath();ctx.moveTo(x+rr,y);ctx.arcTo(x+w,y,x+w,y+h,rr);ctx.arcTo(x+w,y+h,x,y+h,rr);ctx.arcTo(x,y+h,x,y,rr);ctx.arcTo(x,y,x+w,y,rr);ctx.closePath();}
-  function drawTextFit(ctx,text,x,y,maxWidth,fontSize=42,weight='900',align='center',color='#fff'){ctx.textAlign=align;ctx.textBaseline='middle';ctx.fillStyle=color;let size=fontSize;do{ctx.font=`${weight} ${size}px Arial, sans-serif`;if(ctx.measureText(text).width<=maxWidth||size<=18)break;size-=2;}while(size>18);ctx.fillText(text,x,y,maxWidth);}
-  async function buildMatchShareImage(m){
-    const homeT=store.getTeam(state,m.homeTeamId),awayT=store.getTeam(state,m.awayTeamId);
-    const home=store.teamName(state,m.homeTeamId,m.homeLabel),away=store.teamName(state,m.awayTeamId,m.awayLabel);
-    const played=isMatchPlayed(m),score=store.matchGoals(state,m);
-    const W=1600,H=1000;
-    const canvas=document.createElement('canvas');canvas.width=W;canvas.height=H;const ctx=canvas.getContext('2d');
-    ctx.textBaseline='alphabetic';
-    const bg=ctx.createLinearGradient(0,0,W,H);bg.addColorStop(0,'#070806');bg.addColorStop(.58,'#17190f');bg.addColorStop(1,'#090a07');ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
-    ctx.fillStyle='rgba(230,199,96,.06)';ctx.fillRect(0,0,W,160);
-    roundRectPath(ctx,64,64,W-128,H-128,44);ctx.fillStyle='rgba(255,255,255,.035)';ctx.fill();ctx.strokeStyle='rgba(230,199,96,.72)';ctx.lineWidth=2;ctx.stroke();
-    ctx.fillStyle='#e6c760';ctx.font='900 34px Arial, sans-serif';ctx.textAlign='left';ctx.fillText('NEW GENERATION',112,132);
-    ctx.textAlign='right';ctx.font='800 30px Arial, sans-serif';ctx.fillText(UI.fmtDate(m),W-112,132);
-    const contextLine=`${store.PHASE_LABELS[m.phase]||m.phase||'Partita'}${m.groupName?' · '+m.groupName:''}${m.round?' · '+m.round:''}`.replace(/\s+/g,' ').trim();
-    ctx.textAlign='center';ctx.fillStyle='#fff';ctx.font='900 42px Arial, sans-serif';ctx.fillText(contextLine,W/2,210,W-240);
-    const homeLogo=await getTeamLogoImage(homeT),awayLogo=await getTeamLogoImage(awayT);
-    function drawLogo(img,x,y,name){
-      roundRectPath(ctx,x-76,y-76,152,152,30);ctx.fillStyle='rgba(255,255,255,.07)';ctx.fill();ctx.strokeStyle='rgba(255,255,255,.10)';ctx.lineWidth=1.5;ctx.stroke();
-      if(img){ctx.save();roundRectPath(ctx,x-64,y-64,128,128,24);ctx.clip();ctx.drawImage(img,x-64,y-64,128,128);ctx.restore();}
-      else{ctx.fillStyle='#e6c760';ctx.font='900 42px Arial';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(String(name||'?').slice(0,2).toUpperCase(),x,y);ctx.textBaseline='alphabetic';}
-    }
-    drawLogo(homeLogo,300,375,home);drawLogo(awayLogo,1300,375,away);
-    drawTextFit(ctx,home,300,535,430,62,'900');drawTextFit(ctx,away,1300,535,430,62,'900');
-    roundRectPath(ctx,650,300,300,190,34);ctx.fillStyle='rgba(0,0,0,.36)';ctx.fill();ctx.strokeStyle='rgba(230,199,96,.66)';ctx.lineWidth=2;ctx.stroke();
-    ctx.fillStyle=played?'#7ff0bc':'#ff4c55';ctx.font='900 26px Arial';ctx.textAlign='center';ctx.fillText(played?'GIOCATA':'DA GIOCARE',800,345);
-    ctx.fillStyle='#fff';ctx.font='950 82px Arial';ctx.fillText(played?`${score.home} - ${score.away}`:'VS',800,430);
-    const meta=[['CAMPO',m.field||'Da definire'],['ARBITRO',m.referee||'Da definire'],['DATA',UI.fmtDate(m)]];
-    meta.forEach((it,i)=>{const x=130+i*450;roundRectPath(ctx,x,650,390,104,22);ctx.fillStyle='rgba(0,0,0,.42)';ctx.fill();ctx.strokeStyle='rgba(255,255,255,.10)';ctx.lineWidth=1.5;ctx.stroke();ctx.fillStyle='#e6c760';ctx.font='900 19px Arial';ctx.textAlign='left';ctx.fillText(it[0],x+28,690);ctx.fillStyle='#fff';ctx.font='850 28px Arial';ctx.fillText(it[1],x+28,725,330);});
-    const goals=(m.goals||[]).map(g=>store.goalEventLabel?store.goalEventLabel(state,m,g):store.playerName(state,g.playerId)).filter(Boolean).slice(0,10).join(' · ')||'Nessun marcatore';
-    roundRectPath(ctx,130,810,W-260,94,22);ctx.fillStyle='rgba(0,0,0,.34)';ctx.fill();ctx.strokeStyle='rgba(255,255,255,.10)';ctx.lineWidth=1.5;ctx.stroke();ctx.fillStyle='#e6c760';ctx.font='900 20px Arial';ctx.textAlign='left';ctx.fillText('MARCATORI',160,848);ctx.fillStyle='#fff';ctx.font='850 28px Arial';ctx.fillText(goals,160,884,W-320);
-    return new Promise(resolve=>canvas.toBlob(blob=>resolve(blob),'image/png',.98));
-  }
   async function shareMatchImage(m,btn){
-    const busy=window.NGInteractive;
-    if(btn && busy?.isButtonBusy(btn)) return;
-    if(btn){
-      if(busy) busy.setButtonBusy(btn,true,'Preparo immagine…');
-      else btn.disabled=true;
-    }
-    try{
-      const blob=await buildMatchShareImage(m); if(!blob)throw new Error('Immagine non generata');
-      const file=new File([blob],`new-generation-${m.id||'partita'}.png`,{type:'image/png'});
-      if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file]});}
-      else{const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=file.name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},1200);}
-    }catch(err){alert('Condivisione immagine non disponibile su questo dispositivo: ho scaricato la card partita.');try{const blob=await buildMatchShareImage(m);const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`new-generation-${m.id||'partita'}.png`;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},1200);}catch(_){} }
-    finally{if(btn){if(busy)busy.setButtonBusy(btn,false);else btn.disabled=false;}}
+    if(!window.NGShareImages){alert('Modulo immagini non disponibile. Aggiorna la pagina e riprova.');return;}
+    await window.NGShareImages.generateAndPreview('match',state,{matchId:m.id,match:m},btn);
   }
   function publicMatchDetailMarkup(m){
     const homeT=store.getTeam(state,m.homeTeamId), awayT=store.getTeam(state,m.awayTeamId);
@@ -1340,7 +1301,7 @@
   $('#publicArticleSearch')?.addEventListener('input',event=>{articleSearch=event.currentTarget.value.slice(0,120);persistPublicFilters();clearTimeout(articleSearchTimer);articleSearchTimer=setTimeout(renderArticles,120);});
   $('#publicArticleCategory')?.addEventListener('change',event=>{articleCategory=event.currentTarget.value||'all';persistPublicFilters();renderArticles();});
   $('#clearArticleFilters')?.addEventListener('click',()=>{articleSearch='';articleCategory='all';persistPublicFilters();renderArticles();$('#publicArticleSearch')?.focus();});
-  document.addEventListener('click',async e=>{const filterOpener=e.target.closest('[data-open-match-filter]');if(filterOpener){e.preventDefault();openMatchFilterSheet(filterOpener.dataset.openMatchFilter);return;}const filterChoice=e.target.closest('[data-filter-type]');if(filterChoice){e.preventDefault();setMatchFilter(filterChoice.dataset.filterType,filterChoice.dataset.filterValue||'');return;}if(e.target.closest('[data-close-match-filter]')){e.preventDefault();closeMatchFilterSheet();return;}if(e.target.id==='matchFilterSheet'){e.preventDefault();e.stopPropagation();closeMatchFilterSheet();return;}if(e.target.closest('[data-clear-match-filters]')){e.preventDefault();phaseFilter='';roundFilter='';teamFilter='';statusFilter='';persistPublicFilters();renderMatches();return;}const presetBtn=e.target.closest('[data-match-preset]');if(presetBtn){e.preventDefault();statusFilter=presetBtn.dataset.matchPreset==='all'?'':presetBtn.dataset.matchPreset;persistPublicFilters();renderMatches();return;}const shareBtn=e.target.closest('[data-share-match]');if(shareBtn){e.preventDefault();const m=state.matches.find(x=>x.id===shareBtn.dataset.shareMatch);if(m){if(m.status==='live'){alert('La condivisione immagine è disponibile solo per partite concluse.');return;}await shareMatchImage(m,shareBtn);}return;}const favBtn=e.target.closest('[data-favorite-team]');if(favBtn){e.preventDefault();e.stopPropagation();const id=favBtn.dataset.favoriteTeam;if(isFavoriteTeam(id))clearFavoriteTeam();else setFavoriteTeam(id);return;}if(e.target.closest('[data-clear-favorite]')){e.preventDefault();clearFavoriteTeam();return;}if(e.target.closest('[data-open-teams-tab]')){e.preventDefault();document.querySelector('[data-tab="teams"]')?.click();return;}const favMatchBtn=e.target.closest('[data-filter-favorite-matches]');if(favMatchBtn){e.preventDefault();teamFilter=favMatchBtn.dataset.filterFavoriteMatches||favoriteTeamId;persistPublicFilters();document.querySelector('[data-tab="matches"]')?.click();renderMatches();return;}const teamTarget=e.target.closest('[data-team-detail]');if(teamTarget){e.preventDefault();showTeamDetail(teamTarget.dataset.teamDetail,teamTarget);return;}const pdfBtn=e.target.closest('[data-team-pdf]');if(pdfBtn){const busy=window.NGInteractive;if(busy?.isButtonBusy(pdfBtn))return;if(busy)busy.setButtonBusy(pdfBtn,true,'Genero PDF…');else pdfBtn.disabled=true;try{await downloadTeamPdf(pdfBtn.dataset.teamPdf);}catch(err){alert('Errore PDF squadra: '+(err.message||err));}finally{if(busy)busy.setButtonBusy(pdfBtn,false);else pdfBtn.disabled=false;}return;}const copyArticle=e.target.closest('#copyArticleLink');if(copyArticle){e.preventDefault();const article=store.selectors.articleById(state,openArticleId);if(article){const url=articlePublicUrl(article);try{await navigator.clipboard.writeText(url);copyArticle.textContent='Link copiato';setTimeout(()=>{copyArticle.textContent='Copia link';},1600);}catch(_){window.prompt('Copia questo collegamento',url);}}return;}const articleTarget=e.target.closest('[data-article-open]');if(articleTarget && !e.target.closest('[data-edit-article],[data-delete-article]')){e.preventDefault();e.stopPropagation();showArticle(articleTarget.dataset.articleOpen||articleTarget.closest('[data-article-open]')?.dataset.articleOpen,articleTarget);return;}const card=e.target.closest('[data-match-detail]');if(card){e.preventDefault();showMatch(card.dataset.matchDetail);return;}if(e.target.id==='closeModal'){const mm=$('#matchModal');mm.classList.remove('open');mm.classList.remove('public-match-modal');}
+  document.addEventListener('click',async e=>{const exportBtn=e.target.closest('[data-share-export]');if(exportBtn){e.preventDefault();if(!window.NGShareImages){alert('Modulo immagini non disponibile. Aggiorna la pagina e riprova.');return;}const kind=exportBtn.dataset.shareExport;const payload=kind==='standings-group'?{groupName:exportBtn.dataset.shareGroup||''}:{};try{await window.NGShareImages.generateAndPreview(kind,state,payload,exportBtn);}catch(err){alert(err.message||'Impossibile generare l immagine.');}return;}const filterOpener=e.target.closest('[data-open-match-filter]');if(filterOpener){e.preventDefault();openMatchFilterSheet(filterOpener.dataset.openMatchFilter);return;}const filterChoice=e.target.closest('[data-filter-type]');if(filterChoice){e.preventDefault();setMatchFilter(filterChoice.dataset.filterType,filterChoice.dataset.filterValue||'');return;}if(e.target.closest('[data-close-match-filter]')){e.preventDefault();closeMatchFilterSheet();return;}if(e.target.id==='matchFilterSheet'){e.preventDefault();e.stopPropagation();closeMatchFilterSheet();return;}if(e.target.closest('[data-clear-match-filters]')){e.preventDefault();phaseFilter='';roundFilter='';teamFilter='';statusFilter='';persistPublicFilters();renderMatches();return;}const presetBtn=e.target.closest('[data-match-preset]');if(presetBtn){e.preventDefault();statusFilter=presetBtn.dataset.matchPreset==='all'?'':presetBtn.dataset.matchPreset;persistPublicFilters();renderMatches();return;}const shareBtn=e.target.closest('[data-share-match]');if(shareBtn){e.preventDefault();const m=state.matches.find(x=>x.id===shareBtn.dataset.shareMatch);if(m){if(m.status==='live'){alert('La condivisione immagine è disponibile solo per partite concluse.');return;}await shareMatchImage(m,shareBtn);}return;}const favBtn=e.target.closest('[data-favorite-team]');if(favBtn){e.preventDefault();e.stopPropagation();const id=favBtn.dataset.favoriteTeam;if(isFavoriteTeam(id))clearFavoriteTeam();else setFavoriteTeam(id);return;}if(e.target.closest('[data-clear-favorite]')){e.preventDefault();clearFavoriteTeam();return;}if(e.target.closest('[data-open-teams-tab]')){e.preventDefault();document.querySelector('[data-tab="teams"]')?.click();return;}const favMatchBtn=e.target.closest('[data-filter-favorite-matches]');if(favMatchBtn){e.preventDefault();teamFilter=favMatchBtn.dataset.filterFavoriteMatches||favoriteTeamId;persistPublicFilters();document.querySelector('[data-tab="matches"]')?.click();renderMatches();return;}const teamTarget=e.target.closest('[data-team-detail]');if(teamTarget){e.preventDefault();showTeamDetail(teamTarget.dataset.teamDetail,teamTarget);return;}const pdfBtn=e.target.closest('[data-team-pdf]');if(pdfBtn){const busy=window.NGInteractive;if(busy?.isButtonBusy(pdfBtn))return;if(busy)busy.setButtonBusy(pdfBtn,true,'Genero PDF…');else pdfBtn.disabled=true;try{await downloadTeamPdf(pdfBtn.dataset.teamPdf);}catch(err){alert('Errore PDF squadra: '+(err.message||err));}finally{if(busy)busy.setButtonBusy(pdfBtn,false);else pdfBtn.disabled=false;}return;}const copyArticle=e.target.closest('#copyArticleLink');if(copyArticle){e.preventDefault();const article=store.selectors.articleById(state,openArticleId);if(article){const url=articlePublicUrl(article);try{await navigator.clipboard.writeText(url);copyArticle.textContent='Link copiato';setTimeout(()=>{copyArticle.textContent='Copia link';},1600);}catch(_){window.prompt('Copia questo collegamento',url);}}return;}const articleTarget=e.target.closest('[data-article-open]');if(articleTarget && !e.target.closest('[data-edit-article],[data-delete-article]')){e.preventDefault();e.stopPropagation();showArticle(articleTarget.dataset.articleOpen||articleTarget.closest('[data-article-open]')?.dataset.articleOpen,articleTarget);return;}const card=e.target.closest('[data-match-detail]');if(card){e.preventDefault();showMatch(card.dataset.matchDetail);return;}if(e.target.id==='closeModal'){const mm=$('#matchModal');mm.classList.remove('open');mm.classList.remove('public-match-modal');}
   if(e.target.id==='matchModal'){e.preventDefault();e.stopPropagation();const mm=$('#matchModal');mm.classList.remove('open');mm.classList.remove('public-match-modal');}if(e.target.id==='closeArticleModal')closeArticleModal();
   if(e.target.id==='articleModal'){e.preventDefault();e.stopPropagation();closeArticleModal();}if(e.target.id==='closeTeamModal')closeTeamModal();
   if(e.target.id==='teamModal'){e.preventDefault();e.stopPropagation();closeTeamModal();}});

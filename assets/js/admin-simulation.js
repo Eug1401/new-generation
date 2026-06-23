@@ -8,10 +8,8 @@
   const LOCK_KEY='new-generation-simulation-lock-v1';
   const OWNER_KEY='new-generation-simulation-owner-v1';
   const LOCK_TTL=5*60*1000;
-  const FORMATS=['league','knockout','groups_knockout','league_knockout'];
+  const FORMATS=['groups_knockout','league_knockout'];
   const FORMAT_META={
-    league:{title:"Girone unico",description:"8 squadre, 7 giornate e 28 partite. La prima classificata vince il torneo.",teams:8},
-    knockout:{title:'Eliminazione diretta',description:'Quarti, semifinali e finale: 7 partite complessive.',teams:8},
     groups_knockout:{title:'Due gironi + fase finale',description:'Due gironi da 4, prime due qualificate, semifinali e finale: 15 partite.',teams:8},
     league_knockout:{title:'Girone unico + tabellone',description:'28 partite di campionato, poi quarti, semifinali e finale: 35 partite.',teams:8}
   };
@@ -98,6 +96,7 @@
 
   function validateOptions(source,raw,{requireConfirmations=false}={}){
     const options=normalizeOptions(raw);
+    if(raw.format&&!FORMATS.includes(raw.format))return {ok:false,message:'Formato non supportato: usa Gironi + eliminazione diretta oppure Classifica unica + eliminazione diretta.'};
     if(options.generatedTeamCount!==8)return {ok:false,message:'La simulazione supporta esattamente 8 squadre.'};
     if(options.teamMode==='existing'){
       if((source.teams||[]).length<8)return {ok:false,message:'Servono almeno 8 squadre esistenti. Puoi scegliere “Genera 8 squadre di prova”.'};
@@ -287,7 +286,6 @@
   }
 
   function tournamentWinner(state){
-    if(state.rules.format==='league')return store.selectors.calculateStandings(state,'league')[0]?.teamId||'';
     let bracketName='Tabellone principale';
     if(state.rules.format==='groups_knockout')bracketName='Fase finale';
     if(state.rules.format==='league_knockout')bracketName='Playoff Oro';
@@ -297,7 +295,7 @@
     return final?store.winnerId(state,final):'';
   }
 
-  function expectedMatchCount(format){return {league:28,knockout:7,groups_knockout:15,league_knockout:35}[format]||0;}
+  function expectedMatchCount(format){return {groups_knockout:15,league_knockout:35}[format]||0;}
   function validateSimulation(state,context={}){
     const errors=[];
     const options=normalizeOptions(context.options||{});
@@ -384,10 +382,8 @@
     }
     const winnerId=tournamentWinner(state);
     if(!winnerId||!store.getTeam(state,winnerId))errors.push('Vincitore del torneo mancante o non valido.');
-    if(options.format!=='league'){
-      const finals=matches.filter(m=>store.isKnockoutPhase(m)&&m.bracketRound==='Finale');
-      if(!finals.length)errors.push('Finale non presente.');
-    }
+    const finals=matches.filter(m=>store.isKnockoutPhase(m)&&m.bracketRound==='Finale');
+    if(!finals.length)errors.push('Finale non presente.');
     const dates=unique(matches.map(m=>m.date));
     if(options.duration==='one_day'&&dates.length!==1)errors.push('Il torneo giornaliero usa più di una data.');
     if(options.duration==='multi_day'&&dates.length<2)errors.push('Il torneo su più giorni non è stato distribuito correttamente.');
@@ -448,7 +444,7 @@
     store.selectors.officialStandings(draft);
     await progress('Calcolo classifiche','Punti e statistiche ricalcolati dagli eventi.');
     store.autoResolveKnockout(draft);
-    await progress('Creazione tabellone',options.format==='league'?'Formato senza tabellone: vincitore dalla classifica.':'Turni, finale e vincitore risolti.');
+    await progress('Creazione tabellone','Turni, finale e vincitore risolti.');
     const validation=finalizeDraft(draft,options,opId,originalArticles);
     await progress('Verifica finale',`Controlli superati. Vincitore: ${validation.winner}.`);
     return {state:draft,options,validation,operationId:opId,generation};
@@ -545,7 +541,7 @@
       const list=o.teamMode==='existing'&&available>=8?`<fieldset class="simulation-team-picker"><legend>Seleziona esattamente 8 squadre (${o.selectedTeamIds.length}/8)</legend>${source.teams.map(t=>`<label><input type="checkbox" data-existing-team value="${UI.esc(t.id)}" ${o.selectedTeamIds.includes(String(t.id))?'checked':''}><span>${UI.logo(t,false)}<strong>${UI.esc(t.name)}</strong><small>${(t.players||[]).length} giocatori attuali</small></span></label>`).join('')}</fieldset>`:'';
       body.innerHTML=`<div class="simulation-step-copy"><span class="pill">Passaggio 1 di 5</span><h3>Vuoi utilizzare le squadre già presenti nel sistema?</h3><p>La simulazione usa sempre 8 partecipanti, così tutti i formati restano confrontabili.</p></div><div class="simulation-choice-grid">${choiceCard('simulationTeamMode','existing','Usa squadre esistenti',available>=8?`Sono disponibili ${available} squadre. Selezionane 8.`:`Sono disponibili solo ${available} squadre: ne servono almeno 8.`,o.teamMode==='existing',available<8)}${choiceCard('simulationTeamMode','generated','Genera 8 squadre di prova','Crea nomi, colori e stemmi locali differenti.',o.teamMode==='generated')}</div>${list}${o.teamMode==='existing'?'<div class="message warn"><strong>Attenzione:</strong> i giocatori delle 8 squadre selezionate verranno sostituiti con 5 giocatori simulati per squadra.</div>':'<div class="help-box">Le squadre e le foto del torneo corrente saranno sostituite; articoli, sito e configurazioni esterne resteranno invariati.</div>'}`;
     }else if(wizard.step===1){
-      body.innerHTML=`<div class="simulation-step-copy"><span class="pill">Passaggio 2 di 5</span><h3>Quale formato vuoi utilizzare?</h3><p>Sono mostrati soltanto i quattro formati realmente supportati dal motore del sito.</p></div><div class="simulation-format-grid">${FORMATS.map(format=>choiceCard('simulationFormat',format,FORMAT_META[format].title,FORMAT_META[format].description,o.format===format)).join('')}</div>`;
+      body.innerHTML=`<div class="simulation-step-copy"><span class="pill">Passaggio 2 di 5</span><h3>Quale formato vuoi utilizzare?</h3><p>Sono mostrati soltanto i due formati ammessi dal flusso calendario manuale.</p></div><div class="simulation-format-grid">${FORMATS.map(format=>choiceCard('simulationFormat',format,FORMAT_META[format].title,FORMAT_META[format].description,o.format===format)).join('')}</div>`;
     }else if(wizard.step===2){
       body.innerHTML=`<div class="simulation-step-copy"><span class="pill">Passaggio 3 di 5</span><h3>Vuoi utilizzare il formato Kings?</h3><p>La modalità Kings usa le regole già previste dal progetto e garantisce un presidente per ogni squadra.</p></div><div class="simulation-choice-grid">${choiceCard('simulationKings','no','Formato standard','Presidenti facoltativi e punteggio standard.',!o.kings)}${choiceCard('simulationKings','yes','Formato Kings','Crea o completa i presidenti di tutte le squadre.',o.kings)}</div>`;
     }else if(wizard.step===3){
