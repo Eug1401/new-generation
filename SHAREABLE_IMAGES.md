@@ -53,3 +53,7 @@ La generazione avviene lato browser usando lo stato pubblico gia visibile. Non v
 - La verifica visuale automatica richiede un browser headless disponibile. In questo ambiente non e stato possibile avviare il plugin browser.
 - La condivisione nativa dipende dal supporto del browser e del sistema operativo. In desktop non compatibili viene usato il download.
 - Loghi remoti senza CORS vengono sostituiti dal placeholder per preservare il PNG esportabile.
+
+## Aggiornamento v1.28.0 — scheda partita
+
+La scheda partita utilizza ora un layout ad altezza dinamica. I marcatori vengono aggregati per giocatore e squadra, con numero di maglia, quantità di gol e, quando necessario, punteggio Kings League. Il canvas non usa più un riquadro marcatori di altezza fissa: cresce automaticamente in presenza di molti nomi, evitando sovrapposizioni e contenuti tagliati.
