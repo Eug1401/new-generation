@@ -344,22 +344,11 @@
     roundRect(ctx,x,y,w,h,r,fill,stroke);ctx.restore();
   }
   function matchScorers(state,m){
-    if(store.aggregateGoalEvents)return store.aggregateGoalEvents(state,m);
-    const groups=new Map();
-    (m.goals||[]).forEach(g=>{
-      const own=store.isOwnGoalEvent&&store.isOwnGoalEvent(g);
-      const teamId=store.goalScoringTeamId?store.goalScoringTeamId(state,m,g):store.getParticipant(state,g.playerId)?.team?.id;
-      const key=own?`own:${teamId}`:`player:${g.playerId}`;
-      if(!groups.has(key))groups.set(key,{teamId,playerId:g.playerId||'',ownGoal:own,label:store.goalEventLabel?store.goalEventLabel(state,m,g):store.playerName(state,g.playerId),number:store.getParticipant(state,g.playerId)?.number??'',count:0,scoreValue:0});
-      const row=groups.get(key);row.count+=1;row.scoreValue+=store.eventScoreWeight?store.eventScoreWeight(state,g):(Number(g.weight)||1);
-    });
-    return Array.from(groups.values());
+    return store.aggregateGoalEvents(state,m);
   }
   function scorerSubtitle(row){
-    if(row.ownGoal)return row.count===1?'1 autogol':`${row.count} autogol`;
-    const goals=row.count===1?'1 gol':`${row.count} gol`;
-    const doubles=Number(row.doubleCount)||0;
-    return doubles?`${goals} · ${doubles===1?'1 doppio':`${doubles} doppi`}`:goals;
+    const type=row.typeLabel||(row.kind==='double'?(row.count===1?'Gol doppio':'Gol doppi'):(row.kind==='president'?'Gol (rig.)':row.ownGoal?'Autogol':'Gol'));
+    return row.kind==='double'?`${type} · ${row.scoreValue} reti nel risultato`:type;
   }
   function drawScorerRow(ctx,row,x,y,w,h){
     roundRect(ctx,x,y,w,h,18,'#fffdf7','rgba(215,164,45,.24)');
@@ -367,7 +356,7 @@
     roundRect(ctx,x+14,y+(h-badge)/2,badge,badge,15,row.ownGoal?'#fff1c2':'#171208',row.ownGoal?LINE:null);
     ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle=row.ownGoal?GOLD:'#fff';
     ctx.font=`900 ${row.ownGoal?20:17}px ${FONT}`;
-    ctx.fillText(row.ownGoal?'↩':(row.number!==''&&row.number!=null?`#${row.number}`:'—'),x+14+badge/2,y+h/2,badge-6);
+    ctx.fillText(row.ownGoal?'↩':(row.isPresident||row.kind==='president'?'RIG':(row.number!==''&&row.number!=null?`#${row.number}`:'—')),x+14+badge/2,y+h/2,badge-6);
     const qtyW=72,nameX=x+78,nameW=w-78-qtyW-24;
     const layout=fitWrappedLayout(ctx,row.label,nameW,{start:21,min:13,maxLines:2,weight:'850'});
     const lineHeight=Math.max(17,layout.size+2);
@@ -447,7 +436,7 @@
 
     drawSoftCard(ctx,54,scorerY,width-108,scorerPanelH,30,'rgba(255,255,255,.88)',LINE);
     ctx.fillStyle=INK;ctx.font=`950 27px ${FONT}`;ctx.textAlign='left';ctx.textBaseline='top';ctx.fillText('Marcatori',82,scorerY+28);
-    ctx.fillStyle=MUTED;ctx.font=`750 15px ${FONT}`;ctx.fillText('Ogni giocatore è mostrato una sola volta con il totale dei gol segnati.',82,scorerY+65,width-164);
+    ctx.fillStyle=MUTED;ctx.font=`750 15px ${FONT}`;ctx.fillText('Gol normali, gol doppi e gol del presidente sono mostrati su righe separate.',82,scorerY+65,width-164);
     const colGap=24,colW=(width-164-colGap)/2,leftX=82,rightX=82+colW+colGap,headY=scorerY+92;
     ctx.strokeStyle='rgba(215,164,45,.22)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(width/2,headY);ctx.lineTo(width/2,scorerY+scorerPanelH-24);ctx.stroke();
     const headings=[[home,leftX],[away,rightX]];

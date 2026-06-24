@@ -1,166 +1,85 @@
 # New Generation Tournament
 
-Applicazione statica multipagina per gestione e pubblicazione di un torneo, realizzata con HTML, CSS e JavaScript vanilla. Backend dati: Supabase (chiavi anonime/pubbliche); media: Cloudinary.
+Applicazione statica multipagina per la gestione e la pubblicazione di un torneo, realizzata con HTML, CSS e JavaScript vanilla. La persistenza usa Supabase; i media possono essere ospitati su Cloudinary.
 
 ## Tecnologie
 
-- HTML5 semantico, CSS3 (design system con CSS variables), JavaScript ES2020+ (vanilla, no framework)
-- Supabase JS SDK (caricato da CDN) per persistenza e realtime
-- jsPDF + jspdf-autotable (caricati da CDN) per generazione PDF lato client
-- Cloudinary per hosting immagini
-- Node.js (solo per script di validazione/build/test, **non** runtime)
-
-## Requisiti
-
-- Node.js ≥ 18 (per `npm test` / `npm run build` / `npm run lint`)
-- Browser moderno (Chrome / Firefox / Safari / Edge ultime due major)
-- Per `npm run test:ui`: Chromium installato (variabile `CHROMIUM_BIN` per percorso custom)
-
-## Installazione
-
-```bash
-npm install
-```
-
-(Il `package.json` non ha dipendenze runtime: l'installazione è quasi istantanea.)
+- HTML5, CSS3 e JavaScript ES2020+ senza framework;
+- Supabase JS SDK per persistenza e aggiornamenti realtime;
+- jsPDF e jspdf-autotable per gli export PDF lato browser;
+- Canvas e Web Share API per gli export immagine;
+- Node.js 18 o successivo esclusivamente per validazione e build.
 
 ## Avvio locale
 
-Nessun bundler richiesto. Servire la cartella con un qualsiasi server HTTP statico:
+Non è richiesto un bundler. Servire la cartella con un server HTTP statico, per esempio:
 
 ```bash
 python3 -m http.server 8080
 ```
 
-Poi aprire:
-- `http://localhost:8080/index.html` — sito pubblico
-- `http://localhost:8080/admin.html` — area amministrativa
+Pagine principali:
 
-## Build
+- `http://localhost:8080/index.html` — sito pubblico;
+- `http://localhost:8080/admin.html` — area amministrativa.
+
+## Validazione e build
 
 ```bash
+npm run lint
 npm run build
 ```
 
-Genera la cartella `dist/` con tutti i file statici versionati pronti per il deploy.
-
-## Test
-
-```bash
-npm test          # validatore: file richiesti, link interni, sintassi JS, regole CSS
-npm run lint      # alias di npm test in modalità lint
-npm run test:ui   # test di stabilità UI in Chromium headless (richiede Chromium)
-npm run test:calendar       # 10 scenari sullo scheduler, i vincoli e la generazione
-npm run test:calendar-share # regressioni calendario manuale e moduli immagine
-```
-
-## Calendario e condivisione immagini
-
-- La generazione calendario è manuale e confermata dall'amministratore: prima si configurano formato, gironi e vincoli, poi si analizza l'anteprima, infine si salva.
-- Sono supportati i flussi `groups_knockout` e `league_knockout`, con personalizzazione della prima giornata e un solo vincolo esplicito nella sezione Vincoli: l'orario esatto d'esordio.
-- Il wizard conserva una bozza locale delle regole calendario: si puo uscire, rientrare, modificarla, eliminarla o confermare la generazione senza creare partite intermedie.
-- Se il calendario personalizzato non è fattibile, il wizard mostra conflitti comprensibili, conserva la bozza e permette di tornare ai vincoli senza salvare un calendario parziale.
-- Il sito pubblico può esportare e condividere PNG dedicati per classifica generale, classifica di girone, tabellone e singola partita tramite Web Share API o download fallback.
-
-Documentazione tecnica:
-
-- `CALENDAR_CUSTOMIZATION.md`
-- `CALENDAR_RULES_REFERENCE.md`
-- `SHAREABLE_IMAGES.md`
-- `ONLINE_RESEARCH_CALENDAR.md`
-- `IMPLEMENTATION_REPORT_CALENDAR_WIZARD.md`
-
-## Variabili d'ambiente
-
-Le credenziali Supabase e Cloudinary sono in `assets/js/supabase-config.js`. **Inserire solo chiavi pubbliche/anonime**; mai chiavi server o token segreti. Per la configurazione completa vedere:
-
-- `CLOUDINARY_SUPABASE_SETUP.md`
-- `SUPABASE_GUIDA.txt`
-- `SUPABASE_SETUP.sql` (script di inizializzazione DB)
-
-`npm run test:ui` accetta:
-- `CHROMIUM_BIN` — percorso al binario Chromium (default `/usr/bin/chromium`)
+La build genera `dist/`, pronta per il deploy statico. Il progetto consegnato non contiene script o artefatti di test: sono stati rimossi dopo l’esecuzione delle verifiche finali.
 
 ## Struttura
 
-```
+```text
 .
-├── index.html             # sito pubblico (tabs: panoramica, squadre, giocatori, partite, tabellone, articoli, foto, ricerca)
-├── admin*.html            # area amministrativa multi-pagina
-├── print.html             # template stampa / PDF
-├── 404.html               # pagina non trovata
+├── index.html
+├── admin*.html
+├── print.html
+├── 404.html
 ├── assets/
-│   ├── css/styles.css     # design system unificato (gold/black/anthracite/white)
-│   ├── js/                # moduli vanilla: store, ui, supabase-sync, photos, public, admin-*
-│   └── brand/             # asset di branding
-├── supabase/functions/    # funzioni edge Supabase
-├── tools/                 # script di build, validazione, test UI
-└── REPORT_MODIFICHE_UI.md # report tecnico della revisione UI v126
+│   ├── css/styles.css
+│   ├── js/
+│   └── brand/
+├── supabase/functions/
+├── tools/
+│   ├── validate-project.mjs
+│   └── build-static.mjs
+├── dist/
+└── INTERVENTO_MARCATORI_KINGS_V129.md
 ```
 
-## Principali modifiche (revisione UI v126 — Dicembre 2025)
+## Marcatori e modalità KINGS
 
-Sintesi delle modifiche apportate in questa revisione (dettagli in `REPORT_MODIFICHE_UI.md`):
+Dalla versione 1.29.0 la logica dei gol è centralizzata in `assets/js/store.js`.
 
-### Identità visiva
-- Palette unificata su **oro + nero/antracite + crema/bianco**
-- Eliminato l'uso residuo di verde/azzurro nel CSS (palette legacy v18)
-- Logo, tab attivi, pulsanti primari, badge punteggio, rank ora condividono un unico gradient oro coerente
-- Bordi, focus e accenti decorativi sempre in oro discreto
+- Un gol normale vale 1 nella classifica marcatori e 1 nel risultato.
+- Un gol doppio KINGS vale 1 nella classifica marcatori e 2 nel risultato.
+- Il gol del presidente è separato dalla classifica ordinaria, alimenta la classifica presidenti e vale 1 nel risultato.
+- Gli autogol vengono attribuiti alla squadra avversaria.
+- Dettagli, statistiche, card ed export usano la stessa aggregazione per partecipante e tipologia.
 
-### Navigazione (nessun fissaggio durante lo scroll)
-- Rimosso `position: sticky` da: `header.site-header`, `.tabs`, `.admin-nav`, `.flow-sidebar`, `.photos-sidebar`, `.photos-bulk-bar`, `.public-score-center`
-- Eliminata la barra mobile fissa in fondo schermo (`.mobile-bottom-nav` e `.mobile-nav-sheet`) — la navigazione mobile usa ora la riga `.tabs` con scroll orizzontale
-- I "sticky" rimanenti sono **solo all'interno di modali** (toolbar che restano visibili scorrendo il contenuto di un dialogo), comportamento standard e non invasivo
+Il report completo dell’intervento, con cause, file modificati e test eseguiti, è disponibile in `INTERVENTO_MARCATORI_KINGS_V129.md`.
 
-### Stabilità visiva
-- `scrollbar-gutter: stable both-edges` per evitare layout-shift orizzontale
-- `overflow-x: hidden` su `html, body` per impedire scroll orizzontale indesiderato
-- `img, svg, video { max-width:100%; height:auto }` come baseline
-- `main { min-height: 60vh }` per evitare salti durante il caricamento dati
-- `body::before` (overlay decorativo a griglia) ridotto a opacity .22 per minor distrazione
-- `prefers-reduced-motion`: animazioni e transizioni ridotte a ≤1ms quando l'utente lo richiede
+## Configurazione servizi
 
-### Accessibilità
-- Anelli di focus visibili in oro (`:focus-visible` con outline + box-shadow)
-- Aree cliccabili ≥ 42px (≥44px su mobile) per pulsanti, tab, link di navigazione
-- Skip-link sempre disponibile e ben visibile al focus
-- Selezioni di testo (`::selection`) in oro su fondo scuro per contrasto
-- Mantenuti gli attributi ARIA esistenti; nessuna funzionalità rimossa
+Le configurazioni pubbliche sono in `assets/js/supabase-config.js`. Inserire esclusivamente chiavi anonime/pubbliche, mai token server o segreti.
 
-### Coerenza dei componenti
-- `.btn`, `.pill`, `.player-chip`, `.help-box`, `.empty`, `input/select/textarea` allineati alla palette oro
-- `.btn` non ha più `transform: translateY(-1px)` su hover (causa salti) — sostituito da hover di colore/ombra
-- `.table` con `th` in oro tenue, righe alternate stabili
-- Messaggi (`.message.ok`/`.message.error`) coerenti su tutto il sito
+Documentazione disponibile:
 
-### Codice / manutenibilità
-- Aggiunta `v126 — Consolidation layer` come unica sezione finale che concentra: navigation flow, focus rings, target sizes, reduced motion, scrollbar gutter, palette enforcement
-- Uso di `!important` limitato ai casi di override navigazione (sticky/fixed) — documentato
-- Nessuna libreria nuova introdotta; zero dipendenze runtime
+- `CLOUDINARY_SUPABASE_SETUP.md`;
+- `SUPABASE_GUIDA.txt`;
+- `SUPABASE_SETUP.sql`;
+- `CALENDAR_CUSTOMIZATION.md`;
+- `CALENDAR_RULES_REFERENCE.md`;
+- `SHAREABLE_IMAGES.md`.
 
-### Compatibilità
-- Tutti i selettori dinamici usati da JavaScript (518 classi censite) sono preservati
-- API, endpoint Supabase, logica store/sync, routing pagine, autenticazione: invariati
-- Build, lint e test di validazione passano con 0 errori / 0 warning
+## Compatibilità
 
-## Stato delle verifiche
-
-| Test | Comando | Stato |
-| --- | --- | --- |
-| Validatore progetto | `npm test` | ✅ 0 errori, 0 warning |
-| Lint | `npm run lint` | ✅ 0 errori, 0 warning |
-| Build statica | `npm run build` | ✅ `dist/` generato |
-| UI headless Chromium | `npm run test:ui` | ⚠ Richiede Chromium installato |
-| Sintassi JS (`node --check`) | inclusa in `npm test` | ✅ 21/21 file |
-| Riferimenti locali HTML | inclusa in `npm test` | ✅ tutti risolti |
-| `transition: all` assenza | inclusa in `npm test` | ✅ |
-| `prefers-reduced-motion` | inclusa in `npm test` | ✅ 9 occorrenze |
-| `scrollbar-gutter: stable` | inclusa in `npm test` | ✅ |
-| Parentesi CSS bilanciate | inclusa in `npm test` | ✅ |
-
-Tutti i test eseguibili in CI passano. `npm run test:ui` è stato eseguito storicamente con Chromium e i percorsi a render-time sono documentati in `tools/test-ui-stability.mjs`; non eseguito in questa revisione perché Chromium non è disponibile nell'ambiente di esecuzione.
-
-## Note finali
-
-Il report tecnico completo della revisione UI è in `REPORT_MODIFICHE_UI.md` (allegato nel pacchetto). Quel documento elenca problemi rilevati, soluzioni applicate, file modificati e problemi residui.
+- browser moderni Chrome, Firefox, Safari ed Edge;
+- layout responsive per desktop, tablet e smartphone;
+- compatibilità con partite già salvate e con eventi gol legacy privi di un peso valido;
+- nessuna dipendenza runtime installata tramite npm.

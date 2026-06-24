@@ -348,7 +348,10 @@
         const minute=Number(goal.minute);
         if(!Number.isInteger(minute)||minute<1||minute>Number(state.rules.matchDuration||40))errors.push(`${match.round}: minuto gol non valido.`);
         if(minute<lastMinute)errors.push(`${match.round}: gol non ordinati cronologicamente.`);lastMinute=minute;
-        if(Number(goal.weight)!==1)errors.push(`${match.round}: il test usa eventi uno-a-uno con il punteggio; peso gol inatteso.`);
+        const weight=Number(goal.weight)||1;
+        if(![1,2].includes(weight))errors.push(`${match.round}: peso gol non valido.`);
+        if(!state.rules?.isKingsLeague&&weight!==1)errors.push(`${match.round}: un gol doppio è presente fuori dalla modalità Kings.`);
+        if(store.isPresidentId(state,goal.playerId)&&weight!==1)errors.push(`${match.round}: il gol del presidente deve valere una rete.`);
       });
       (match.cards||[]).forEach(card=>{
         const player=store.getPlayer(state,card.playerId);
@@ -356,7 +359,7 @@
         if(!['yellow','red'].includes(card.type))errors.push(`${match.round}: tipo cartellino non valido.`);
       });
       const score=store.matchGoals(state,match);
-      if(store.actualGoalCount(state,match,match.homeTeamId)!==score.home||store.actualGoalCount(state,match,match.awayTeamId)!==score.away)errors.push(`${match.round}: eventi gol e risultato non coincidono.`);
+      if(store.teamScoreValue(state,match,match.homeTeamId)!==score.home||store.teamScoreValue(state,match,match.awayTeamId)!==score.away)errors.push(`${match.round}: eventi gol e risultato non coincidono.`);
       const derivedWinner=store.winnerId(state,match);
       if(store.isKnockoutPhase(match)&&!derivedWinner)errors.push(`${match.round}: nessun vincitore nella fase a eliminazione diretta.`);
       if(String(match.winnerTeamId||'')!==String(derivedWinner||''))errors.push(`${match.round}: vincitore registrato non coerente con il risultato.`);
