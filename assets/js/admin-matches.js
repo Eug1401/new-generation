@@ -105,7 +105,7 @@
      });
    }
    if(kind==='goal'&&isKings(state)&&team.president?.name){
-     people.push({id:team.president.id,name:team.president.name,label:`Pres. ${team.president.name}`,type:'president',searchKey:`pres ${team.president.name||''}`.toLowerCase()});
+     people.push({id:team.president.id,name:team.president.name,label:store.presidentGoalLabel?store.presidentGoalLabel(state,team.president.id):`${team.president.name} (rig.)`,type:'president',searchKey:`pres presidente rig rigore ${team.president.name||''}`.toLowerCase()});
    }
    let filtered=people;
    if(q){
@@ -128,6 +128,16 @@
    if(!teamPicker||!playerPicker)return;
    playerPicker.innerHTML=playerOptionsForTeam(A.state(),teamPicker.value,search?.value||'',playerPicker.value,kind);
  }
+ function syncQuickGoalDoublePicker(form){
+   const input=form?.querySelector('[data-goal-double-count-picker]');if(!input)return;
+   const count=Math.max(1,Math.min(99,Number(form.querySelector('[data-goal-count-picker]')?.value)||1));
+   const picked=form.querySelector('[data-goal-player-picker]')?.value||'';
+   const participant=store.getParticipant(A.state(),picked);
+   const enabled=Boolean(participant&&participant.type==='player');
+   input.disabled=!enabled;
+   input.max=String(count);
+   input.value=enabled?String(Math.max(0,Math.min(count,Number(input.value)||0))):'0';
+ }
  function cardTypeSelect(selected='yellow'){
    return `<select data-card-type-picker><option value="yellow" ${selected==='yellow'?'selected':''}>Giallo</option><option value="red" ${selected==='red'?'selected':''}>Rosso</option></select>`;
  }
@@ -135,45 +145,87 @@
    const p=store.getParticipant(state,playerId);
    return p?`${p.type==='president'?'Pres. ':''}${UI.esc(p.name)} · ${UI.esc(p.team.name)}`:'Persona rimossa';
  }
+ function participantNumber(state,playerId){
+   const p=store.getParticipant(state,playerId);
+   return p?.type==='player'&&p.number!==''&&p.number!=null?String(p.number):'';
+ }
+ function matchGoalPlayerOptions(state,match,selected=''){
+   if(!match)return '<option value="">Nessun giocatore disponibile</option>';
+   return [match.homeTeamId,match.awayTeamId].filter(Boolean).map(teamId=>{
+     const team=store.getTeam(state,teamId);if(!team)return '';
+     const people=(team.players||[]).map(player=>({...player,type:'player'}));
+     if(isPresidentScorerAllowed(state)&&team.president?.name)people.push({...team.president,type:'president'});
+     people.sort((a,b)=>{
+       const an=a.type==='player'&&a.number!==''&&a.number!=null?Number(a.number):9999;
+       const bn=b.type==='player'&&b.number!==''&&b.number!=null?Number(b.number):9999;
+       return an-bn||String(a.name||'').localeCompare(String(b.name||''),'it');
+     });
+     return `<optgroup label="${UI.esc(team.name)}">${people.map(person=>{
+       const number=person.type==='player'&&person.number!==''&&person.number!=null?String(person.number):'';
+       const label=person.type==='president'?(store.presidentGoalLabel?store.presidentGoalLabel(state,person.id):`${person.name} (rig.)`):`${number?`#${number} `:''}${person.name}`;
+       return `<option value="${UI.esc(person.id)}" data-number="${UI.esc(number)}" data-team-id="${UI.esc(teamId)}" ${person.id===selected?'selected':''}>${UI.esc(label)}</option>`;
+     }).join('')}</optgroup>`;
+   }).join('');
+ }
+ function compactGoalDrafts(goals=[]){
+   const grouped=new Map();
+   goals.forEach(goal=>{
+     const own=Boolean(goal?.ownGoal);
+     const weight=own?1:(Number(goal?.weight)===2?2:1);
+     const key=own?`own:${goal?.teamId||''}`:`player:${goal?.playerId||''}`;
+     if(!grouped.has(key))grouped.set(key,{ownGoal:own,teamId:own?(goal?.teamId||''):'',playerId:own?'':(goal?.playerId||''),count:0,doubleCount:0,singleMinutes:[],doubleMinutes:[]});
+     const row=grouped.get(key);
+     row.count+=1;
+     const minute=Number(goal?.minute);
+     const cleanMinute=Number.isInteger(minute)&&minute>0?minute:'';
+     if(!own&&weight===2){row.doubleCount+=1;row.doubleMinutes.push(cleanMinute);}else row.singleMinutes.push(cleanMinute);
+   });
+   return Array.from(grouped.values());
+ }
  function cardLabel(type){return type==='red'?'Rosso':'Giallo';}
- function goalDraftItem(state,arg,weight=1){
+ function goalDraftItem(state,match,arg,weight=1){
    const g=(arg&&typeof arg==='object')?arg:{playerId:arg,weight};
-   const minute=Number.isInteger(Number(g.minute))&&Number(g.minute)>0?Number(g.minute):'';
-   const minuteInput=`<input type="hidden" name="goalMinute" value="${minute}">`;
-   const minuteBadge=minute?`<span class="pill">${minute}′</span>`:'';
+   const count=Math.max(1,Math.min(99,Number(g.count)||1));
+   const doubleCount=Math.max(0,Math.min(count,Number(g.doubleCount ?? (Number(g.weight)===2?count:0))||0));
+   const singleMinutesValue=UI.esc(JSON.stringify(Array.isArray(g.singleMinutes)?g.singleMinutes:[]));
+   const doubleMinutesValue=UI.esc(JSON.stringify(Array.isArray(g.doubleMinutes)?g.doubleMinutes:[]));
    if(g.ownGoal){
      const teamId=g.teamId||'';
      const team=store.getTeam(state,teamId);
      if(!team)return '';
-     return `<div class="event-item goal-draft-row" data-event-item>
-    <input type="hidden" name="goalOwnGoal" value="1">
-    <input type="hidden" name="goalTeamId" value="${UI.esc(teamId)}">
-    <input type="hidden" name="goalPlayerId" value="">
-    <input type="hidden" name="goalWeight" value="1">
-    ${minuteInput}
-    <span class="event-icon">↩️</span>
-    <strong>Autogol</strong>
-    <span class="pill">A favore di ${UI.esc(team.name||'squadra')}</span>
-    ${minuteBadge}
-    <button class="btn small danger" type="button" data-remove-draft-row>Rimuovi</button>
-   </div>`;
+     return `<div class="event-item goal-draft-row scorer-editor-row" data-event-item data-own-goal-team="${UI.esc(teamId)}">
+      <input type="hidden" name="goalOwnGoal" value="1">
+      <input type="hidden" name="goalTeamId" value="${UI.esc(teamId)}">
+      <input type="hidden" name="goalPlayerId" value="">
+      <input type="hidden" name="goalDoubleCount" value="0">
+      <input type="hidden" name="goalSingleMinutes" value="${singleMinutesValue}">
+      <input type="hidden" name="goalDoubleMinutes" value="[]">
+      <span class="event-icon" aria-hidden="true">↩️</span>
+      <div class="scorer-editor-main"><label>Marcatore</label><strong>Autogol a favore di ${UI.esc(team.name||'squadra')}</strong><small>Evento attribuito alla squadra, senza giocatore.</small></div>
+      <div class="scorer-editor-number"><label>Maglia</label><input value="—" aria-label="Numero di maglia" readonly></div>
+      <div class="scorer-editor-count"><label>Numero di gol</label><input name="goalCount" type="number" min="1" max="99" step="1" inputmode="numeric" value="${count}" aria-label="Numero di autogol"></div>
+      <button class="btn small danger scorer-remove-btn" type="button" data-remove-draft-row>Rimuovi</button>
+     </div>`;
    }
    const playerId=g.playerId;
    if(store.isPresidentId(state,playerId)&&!isPresidentScorerAllowed(state)) return '';
-   const p=store.getParticipant(state,playerId);
-   if(!p) return '';
-   const w=(isKings(state)&&Number(g.weight)===2&&!store.isPresidentId(state,playerId))?2:1;
-   const weightBadge=isKings(state)?`<span class="pill">Vale ${w}</span><input type="hidden" name="goalWeight" value="${w}">`:`<input type="hidden" name="goalWeight" value="1">`;
-   return `<div class="event-item goal-draft-row" data-event-item>
+   const participant=store.getParticipant(state,playerId);
+   if(!participant)return '';
+   const isPresident=participant.type==='president';
+   const doubleField=isKings(state)&&!isPresident
+     ?`<div class="scorer-editor-weight"><label>Di cui da 2 punti</label><input name="goalDoubleCount" type="number" min="0" max="${count}" step="1" inputmode="numeric" value="${doubleCount}" aria-label="Gol validi due punti"></div>`
+     :`<input type="hidden" name="goalDoubleCount" value="0">`;
+   return `<div class="event-item goal-draft-row scorer-editor-row ${isPresident?'is-president-scorer':''}" data-event-item>
     <input type="hidden" name="goalOwnGoal" value="0">
     <input type="hidden" name="goalTeamId" value="">
-    <input type="hidden" name="goalPlayerId" value="${UI.esc(playerId)}">
-    ${minuteInput}
-    <span class="event-icon">⚽</span>
-    <strong>${playerLabel(state,playerId)}</strong>
-    ${weightBadge}
-    ${minuteBadge}
-    <button class="btn small danger" type="button" data-remove-draft-row>Rimuovi</button>
+    <input type="hidden" name="goalSingleMinutes" value="${singleMinutesValue}">
+    <input type="hidden" name="goalDoubleMinutes" value="${doubleMinutesValue}">
+    <span class="event-icon" aria-hidden="true">⚽</span>
+    <div class="scorer-editor-main"><label>Giocatore</label><select name="goalPlayerId" data-goal-row-player aria-label="Modifica marcatore">${matchGoalPlayerOptions(state,match,playerId)}</select><small>${UI.esc(participant.team.name)}${isPresident?' · Gol presidenziale su rigore, valore massimo 1':''}</small></div>
+    <div class="scorer-editor-number"><label>Maglia</label><input data-goal-jersey value="${UI.esc(participantNumber(state,playerId)||'—')}" aria-label="Numero di maglia" readonly></div>
+    <div class="scorer-editor-count"><label>Numero di gol</label><input name="goalCount" type="number" min="1" max="99" step="1" inputmode="numeric" value="${count}" aria-label="Numero di gol segnati"></div>
+    ${doubleField}
+    <button class="btn small danger scorer-remove-btn" type="button" data-remove-draft-row>Rimuovi</button>
    </div>`;
  }
  function cardDraftItem(state,arg,type='yellow'){
@@ -233,26 +285,39 @@
    const fd=new FormData(form);
    const state=A.state();
    const m=state.matches.find(x=>x.id===matchId); const current=getReportDraft(m);
-   const goalPlayerIds=fd.getAll('goalPlayerId');
-   const goalWeights=fd.getAll('goalWeight');
-   const goalOwnFlags=fd.getAll('goalOwnGoal');
-   const goalTeamIds=fd.getAll('goalTeamId');
-   const goalMinutes=fd.getAll('goalMinute');
+   const goalRows=Array.from(form.querySelectorAll('.goal-draft-row'));
    const nextGoals=[];
-   const rows=Math.max(goalPlayerIds.length,goalOwnFlags.length,goalTeamIds.length,goalWeights.length,goalMinutes.length);
-   for(let i=0;i<rows;i++){
-     const own=String(goalOwnFlags[i]||'')==='1';
+   const readMinutes=(row,name)=>{try{const value=JSON.parse(row.querySelector(`[name="${name}"]`)?.value||'[]');return Array.isArray(value)?value:[];}catch(_){return [];}};
+   goalRows.forEach(row=>{
+     const own=String(row.querySelector('[name="goalOwnGoal"]')?.value||'')==='1';
+     const count=Math.max(1,Math.min(99,Number(row.querySelector('[name="goalCount"]')?.value)||1));
+     const singleMinutes=readMinutes(row,'goalSingleMinutes');
+     const doubleMinutes=readMinutes(row,'goalDoubleMinutes');
      if(own){
-       const teamId=String(goalTeamIds[i]||'');
-       if(m&&(teamId===m.homeTeamId||teamId===m.awayTeamId)){const minute=Number(goalMinutes[i]);nextGoals.push({ownGoal:true,teamId,weight:1,...(Number.isInteger(minute)&&minute>0?{minute}:{})});}
-       continue;
+       const teamId=String(row.querySelector('[name="goalTeamId"]')?.value||'');
+       if(!m||(teamId!==m.homeTeamId&&teamId!==m.awayTeamId))return;
+       for(let index=0;index<count;index++){
+         const minute=Number(singleMinutes[index]);
+         nextGoals.push({ownGoal:true,teamId,weight:1,...(Number.isInteger(minute)&&minute>0?{minute}:{})});
+       }
+       return;
      }
-     const playerId=String(goalPlayerIds[i]||'');
-     if(!playerId)continue;
-     if(store.isPresidentId(state,playerId)&&!isPresidentScorerAllowed(state))continue;
-     const minute=Number(goalMinutes[i]);
-     nextGoals.push({playerId,weight:isKings(state)&&Number(goalWeights[i])===2&&!store.isPresidentId(state,playerId)?2:1,...(Number.isInteger(minute)&&minute>0?{minute}:{})});
-   }
+     const playerId=String(row.querySelector('[name="goalPlayerId"]')?.value||'');
+     if(!playerId)return;
+     const participant=store.getParticipant(state,playerId);
+     if(!participant||(m&&participant.team.id!==m.homeTeamId&&participant.team.id!==m.awayTeamId))return;
+     if(store.isPresidentId(state,playerId)&&!isPresidentScorerAllowed(state))return;
+     const doubleCount=isKings(state)&&participant.type!=='president'?Math.max(0,Math.min(count,Number(row.querySelector('[name="goalDoubleCount"]')?.value)||0)):0;
+     const singleCount=count-doubleCount;
+     for(let index=0;index<singleCount;index++){
+       const minute=Number(singleMinutes[index]);
+       nextGoals.push({playerId,weight:1,...(Number.isInteger(minute)&&minute>0?{minute}:{})});
+     }
+     for(let index=0;index<doubleCount;index++){
+       const minute=Number(doubleMinutes[index]);
+       nextGoals.push({playerId,weight:2,...(Number.isInteger(minute)&&minute>0?{minute}:{})});
+     }
+   });
    const cardIds=fd.getAll('cardPlayerId').filter(Boolean);
    const cardTypes=fd.getAll('cardType');
    const cardMinutes=fd.getAll('cardMinute');
@@ -260,7 +325,7 @@
    const hasCardEditor=Boolean(form.querySelector('[data-card-rows]'));
    reportDrafts.set(matchId,{
      ...current,
-     goals:(rows||hasGoalEditor)?nextGoals:((current.goals||[]).filter(g=>g.ownGoal||(!store.isPresidentId(state,g.playerId)||isPresidentScorerAllowed(state)))),
+     goals:(goalRows.length||hasGoalEditor)?nextGoals:((current.goals||[]).filter(g=>g.ownGoal||(!store.isPresidentId(state,g.playerId)||isPresidentScorerAllowed(state)))),
      cards:(cardIds.length||hasCardEditor)?cardIds.map((playerId,i)=>{const minute=Number(cardMinutes[i]);return {playerId,type:cardTypes[i]==='red'?'red':'yellow',...(Number.isInteger(minute)&&minute>0?{minute}:{})};}):current.cards||[]
    });
  }
@@ -273,32 +338,30 @@
    const base=draftFromMatch(m);
    return JSON.stringify(d)!==JSON.stringify(base);
  }
- function draftGoalRows(s,draft){return (draft.goals||[]).filter(g=>g.ownGoal||(g.playerId&&(!store.isPresidentId(s,g.playerId)||isPresidentScorerAllowed(s)))).map(g=>goalDraftItem(s,g,isKings(s)?(g.weight||1):1)).join('');}
+ function draftGoalRows(s,m,draft){return compactGoalDrafts((draft.goals||[]).filter(g=>g.ownGoal||(g.playerId&&(!store.isPresidentId(s,g.playerId)||isPresidentScorerAllowed(s))))).map(g=>goalDraftItem(s,m,g,isKings(s)?(g.weight||1):1)).join('');}
  function draftCardRows(s,draft){return (draft.cards||[]).map(c=>cardDraftItem(s,c)).join('');}
 
  function countDraftGoalsByTeam(state,match,form){
-   let home=0, away=0;
-   const fd=new FormData(form);
-   const ids=fd.getAll('goalPlayerId');
-   const weights=fd.getAll('goalWeight');
-   const ownFlags=fd.getAll('goalOwnGoal');
-   const teamIds=fd.getAll('goalTeamId');
-   const rows=Math.max(ids.length,weights.length,ownFlags.length,teamIds.length);
-   for(let i=0;i<rows;i++){
-     if(String(ownFlags[i]||'')==='1'){
-       const teamId=String(teamIds[i]||'');
-       if(teamId===match.homeTeamId) home+=1;
-       if(teamId===match.awayTeamId) away+=1;
-       continue;
+   let home=0, away=0, actual=0;
+   form.querySelectorAll('.goal-draft-row').forEach(row=>{
+     const count=Math.max(1,Math.min(99,Number(row.querySelector('[name="goalCount"]')?.value)||1));
+     actual+=count;
+     if(String(row.querySelector('[name="goalOwnGoal"]')?.value||'')==='1'){
+       const teamId=String(row.querySelector('[name="goalTeamId"]')?.value||'');
+       if(teamId===match.homeTeamId)home+=count;
+       if(teamId===match.awayTeamId)away+=count;
+       return;
      }
-     const pid=String(ids[i]||'');
-     if(!pid)continue;
-     const p=store.getParticipant(state,pid);if(p?.type==='president'&&!isPresidentScorerAllowed(state)) continue;
-     const w=(isKings(state)&&Number(weights[i])===2&&p?.type!=='president')?2:1;
-     if(p?.team.id===match.homeTeamId) home+=w;
-     if(p?.team.id===match.awayTeamId) away+=w;
-   }
-   return {home,away};
+     const pid=String(row.querySelector('[name="goalPlayerId"]')?.value||'');
+     if(!pid)return;
+     const participant=store.getParticipant(state,pid);
+     if(!participant||participant.type==='president'&&!isPresidentScorerAllowed(state))return;
+     const doubleCount=isKings(state)&&participant.type!=='president'?Math.max(0,Math.min(count,Number(row.querySelector('[name="goalDoubleCount"]')?.value)||0)):0;
+     const scoreValue=count+doubleCount;
+     if(participant.team.id===match.homeTeamId)home+=scoreValue;
+     if(participant.team.id===match.awayTeamId)away+=scoreValue;
+   });
+   return {home,away,actual};
  }
  function countCards(form){
    const types=new FormData(form).getAll('cardType');
@@ -309,7 +372,7 @@
    if(!m) return;
    const score=countDraftGoalsByTeam(s,m,form);
    const cards=countCards(form);
-   const totalGoals=score.home+score.away;
+   const totalGoals=score.actual;
    const badge=form.querySelector('[data-draft-score]');
    const homeCount=form.querySelector('[data-home-goals-count]');
    const awayCount=form.querySelector('[data-away-goals-count]');
@@ -322,6 +385,49 @@
    if(totalGoalsCount) totalGoalsCount.textContent=totalGoals;
    if(yellowCount) yellowCount.textContent=cards.yellow;
    if(redCount) redCount.textContent=cards.red;
+ }
+
+
+ function goalRowIdentity(row){
+   if(!row)return '';
+   if(String(row.querySelector('[name="goalOwnGoal"]')?.value||'')==='1')return `own:${row.querySelector('[name="goalTeamId"]')?.value||''}`;
+   return `player:${row.querySelector('[name="goalPlayerId"]')?.value||''}`;
+ }
+ function mergeDuplicateGoalRow(form,row){
+   const identity=goalRowIdentity(row);if(!identity||identity.endsWith(':'))return row;
+   const duplicate=Array.from(form.querySelectorAll('.goal-draft-row')).find(candidate=>candidate!==row&&goalRowIdentity(candidate)===identity);
+   if(!duplicate)return row;
+   const target=duplicate.querySelector('[name="goalCount"]');
+   const source=row.querySelector('[name="goalCount"]');
+   const nextCount=Math.min(99,(Number(target?.value)||1)+(Number(source?.value)||1));
+   if(target)target.value=String(nextCount);
+   const targetDouble=duplicate.querySelector('[name="goalDoubleCount"]');
+   const sourceDouble=row.querySelector('[name="goalDoubleCount"]');
+   if(targetDouble)targetDouble.value=String(Math.min(nextCount,(Number(targetDouble.value)||0)+(Number(sourceDouble?.value)||0)));
+   row.remove();
+   refreshGoalRowParticipant(A.state(),duplicate);
+   return duplicate;
+ }
+ function refreshGoalRowParticipant(state,row){
+   const picker=row?.querySelector('[data-goal-row-player]');if(!picker)return;
+   const participant=store.getParticipant(state,picker.value);
+   const jersey=row.querySelector('[data-goal-jersey]');if(jersey)jersey.value=participantNumber(state,picker.value)||'—';
+   const meta=row.querySelector('.scorer-editor-main small');if(meta)meta.textContent=participant?.team?.name?(participant.type==='president'?`${participant.team.name} · Gol presidenziale su rigore, valore massimo 1`:participant.team.name):'Giocatore non disponibile';
+   row.classList.toggle('is-president-scorer',participant?.type==='president');
+   const count=Math.max(1,Math.min(99,Number(row.querySelector('[name="goalCount"]')?.value)||1));
+   let doubleInput=row.querySelector('[name="goalDoubleCount"]');
+   const holder=row.querySelector('.scorer-editor-weight');
+   if(participant?.type==='president'||!isKings(state)){
+     if(holder){holder.outerHTML='<input type="hidden" name="goalDoubleCount" value="0">';doubleInput=row.querySelector('[name="goalDoubleCount"]');}
+     if(doubleInput)doubleInput.value='0';
+   }else if(!holder){
+     const hidden=row.querySelector('input[type="hidden"][name="goalDoubleCount"]');
+     const wrapper=document.createElement('div');wrapper.className='scorer-editor-weight';wrapper.innerHTML=`<label>Di cui da 2 punti</label><input name="goalDoubleCount" type="number" min="0" max="${count}" step="1" inputmode="numeric" value="0" aria-label="Gol validi due punti">`;
+     hidden?.replaceWith(wrapper);
+   }else{
+     doubleInput.max=String(count);
+     doubleInput.value=String(Math.max(0,Math.min(count,Number(doubleInput.value)||0)));
+   }
  }
 
 
@@ -370,7 +476,7 @@
    const draft=getReportDraft(m);
    const safeDraftGoals=(draft.goals||[]).filter(g=>g.ownGoal||(g.playerId&&(!store.isPresidentId(s,g.playerId)||isPresidentScorerAllowed(s)))).map(g=>g.ownGoal?{ownGoal:true,teamId:g.teamId,playerId:'',weight:1}:{playerId:g.playerId,weight:isKings(s)?(g.weight||1):1});
    const savedScore=store.matchGoals(s,{...m,goals:safeDraftGoals});
-   const goalsRows=draftGoalRows(s,draft);
+   const goalsRows=draftGoalRows(s,m,draft);
    const cardsRows=draftCardRows(s,draft);
    const hiddenGoals=mode==='cards'?`<div class="hidden-event-cache">${goalsRows}</div>`:'';
    const hiddenCards=mode==='goals'?`<div class="hidden-event-cache">${cardsRows}</div>`:'';
@@ -378,13 +484,14 @@
       <div class="report-head clean"><div><h3>${mode==='goals'?'Marcatori e autogol':'Cartellini'}</h3><p class="muted">${UI.esc(store.teamName(s,m.homeTeamId,m.homeLabel))} vs ${UI.esc(store.teamName(s,m.awayTeamId,m.awayLabel))}</p></div><span class="score-badge" data-draft-score>${savedScore.home} - ${savedScore.away}</span></div>
       ${mode==='goals'?`
       <section class="event-panel match-task-panel-body margin-top">
-        <div class="section-title compact"><div><h3>Marcatori e autogol</h3><p>${isKings(s)?'Cerca per numero maglia oppure scegli Autogol. Il presidente vale sempre 1.':'Cerca per numero maglia oppure scegli Autogol. Fuori dalla Kings League i presidenti non sono marcatori selezionabili.'}</p></div></div>
+        <div class="section-title compact"><div><h3>Marcatori e autogol</h3><p>${isKings(s)?'Inserisci ogni giocatore una sola volta, indica quanti gol ha segnato e modifica direttamente la riga. Il presidente vale sempre 1.':'Inserisci ogni giocatore una sola volta, indica quanti gol ha segnato e modifica direttamente la riga.'}</p></div></div>
         <div class="quick-add-bar event-picker-grid">
           <div><label>Squadra gol</label><select data-goal-team-picker>${teamEventOptions(s,m)}</select></div>
           <div><label>Cerca numero/autogol</label><input data-goal-player-search inputmode="search" placeholder="Es. 10 o autogol" autocomplete="off"></div>
           <div><label>Nuovo marcatore</label><select data-goal-player-picker><option value="">Seleziona prima una squadra</option></select></div>
-          ${isKings(s)?`<div><label>Peso gol</label><select data-goal-weight-picker><option value="1">Vale 1</option><option value="2">Vale 2 (solo calciatori)</option></select></div>`:''}
-          <button class="btn" type="button" data-add-goal-row>Aggiungi gol</button>
+          <div><label>Gol segnati</label><input data-goal-count-picker type="number" min="1" max="99" step="1" inputmode="numeric" value="1"></div>
+          ${isKings(s)?`<div><label>Di cui da 2 punti</label><input data-goal-double-count-picker type="number" min="0" max="1" step="1" inputmode="numeric" value="0"><small>Solo calciatori. I gol del presidente valgono sempre 1.</small></div>`:''}
+          <button class="btn primary" type="button" data-add-goal-row>Aggiungi marcatore</button>
         </div>
         <div class="stack margin-top" data-goal-rows>${goalsRows||emptyGoals()}</div>
         ${hiddenCards}
@@ -764,16 +871,40 @@ Verrà svuotato il campo arbitro in ${withRef.length} partita/e. Campo, data, or
    }
    const form=e.target.closest('.report-complete-form');
    if(!form)return;
-   if(e.target.matches('[data-goal-team-picker]')){form.querySelector('[data-goal-player-search]').value='';updateEventPlayerPickers(form,'goal');}
-   if(e.target.matches('[data-card-team-picker]')){form.querySelector('[data-card-player-search]').value='';updateEventPlayerPickers(form,'card');}
+   if(e.target.matches('[data-goal-team-picker]')){form.querySelector('[data-goal-player-search]').value='';updateEventPlayerPickers(form,'goal');syncQuickGoalDoublePicker(form);return;}
+   if(e.target.matches('[data-card-team-picker]')){form.querySelector('[data-card-player-search]').value='';updateEventPlayerPickers(form,'card');return;}
+   if(e.target.matches('[data-goal-row-player]')){
+     const row=e.target.closest('.goal-draft-row');
+     refreshGoalRowParticipant(A.state(),row);
+     mergeDuplicateGoalRow(form,row);
+     updateDraftSummary(form);syncFormDraft(form);return;
+   }
+   if(e.target.matches('[data-goal-player-picker]')){syncQuickGoalDoublePicker(form);return;}
+   if(e.target.matches('.goal-draft-row [name="goalDoubleCount"]')){updateDraftSummary(form);syncFormDraft(form);}
  });
  document.addEventListener('input',e=>{
    const info=e.target.closest('.match-edit-form');
    if(info){syncFormDraft(info);return;}
    const form=e.target.closest('.report-complete-form');
    if(!form)return;
-   if(e.target.matches('[data-goal-player-search]'))updateEventPlayerPickers(form,'goal');
-   if(e.target.matches('[data-card-player-search]'))updateEventPlayerPickers(form,'card');
+   if(e.target.matches('[data-goal-player-search]')){updateEventPlayerPickers(form,'goal');return;}
+   if(e.target.matches('[data-card-player-search]')){updateEventPlayerPickers(form,'card');return;}
+   if(e.target.matches('[data-goal-count-picker]')){const value=Math.max(1,Math.min(99,Number(e.target.value)||1));if(String(e.target.value)!==String(value))e.target.value=String(value);syncQuickGoalDoublePicker(form);return;}
+   if(e.target.matches('[data-goal-double-count-picker]')){syncQuickGoalDoublePicker(form);return;}
+   if(e.target.matches('.goal-draft-row [name="goalCount"]')){
+     const value=Math.max(1,Math.min(99,Number(e.target.value)||1));
+     if(String(e.target.value)!==String(value))e.target.value=String(value);
+     const doubleInput=e.target.closest('.goal-draft-row')?.querySelector('[name="goalDoubleCount"]');
+     if(doubleInput){doubleInput.max=String(value);doubleInput.value=String(Math.max(0,Math.min(value,Number(doubleInput.value)||0)));}
+     updateDraftSummary(form);syncFormDraft(form);return;
+   }
+   if(e.target.matches('.goal-draft-row [name="goalDoubleCount"]')){
+     const row=e.target.closest('.goal-draft-row');
+     const count=Math.max(1,Math.min(99,Number(row?.querySelector('[name="goalCount"]')?.value)||1));
+     const value=Math.max(0,Math.min(count,Number(e.target.value)||0));
+     if(String(e.target.value)!==String(value))e.target.value=String(value);
+     updateDraftSummary(form);syncFormDraft(form);
+   }
  });
  document.addEventListener('click',e=>{
    const addGoal=e.target.closest('[data-add-goal-row]');
@@ -803,25 +934,36 @@ Verrà svuotato il campo arbitro in ${withRef.length} partita/e. Campo, data, or
      const form=addGoal.closest('.report-complete-form'), s=A.state(), box=form.querySelector('[data-goal-rows]');
      const picker=form.querySelector('[data-goal-player-picker]');
      const picked=picker?.value||'';
-     let weight=Number(form.querySelector('[data-goal-weight-picker]')?.value)||1;
+     const count=Math.max(1,Math.min(99,Number(form.querySelector('[data-goal-count-picker]')?.value)||1));
+     const match=s.matches.find(x=>x.id===form.dataset.matchId);
      if(!picked){alert('Seleziona marcatore o autogol.');return;}
+     if(!match){alert('Partita non disponibile.');return;}
      box.querySelector('[data-empty-goals]')?.remove();
+     let existing=null;
      if(isOwnGoalValue(picked)){
        const teamId=ownGoalTeamFromValue(picked);
-       const matchId=form.dataset.matchId;
-       const match=s.matches.find(x=>x.id===matchId);
-       if(!match||(teamId!==match.homeTeamId&&teamId!==match.awayTeamId)){alert('Autogol non valido per questa partita.');return;}
-       box.insertAdjacentHTML('beforeend',goalDraftItem(s,{ownGoal:true,teamId,weight:1}));
+       if(teamId!==match.homeTeamId&&teamId!==match.awayTeamId){alert('Autogol non valido per questa partita.');return;}
+       existing=Array.from(box.querySelectorAll('.goal-draft-row')).find(row=>goalRowIdentity(row)===`own:${teamId}`);
+       if(existing){const input=existing.querySelector('[name="goalCount"]');input.value=String(Math.min(99,(Number(input.value)||1)+count));}
+       else box.insertAdjacentHTML('beforeend',goalDraftItem(s,match,{ownGoal:true,teamId,count}));
      } else {
        const playerId=picked;
        if(store.isPresidentId(s,playerId)&&!isPresidentScorerAllowed(s)){alert('Fuori dalla Kings League il presidente non può essere selezionato come marcatore.');return;}
-       if(!isKings(s)||store.isPresidentId(s,playerId)) weight=1;
-       box.insertAdjacentHTML('beforeend',goalDraftItem(s,playerId,weight));
+       const participant=store.getParticipant(s,playerId);
+       const requestedDouble=isKings(s)&&participant?.type==='player'?Math.max(0,Math.min(count,Number(form.querySelector('[data-goal-double-count-picker]')?.value)||0)):0;
+       existing=Array.from(box.querySelectorAll('.goal-draft-row')).find(row=>goalRowIdentity(row)===`player:${playerId}`);
+       if(existing){
+         const input=existing.querySelector('[name="goalCount"]');
+         const nextCount=Math.min(99,(Number(input.value)||1)+count);input.value=String(nextCount);
+         const doubleInput=existing.querySelector('[name="goalDoubleCount"]');if(doubleInput)doubleInput.value=String(Math.min(nextCount,(Number(doubleInput.value)||0)+requestedDouble));
+         refreshGoalRowParticipant(s,existing);
+       } else box.insertAdjacentHTML('beforeend',goalDraftItem(s,match,{playerId,count,doubleCount:requestedDouble}));
      }
      picker.value='';
      form.querySelector('[data-goal-player-search]').value='';
-     updateEventPlayerPickers(form,'goal');
-     const wp=form.querySelector('[data-goal-weight-picker]'); if(wp) wp.value='1';
+     const countPicker=form.querySelector('[data-goal-count-picker]');if(countPicker)countPicker.value='1';
+     const doublePicker=form.querySelector('[data-goal-double-count-picker]');if(doublePicker)doublePicker.value='0';
+     updateEventPlayerPickers(form,'goal');syncQuickGoalDoublePicker(form);
      updateDraftSummary(form);syncFormDraft(form);
    }
    if(addCard){

@@ -360,6 +360,10 @@
   function playerTeamId(state,playerId){const x=getParticipant(state,playerId);return x?.team.id||'';}
   function teamName(state,id,fallback='Da definire'){return getTeam(state,id)?.name||fallback;}
   function playerName(state,id){const p=getParticipant(state,id);return p?(p.type==='president'?`Pres. ${p.name}`:p.name):'Persona rimossa';}
+  function presidentGoalLabel(state,id){
+    const p=getPresident(state,id);
+    return p?`${p.name} (rig.)`:'Presidente rimosso';
+  }
   function isDoubleGoalEvent(g){return Number(g?.weight)===2;}
   function isOwnGoalEvent(g){return Boolean(g&&g.ownGoal===true);}
   function normalizeEventMinute(value,max=120){
@@ -386,7 +390,37 @@
       const team=teamName(state,g.teamId,'squadra');
       return `Autogol a favore di ${team}`;
     }
-    return playerName(state,g?.playerId);
+    return isPresidentId(state,g?.playerId)?presidentGoalLabel(state,g?.playerId):playerName(state,g?.playerId);
+  }
+  function aggregateGoalEvents(state,m){
+    const groups=new Map();
+    (m?.goals||[]).forEach(g=>{
+      const own=isOwnGoalEvent(g);
+      const teamId=goalScoringTeamId(state,m,g);
+      const key=own?`own:${teamId}`:`player:${g?.playerId||''}`;
+      if(!groups.has(key)){
+        const participant=own?null:getParticipant(state,g?.playerId);
+        groups.set(key,{
+          key,
+          teamId,
+          playerId:own?'':(g?.playerId||''),
+          ownGoal:own,
+          label:goalEventLabel(state,m,g),
+          number:participant?.type==='player'?(participant.number??''):'',
+          count:0,
+          scoreValue:0,
+          doubleCount:0,
+          weights:new Set()
+        });
+      }
+      const row=groups.get(key);
+      row.count+=1;
+      const value=eventScoreWeight(state,g);
+      row.scoreValue+=value;
+      if(!own&&value===2)row.doubleCount+=1;
+      row.weights.add(value);
+    });
+    return Array.from(groups.values()).map(row=>({...row,weights:Array.from(row.weights).sort((a,b)=>a-b)}));
   }
   function actualGoalCount(state,m,teamId){return (m.goals||[]).filter(g=>goalScoringTeamId(state,m,g)===teamId).length;}
   function eventScoreWeight(state,g){return isOwnGoalEvent(g)?1:(isPresidentId(state,g?.playerId)?1:((state?.rules?.isKingsLeague&&isDoubleGoalEvent(g))?2:1));}
@@ -1693,7 +1727,7 @@
 
   function playerBelongsToMatch(state,m,playerId){const tid=playerTeamId(state,playerId);return Boolean(tid&&(tid===m.homeTeamId||tid===m.awayTeamId));}
   function matchLabel(m){return `${m.round||'Partita'} · ${m.homeLabel||m.homeTeamId||'Casa'} vs ${m.awayLabel||m.awayTeamId||'Ospite'}`;}
-  function normalizeEventIds(list,prefix){return (list||[]).map(e=>({...e,id:e.id||uid(prefix)}));}
+  function normalizeEventIds(list,prefix){const seen=new Set();return (list||[]).map(e=>({...e,id:e.id||uid(prefix)})).filter(e=>{if(seen.has(e.id))return false;seen.add(e.id);return true;});}
   function fieldNoFromLabel(field){const m=String(field||'').match(/(\d+)/);return m?Number(m[1]):0;}
   function scheduleSlotKey(m,rules,withTeam=false){
     const date=m.date||'NO_DATE';
@@ -2294,5 +2328,5 @@
   const memoTeamPhaseStats = memo(teamPhaseStats,'teamPhaseStats');
   const memoStats = memo(stats,'stats');
 
-  window.NexoraStore={ADMIN_KEY,PUBLIC_KEY,FORMAT_LABELS,PHASE_LABELS,FORMAT_HELP,STANDINGS_CRITERIA,defaultStandingsCriteriaOrder,normalizeStandingsCriteriaOrder,standingsCriterionMeta,uid,blankRules,defaultCalendarCustomization,normalizeCalendarCustomization,defaultGroupConfigs,defaultSite,normalizeSite,articleSlug,isArticlePublic,emptyState,normalizeState,readPendingRemoteState,newestAdminLocalState,publicCacheState,withoutHeavyMedia,mergeMissingMedia,eventScoreWeight,load,save,alignState,repairState,auditDataState,derivedSnapshot,integrityReport,getTeam,getPlayer,getPresident,getParticipant,isPresidentId,teamName,playerName,isOwnGoalEvent,goalScoringTeamId,goalEventLabel,scoreText,matchGoals,actualGoalCount,hasScore,hasGoals,isPlayed,isLive,matchStatusInfo,normalizeJerseyNumber,normalizePenalties,isKnockoutPhase,penaltyWinnerId,winnerId,minimumTeams,plannedGroups,groupAssignmentsFromMatches,validateGroupAssignments,serpentineAssignments,randomAssignments,generateCalendar,ensureFreshCalendar,previewCalendar,isCalendarFresh,scheduleSignature,validateGeneration,validateCompetitionConfig,calendarPrerequisites,validateCalendarConstraintDefinitions,validateCalendarCustomization,calendarAvailableTimes,generationPlan,calendarConsecutiveStats,consecutiveResultMessage,rebalanceResolvedKnockoutSchedule,autoResolveKnockout,bracketData:memoBracketData,sortedCompetitions,seedEntrantsHighLow,allowedDateList,weekdayLabels,suggestEndDateForMatches,oneDayCalendarPauseEvent,groupFieldMap,allowedFieldsForMatch,groupFieldPolicyMessage,deriveFingerprint,selectors:{calculateStandings:memoCalculateStandings,officialStandings:memoOfficialStandings,officialTeamRecord:memoOfficialTeamRecord,teamPhaseStats:memoTeamPhaseStats,groupStandings:memoGroupStandings,groupNames,groupedStandings:memoGroupedStandings,hasGroupStage,playerStats:memoPlayerStats,presidentStats:memoPresidentStats,scorers:memoScorers,presidentScorers:memoPresidentScorers,stats:memoStats,phases,rounds,bracketData:memoBracketData,articles,allArticles,articleById,articleCategories}};
+  window.NexoraStore={ADMIN_KEY,PUBLIC_KEY,FORMAT_LABELS,PHASE_LABELS,FORMAT_HELP,STANDINGS_CRITERIA,defaultStandingsCriteriaOrder,normalizeStandingsCriteriaOrder,standingsCriterionMeta,uid,blankRules,defaultCalendarCustomization,normalizeCalendarCustomization,defaultGroupConfigs,defaultSite,normalizeSite,articleSlug,isArticlePublic,emptyState,normalizeState,readPendingRemoteState,newestAdminLocalState,publicCacheState,withoutHeavyMedia,mergeMissingMedia,eventScoreWeight,load,save,alignState,repairState,auditDataState,derivedSnapshot,integrityReport,getTeam,getPlayer,getPresident,getParticipant,isPresidentId,teamName,playerName,presidentGoalLabel,isOwnGoalEvent,goalScoringTeamId,goalEventLabel,aggregateGoalEvents,scoreText,matchGoals,actualGoalCount,hasScore,hasGoals,isPlayed,isLive,matchStatusInfo,normalizeJerseyNumber,normalizePenalties,isKnockoutPhase,penaltyWinnerId,winnerId,minimumTeams,plannedGroups,groupAssignmentsFromMatches,validateGroupAssignments,serpentineAssignments,randomAssignments,generateCalendar,ensureFreshCalendar,previewCalendar,isCalendarFresh,scheduleSignature,validateGeneration,validateCompetitionConfig,calendarPrerequisites,validateCalendarConstraintDefinitions,validateCalendarCustomization,calendarAvailableTimes,generationPlan,calendarConsecutiveStats,consecutiveResultMessage,rebalanceResolvedKnockoutSchedule,autoResolveKnockout,bracketData:memoBracketData,sortedCompetitions,seedEntrantsHighLow,allowedDateList,weekdayLabels,suggestEndDateForMatches,oneDayCalendarPauseEvent,groupFieldMap,allowedFieldsForMatch,groupFieldPolicyMessage,deriveFingerprint,selectors:{calculateStandings:memoCalculateStandings,officialStandings:memoOfficialStandings,officialTeamRecord:memoOfficialTeamRecord,teamPhaseStats:memoTeamPhaseStats,groupStandings:memoGroupStandings,groupNames,groupedStandings:memoGroupedStandings,hasGroupStage,playerStats:memoPlayerStats,presidentStats:memoPresidentStats,scorers:memoScorers,presidentScorers:memoPresidentScorers,stats:memoStats,phases,rounds,bracketData:memoBracketData,articles,allArticles,articleById,articleCategories}};
 })();

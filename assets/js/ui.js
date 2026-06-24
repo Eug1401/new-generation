@@ -52,13 +52,24 @@
   function groupStandingsTables(state,selected='all',opts){const groups=store.selectors.groupedStandings(state,opts);if(!groups.length)return standingsTable(store.selectors.calculateStandings(state,undefined,opts),state);const visible=selected&&selected!=='all'?groups.filter(g=>g.name===selected):groups;return visible.map(g=>`<div class="group-standing-block"><div class="mini-section-title"><h3>${esc(g.name)}</h3><span class="pill">${g.completed?'Girone completato':'In corso'}</span></div>${standingsTable(g.rows,state)}</div>`).join('')||'<div class="empty">Nessun girone disponibile.</div>';}
   function playerStatsTable(rows){return `<table><thead><tr><th>Calciatore</th><th>Anno</th><th>Squadra</th><th>PG</th><th>Gol</th><th>Gialli</th><th>Rossi</th></tr></thead><tbody>${rows.map(r=>`<tr><td><strong>${esc(r.name)}</strong></td><td>${esc(r.birthYear||'-')}</td><td>${esc(r.teamName)}</td><td>${r.played}</td><td>${r.goals}</td><td>${r.yellow}</td><td>${r.red}</td></tr>`).join('')||'<tr><td colspan="7">Nessun giocatore.</td></tr>'}</tbody></table>`;}
   function presidentStatsTable(rows){return `<table><thead><tr><th>Presidente</th><th>Squadra</th><th>PG</th><th>Gol</th></tr></thead><tbody>${rows.map(r=>`<tr><td><strong>${esc(r.name)}</strong></td><td>${esc(r.teamName)}</td><td>${r.played}</td><td>${r.goals}</td></tr>`).join('')||'<tr><td colspan="4">Nessun gol presidente.</td></tr>'}</tbody></table>`;}
+  function goalSummaryText(state,m){
+    const rows=store.aggregateGoalEvents?store.aggregateGoalEvents(state,m):[];
+    if(rows.length)return rows.map(row=>{
+      const number=row.number!==''&&row.number!=null?`#${row.number} `:'';
+      const quantity=row.count>1?` ×${row.count}`:'';
+      const doubles=Number(row.doubleCount)||0;
+      const doubleLabel=doubles?` · ${doubles===1?'1 gol doppio':`${doubles} gol doppi`}`:'';
+      return `${number}${row.label}${quantity}${doubleLabel}`;
+    }).join(', ');
+    return (m.goals||[]).map(g=>store.goalEventLabel?store.goalEventLabel(state,m,g):store.playerName(state,g.playerId)).join(', ');
+  }
   function matchStatusMeta(state,m){
     if(store.matchStatusInfo)return store.matchStatusInfo(state,m);
     const played=store.hasScore(state,m)||m.status==='played';
     if(m.status==='live')return {key:'live',label:'Live',cls:'is-live'};
     return played?{label:'Giocata',cls:'is-played'}:{label:'Da giocare',cls:'is-pending'};
   }
-  function matchCard(state,m,clickable=false){const homeT=store.getTeam(state,m.homeTeamId),awayT=store.getTeam(state,m.awayTeamId);const home=store.teamName(state,m.homeTeamId,m.homeLabel),away=store.teamName(state,m.awayTeamId,m.awayLabel);const goals=(m.goals||[]).map(g=>`${g.minute?`${g.minute}′ `:''}${store.goalEventLabel?store.goalEventLabel(state,m,g):store.playerName(state,g.playerId)}${(!(store.isOwnGoalEvent&&store.isOwnGoalEvent(g))&&Number(g.weight)===2)?' (x2)':''}`).join(', ');const yellow=(m.cards||[]).filter(c=>c.type==='yellow').map(c=>store.playerName(state,c.playerId)).join(', ');const red=(m.cards||[]).filter(c=>c.type==='red').map(c=>store.playerName(state,c.playerId)).join(', ');const status=matchStatusMeta(state,m);const isLive=m.status==='live';const played=store.hasScore(state,m)||m.status==='played';const showScore=played||isLive||(store.hasGoals&&store.hasGoals(state,m));const score=showScore?store.matchGoals(state,m):null;const centerCls=isLive?'is-live':(played?'is-played':'is-pending');
+  function matchCard(state,m,clickable=false){const homeT=store.getTeam(state,m.homeTeamId),awayT=store.getTeam(state,m.awayTeamId);const home=store.teamName(state,m.homeTeamId,m.homeLabel),away=store.teamName(state,m.awayTeamId,m.awayLabel);const goals=goalSummaryText(state,m);const yellow=(m.cards||[]).filter(c=>c.type==='yellow').map(c=>store.playerName(state,c.playerId)).join(', ');const red=(m.cards||[]).filter(c=>c.type==='red').map(c=>store.playerName(state,c.playerId)).join(', ');const status=matchStatusMeta(state,m);const isLive=m.status==='live';const played=store.hasScore(state,m)||m.status==='played';const showScore=played||isLive||(store.hasGoals&&store.hasGoals(state,m));const score=showScore?store.matchGoals(state,m):null;const centerCls=isLive?'is-live':(played?'is-played':'is-pending');
     // Rigori: visibili solo se KO + pareggio + penalties valide
     let pBadge='';
     if(showScore&&score&&score.home===score.away&&store.isKnockoutPhase&&store.isKnockoutPhase(m)&&m.penalties){

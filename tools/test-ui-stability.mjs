@@ -813,14 +813,69 @@ async function testResizeAndScroll(){
   await pressKey('Escape');const after=await overlayState('#matchModal');
   record('Ridimensionamento e scroll con modale aperta',measure.open&&measure.left>=-1&&measure.right<=measure.vw+1&&measure.overflow<=1&&measure.locked&&!after.open&&!after.bodyLocked,JSON.stringify({measure,whileOpen,after}));
 }
+async function testMatchScorerEditor(){
+  await setViewport(1280,900);await navigate('admin-matches.html');await seedState();
+  await evaluate(`(()=>{const store=NexoraStore;for(const key of [store.ADMIN_KEY,store.PUBLIC_KEY]){const s=JSON.parse(localStorage.getItem(key));s.rules.isKingsLeague=true;localStorage.setItem(key,JSON.stringify(store.normalizeState(s)));}return true;})()`);
+  await navigate('admin-matches.html');
+  await click('[data-match-team="team_a"]');await delay(80);
+  await click('#openTeamMatchesBtn');await delay(80);
+  await click('[data-select-match="match_1"]');await delay(80);
+  await click('[data-open-match-panel="goals"]');await delay(100);
+
+  const jerseySearch=await evaluate(`(()=>{
+    const team=document.querySelector('[data-goal-team-picker]');const search=document.querySelector('[data-goal-player-search]');const picker=document.querySelector('[data-goal-player-picker]');
+    team.value='team_a';team.dispatchEvent(new Event('change',{bubbles:true}));search.value='9';search.dispatchEvent(new Event('input',{bubbles:true}));
+    const a=[...picker.options].filter(o=>o.value).map(o=>({value:o.value,text:o.textContent}));
+    team.value='team_b';team.dispatchEvent(new Event('change',{bubbles:true}));search.value='10';search.dispatchEvent(new Event('input',{bubbles:true}));
+    const b=[...picker.options].filter(o=>o.value).map(o=>({value:o.value,text:o.textContent}));
+    return {a,b};
+  })()`);
+
+  const add=async(count,doubleCount=0)=>{
+    await evaluate(`(()=>{
+      const team=document.querySelector('[data-goal-team-picker]');const search=document.querySelector('[data-goal-player-search]');const picker=document.querySelector('[data-goal-player-picker]');
+      const qty=document.querySelector('[data-goal-count-picker]');const dbl=document.querySelector('[data-goal-double-count-picker]');
+      if(!team||!picker||!qty)return false;team.value='team_a';team.dispatchEvent(new Event('change',{bubbles:true}));search.value='9';search.dispatchEvent(new Event('input',{bubbles:true}));
+      picker.value='player_a';picker.dispatchEvent(new Event('change',{bubbles:true}));qty.value=String(${count});qty.dispatchEvent(new Event('input',{bubbles:true}));if(dbl){dbl.value=String(${doubleCount});dbl.dispatchEvent(new Event('input',{bubbles:true}));}
+      document.querySelector('[data-add-goal-row]')?.click();return true;
+    })()`);await delay(80);
+  };
+  await add(3,2);await add(2,0);
+  const aggregation=await evaluate(`(()=>{const rows=[...document.querySelectorAll('.goal-draft-row')],row=rows[0];return {rows:rows.length,count:row?.querySelector('[name="goalCount"]')?.value||'',doubleCount:row?.querySelector('[name="goalDoubleCount"]')?.value||'',jersey:row?.querySelector('[data-goal-jersey]')?.value||'',score:document.querySelector('[data-draft-score]')?.textContent||'',hasEditablePlayer:!!row?.querySelector('[data-goal-row-player]')};})()`);
+  await click('#closeMatchTaskModal');await delay(80);await click('[data-save-match-context]');await delay(120);
+  const mixedSaved=await evaluate(`(()=>{const s=NexoraStore.load('admin'),m=s.matches.find(x=>x.id==='match_1'),score=NexoraStore.matchGoals(s,m),player=NexoraStore.selectors.scorers(s).find(x=>x.playerId==='player_a'),row=NexoraStore.selectors.officialStandings(s).find(x=>x.teamId==='team_a');return {goals:m.goals.length,weights:m.goals.map(g=>g.weight).sort(),score,playerGoals:player?.goals||0,standingsGF:row?.goalsFor||0};})()`);
+  await click('[data-open-match-panel="goals"]');await delay(100);
+  const reloadedMixed=await evaluate(`({count:document.querySelector('.goal-draft-row [name="goalCount"]')?.value||'',doubleCount:document.querySelector('.goal-draft-row [name="goalDoubleCount"]')?.value||''})`);
+
+  await evaluate(`(()=>{const picker=document.querySelector('[data-goal-row-player]');picker.value='pres_a';picker.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`);await delay(80);
+  const presidentEdit=await evaluate(`(()=>{const row=document.querySelector('.goal-draft-row');const picker=row?.querySelector('[data-goal-row-player]');return {jersey:row?.querySelector('[data-goal-jersey]')?.value||'',player:picker?.value||'',label:picker?.selectedOptions?.[0]?.textContent||'',doubleValue:row?.querySelector('[name="goalDoubleCount"]')?.value||'',doubleVisible:!!row?.querySelector('.scorer-editor-weight'),score:document.querySelector('[data-draft-score]')?.textContent||''};})()`);
+  await evaluate(`(()=>{const picker=document.querySelector('[data-goal-row-player]');picker.value='player_a';picker.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`);await delay(80);
+  const restoredPlayer=await evaluate(`({jersey:document.querySelector('[data-goal-jersey]')?.value||'',doubleVisible:!!document.querySelector('.scorer-editor-weight'),doubleValue:document.querySelector('[name="goalDoubleCount"]')?.value||''})`);
+  await evaluate(`(()=>{const picker=document.querySelector('[data-goal-row-player]');picker.value='pres_a';picker.dispatchEvent(new Event('change',{bubbles:true}));const count=document.querySelector('.goal-draft-row [name="goalCount"]');count.value='2';count.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`);await delay(80);
+
+  const failures=[];
+  for(const width of [320,390,768,1280]){await setViewport(width,width<=390?780:900);await delay(100);const metrics=await evaluate(`(()=>{const modal=document.querySelector('#matchTaskModal'),row=document.querySelector('.scorer-editor-row');const mr=modal?.getBoundingClientRect(),rr=row?.getBoundingClientRect();return {doc:document.documentElement.scrollWidth-document.documentElement.clientWidth,modal:mr?Math.max(0,mr.right-innerWidth,-mr.left):999,row:rr?Math.max(0,rr.right-innerWidth,-rr.left):999};})()`);if(metrics.doc>1||metrics.modal>1||metrics.row>1)failures.push(`${width}px ${JSON.stringify(metrics)}`);}
+  await setViewport(1280,900);await click('#closeMatchTaskModal');await delay(100);await click('[data-save-match-context]');await delay(120);
+  const saved=await evaluate(`(()=>{const s=NexoraStore.load('admin'),m=s.matches.find(x=>x.id==='match_1'),score=NexoraStore.matchGoals(s,m),pres=NexoraStore.selectors.presidentScorers(s).find(x=>x.presidentId==='pres_a'),player=NexoraStore.selectors.scorers(s).find(x=>x.playerId==='player_a');return {goals:m.goals.length,weights:m.goals.map(g=>g.weight),players:m.goals.map(g=>g.playerId),score,presidentGoals:pres?.goals||0,playerGoals:player?.goals||0,label:NexoraStore.goalEventLabel(s,m,m.goals[0])};})()`);
+  await evaluate(`(()=>{const s=NexoraStore.load('admin');NexoraStore.save('public',s);return true;})()`);
+  await navigate('index.html');await click('[data-tab="matches"]');await click('[data-match-detail="match_1"]');await delay(100);
+  const publicDetail=await evaluate(`({text:document.querySelector('#matchModalBody')?.textContent||'',score:document.querySelector('#matchModalBody .fixture-center strong')?.textContent||''})`);
+  const searchOk=jerseySearch.a.length===1&&jerseySearch.a[0].value==='player_a'&&jerseySearch.a[0].text.includes('#9')&&jerseySearch.b.length===1&&jerseySearch.b[0].value==='player_b'&&jerseySearch.b[0].text.includes('#10');
+  const ok=searchOk&&aggregation.rows===1&&aggregation.count==='5'&&aggregation.doubleCount==='2'&&aggregation.jersey==='9'&&aggregation.score.includes('7 - 0')&&aggregation.hasEditablePlayer&&mixedSaved.goals===5&&JSON.stringify(mixedSaved.weights)===JSON.stringify([1,1,1,2,2])&&mixedSaved.score.home===7&&mixedSaved.playerGoals===5&&mixedSaved.standingsGF===7&&reloadedMixed.count==='5'&&reloadedMixed.doubleCount==='2'&&presidentEdit.player==='pres_a'&&presidentEdit.jersey==='—'&&presidentEdit.label.includes('Ada Rossi (rig.)')&&presidentEdit.doubleValue==='0'&&!presidentEdit.doubleVisible&&presidentEdit.score.includes('5 - 0')&&restoredPlayer.jersey==='9'&&restoredPlayer.doubleVisible&&saved.goals===2&&saved.weights.every(w=>w===1)&&saved.players.every(id=>id==='pres_a')&&saved.score.home===2&&saved.score.away===0&&saved.presidentGoals===2&&saved.playerGoals===0&&saved.label==='Ada Rossi (rig.)'&&publicDetail.text.includes('Ada Rossi (rig.)')&&publicDetail.text.includes('×2')&&failures.length===0;
+  record('Editor marcatori: ricerca maglia, quantità, gol doppi misti, modifica presidente e coerenza pubblica',ok,JSON.stringify({jerseySearch,aggregation,mixedSaved,reloadedMixed,presidentEdit,restoredPlayer,saved,publicDetail,failures}));
+}
+
 async function run(){
   fixtureRoot=prepareFileFixture();baseUrl='inline://';
   await launchBrowser();
   const articlesOnly=process.argv.includes('--articles-only');
   const acceptanceOnly=process.argv.includes('--acceptance-only');
   const logosOnly=process.argv.includes('--logos-only');
+  const matchesOnly=process.argv.includes('--matches-only');
   try{
-    if(acceptanceOnly){
+    if(matchesOnly){
+      await testMatchScorerEditor();
+    }else if(acceptanceOnly){
       await testArticleAndPhotoAcceptance();
     }else if(articlesOnly){
       await testArticlesEndToEnd();
@@ -845,7 +900,7 @@ async function run(){
     if(server)await new Promise(resolve=>server.close(resolve));
     try{if(fixtureRoot)fs.rmSync(fixtureRoot,{recursive:true,force:true});}catch{}
   }
-  console.log(JSON.stringify({root,pages:pages.length,widths,mode:acceptanceOnly?'acceptance':(articlesOnly?'articles':(logosOnly?'logos':'ui')),results,runtimeErrors,localNetworkErrors},null,2));
+  console.log(JSON.stringify({root,pages:pages.length,widths,mode:matchesOnly?'matches':(acceptanceOnly?'acceptance':(articlesOnly?'articles':(logosOnly?'logos':'ui'))),results,runtimeErrors,localNetworkErrors},null,2));
   if(results.some(r=>r.result==='FAIL'))process.exitCode=1;
 }
 run().catch(error=>{console.error(error.stack||error);try{browser?.kill('SIGTERM');}catch{}try{server?.close();}catch{}process.exit(1);});

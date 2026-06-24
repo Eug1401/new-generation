@@ -500,6 +500,7 @@
       ...p, rank:i+1, player:p.name, team:p.teamName, year:p.birthYear||'—'
     }));
     const stats = store.selectors.stats(s);
+    const matchesPlayed = (s.matches||[]).filter(m => isConcluded(s,m)).length;
 
     let y = 34;
     y = drawSection(doc,
@@ -510,8 +511,8 @@
     y = drawSummary(doc, [
       { label:'Capocannoniere',       value: rows[0]?rows[0].player:'—', note: rows[0]?`${rows[0].goals} gol · ${rows[0].team}`:'Nessun gol registrato', tone:'accent' },
       { label:'In classifica',        value: String(rows.length), note:'Top 15 visualizzata' },
-      { label:'Gol totali consolidati', value: String(stats.actualGoals||0), note:'Solo referto chiuso' },
-      { label:'Media gol/partita',    value: stats.matchesPlayed ? ((stats.scoreGoals||0)/stats.matchesPlayed).toFixed(2) : '0.00', note:'Calcolo ufficiale' }
+      { label:'Gol totali consolidati', value: String(stats.goals||0), note:'Eventi-gol nei referti chiusi' },
+      { label:'Media reti/partita',  value: matchesPlayed ? ((stats.scoreGoals||0)/matchesPlayed).toFixed(2) : '0.00', note:'Valore squadra, doppi inclusi' }
     ], y, 4);
 
     doc.autoTable(Object.assign({}, tableTheme(), {
@@ -1008,25 +1009,23 @@
     }
   }
   function buildMatchEvents(s, m){
-    const goals = (m.goals||[]).map(g => {
-      const team = g.teamId === m.homeTeamId ? 'home' : (g.teamId === m.awayTeamId ? 'away' : null);
-      let name = '—';
-      try {
-        const t = store.getTeam(s, g.teamId);
-        const p = (t?.roster||[]).find(x => x.id === g.playerId);
-        name = p?.name || (g.ownGoal ? '(autogol)' : '—');
-      } catch(_){ name = '—'; }
-      return { name, ownGoal:Boolean(g.ownGoal), teamSide:team };
+    const aggregated=store.aggregateGoalEvents?store.aggregateGoalEvents(s,m):[];
+    const goals=(aggregated.length?aggregated:(m.goals||[]).map(g=>({
+      teamId:store.goalScoringTeamId?store.goalScoringTeamId(s,m,g):(g.teamId||''),
+      ownGoal:Boolean(g.ownGoal),
+      label:store.goalEventLabel?store.goalEventLabel(s,m,g):store.playerName(s,g.playerId),
+      number:store.getParticipant(s,g.playerId)?.number??'',count:1,scoreValue:store.eventScoreWeight?store.eventScoreWeight(s,g):1
+    }))).map(row=>{
+      const number=row.number!==''&&row.number!=null?`#${row.number} `:'';
+      const quantity=Number(row.count)>1?` ×${row.count}`:'';
+      const doubles=Number(row.doubleCount)||0;
+      const doubleLabel=doubles?` (${doubles===1?'1 gol doppio':`${doubles} gol doppi`})`:'';
+      return {name:`${number}${row.label}${quantity}${doubleLabel}`,ownGoal:Boolean(row.ownGoal),teamSide:row.teamId===m.homeTeamId?'home':(row.teamId===m.awayTeamId?'away':null)};
     });
-    const cards = (m.cards||[]).map(c => {
-      const team = c.teamId === m.homeTeamId ? 'home' : (c.teamId === m.awayTeamId ? 'away' : null);
-      let name = '—';
-      try {
-        const t = store.getTeam(s, c.teamId);
-        const p = (t?.roster||[]).find(x => x.id === c.playerId);
-        name = p?.name || '—';
-      } catch(_){ name = '—'; }
-      return { name, type:(c.type==='red'?'red':'yellow'), teamSide:team };
+    const cards=(m.cards||[]).map(c=>{
+      const participant=store.getParticipant(s,c.playerId);
+      const teamId=participant?.team?.id||'';
+      return {name:store.playerName(s,c.playerId),type:(c.type==='red'?'red':'yellow'),teamSide:teamId===m.homeTeamId?'home':(teamId===m.awayTeamId?'away':null)};
     });
     return { goals, cards };
   }

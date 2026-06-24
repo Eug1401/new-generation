@@ -8007,3 +8007,125 @@ a.article-card-main{cursor:pointer;}
 .calendar-zero-result{font-weight:900;color:var(--primary)}
 @keyframes calendar-search-spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.calendar-search-spinner{animation:none;border-top-color:rgba(255,255,255,.16);box-shadow:inset 0 0 0 5px var(--primary)}}
+
+/* Match report editor v1.28 — responsive scorer quantities */
+.report-complete-form,
+.report-complete-form *{min-width:0}
+.report-complete-form .event-panel.match-task-panel-body{
+  padding:clamp(14px,2vw,22px);
+  border:1px solid rgba(242,210,111,.20);
+  border-radius:24px;
+  background:linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.025));
+  box-shadow:0 18px 46px rgba(0,0,0,.18);
+}
+.report-complete-form .event-picker-grid{
+  display:grid!important;
+  grid-template-columns:repeat(auto-fit,minmax(155px,1fr))!important;
+  gap:12px!important;
+  align-items:end;
+  padding:16px;
+  border:1px solid rgba(242,210,111,.16);
+  border-radius:20px;
+  background:rgba(0,0,0,.18);
+}
+.report-complete-form .event-picker-grid>div,
+.report-complete-form .event-picker-grid>button{min-width:0}
+.report-complete-form .event-picker-grid .btn{min-height:48px;white-space:normal}
+.report-complete-form [data-goal-rows]{gap:12px}
+.report-complete-form .scorer-editor-row{
+  display:grid!important;
+  grid-template-columns:42px minmax(230px,1fr) 92px 126px 126px auto!important;
+  gap:12px;
+  align-items:end;
+  padding:16px;
+  border:1px solid rgba(242,210,111,.18);
+  border-radius:20px;
+  background:linear-gradient(135deg,rgba(255,255,255,.06),rgba(0,0,0,.12));
+  box-shadow:0 10px 30px rgba(0,0,0,.14);
+}
+.report-complete-form .scorer-editor-row .event-icon{
+  align-self:center;
+  display:grid;
+  place-items:center;
+  width:42px;
+  height:42px;
+  border-radius:14px;
+  background:rgba(215,164,45,.13);
+  border:1px solid rgba(242,210,111,.18);
+  font-size:1.15rem;
+}
+.report-complete-form .scorer-editor-main{display:grid;gap:5px;align-self:stretch}
+.report-complete-form .scorer-editor-main strong{align-self:center;overflow-wrap:anywhere;line-height:1.25}
+.report-complete-form .scorer-editor-main small{color:var(--muted);font-weight:750;overflow-wrap:anywhere}
+.report-complete-form .scorer-editor-row label{margin-bottom:4px;font-size:.76rem;text-transform:uppercase;letter-spacing:.055em;color:#d8c58d}
+.report-complete-form .scorer-editor-row input,
+.report-complete-form .scorer-editor-row select{min-height:46px;padding:10px 11px}
+.report-complete-form .scorer-editor-row input[readonly]{text-align:center;color:var(--gold-soft);font-weight:950;background:rgba(215,164,45,.08)}
+.report-complete-form .scorer-editor-count input{text-align:center;font-weight:950;font-size:1.05rem}
+.report-complete-form .scorer-remove-btn{align-self:end;min-height:46px;padding-inline:14px}
+.report-complete-form .hidden-event-cache{display:none!important}
+@media(max-width:1050px){
+  .report-complete-form .scorer-editor-row{
+    grid-template-columns:42px minmax(240px,1fr) 90px 120px!important;
+  }
+  .report-complete-form .scorer-editor-weight,
+  .report-complete-form .scorer-remove-btn{grid-column:auto}
+  .report-complete-form .scorer-remove-btn{width:100%}
+}
+@media(max-width:760px){
+  .report-complete-form .report-head.clean{grid-template-columns:1fr!important}
+  .report-complete-form .score-badge{justify-self:start}
+  .report-complete-form .event-picker-grid{grid-template-columns:1fr 1fr!important;padding:13px}
+  .report-complete-form .event-picker-grid .btn{grid-column:1/-1}
+  .report-complete-form .scorer-editor-row{
+    grid-template-columns:38px minmax(0,1fr) 88px!important;
+    padding:13px;
+    gap:10px;
+  }
+  .report-complete-form .scorer-editor-main{grid-column:2/-1}
+  .report-complete-form .scorer-editor-number{grid-column:2}
+  .report-complete-form .scorer-editor-count{grid-column:3}
+  .report-complete-form .scorer-editor-weight{grid-column:2/-1}
+  .report-complete-form .scorer-remove-btn{grid-column:2/-1}
+}
+@media(max-width:480px){
+  .report-complete-form .event-picker-grid{grid-template-columns:1fr!important}
+  .report-complete-form .event-picker-grid .btn{grid-column:auto}
+  .report-complete-form .scorer-editor-row{grid-template-columns:1fr 1fr!important}
+  .report-complete-form .scorer-editor-row .event-icon{grid-column:1/-1;justify-self:start}
+  .report-complete-form .scorer-editor-main{grid-column:1/-1}
+  .report-complete-form .scorer-editor-number{grid-column:1}
+  .report-complete-form .scorer-editor-count{grid-column:2}
+  .report-complete-form .scorer-editor-weight,
+  .report-complete-form .scorer-remove-btn{grid-column:1/-1}
+}
+
+/* Kings scorer audit v1.28.2: correzioni di stampa dimostrate dai test PDF reali. */
+@media print {
+  body.print-page {
+    background: #080b12 !important;
+    color: var(--text) !important;
+  }
+  .print-page .pdf-hero,
+  .print-page .pdf-card {
+    color: var(--text) !important;
+  }
+  .print-page .pdf-meta span,
+  .print-page .pdf-info-grid span,
+  .print-page .report-mini-card strong,
+  .print-page .pdf-section-title h2,
+  .print-page .pdf-table td {
+    color: #fff8e7 !important;
+  }
+  .print-page .pdf-card {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+  .print-page .pdf-table thead {
+    display: table-header-group;
+  }
+  .print-page .pdf-table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
