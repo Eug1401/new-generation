@@ -3,6 +3,8 @@
  let teamFilter='', roundFilter='', selectedMatch='', currentTaskMode='menu', previousTaskMode='menu';
  const reportDrafts=new Map();
  let suppressNextDraftSync=false;
+ let pendingUndo=null;
+ let taskFocusReturn=null;
  const OWN_GOAL_PREFIX='__own_goal__:';
 
  function ownGoalValue(teamId){return `${OWN_GOAL_PREFIX}${teamId||''}`;}
@@ -75,11 +77,10 @@
    const year=p.birthYear?` · ${p.birthYear}`:'';
    return `${num}${p.name}${year}`;
  }
- function playerOptionsForTeam(state,teamId,search='',selected='',kind='goal',match=null){
+ function participantChoicesForTeam(state,teamId,search='',kind='goal',match=null){
    const q=String(search||'').trim().toLowerCase();
    const allowedTeamIds=(teamId?[teamId]:[match?.homeTeamId,match?.awayTeamId]).filter(Boolean);
    const teams=allowedTeamIds.map(id=>store.getTeam(state,id)).filter(Boolean);
-   if(!teams.length)return '<option value="">Nessun partecipante disponibile</option>';
    const people=[];
    teams.forEach(team=>{
      (team.players||[]).forEach(p=>people.push({
@@ -88,6 +89,7 @@
        teamName:team.name,
        name:p.name,
        number:p.number,
+       birthYear:p.birthYear,
        label:`${playerLabelWithNumber(p)}${teamId?'':` · ${team.name}`}`,
        type:'player',
        searchKey:`${p.number!==''&&p.number!=null?p.number:''} ${p.name||''} ${p.birthYear||''} ${team.name||''}`.toLowerCase()
@@ -113,33 +115,85 @@
        searchKey:`pres presidente rig rigore ${team.president.name||''} ${team.name||''}`.toLowerCase()
      });
    });
+   const typeOrder={player:0,president:1,'own-goal':2};
    people.sort((a,b)=>{
-     const typeOrder={player:0,president:1,'own-goal':2};
      if(a.teamId!==b.teamId)return allowedTeamIds.indexOf(a.teamId)-allowedTeamIds.indexOf(b.teamId);
      if(typeOrder[a.type]!==typeOrder[b.type])return typeOrder[a.type]-typeOrder[b.type];
      const an=a.type==='player'&&a.number!==''&&a.number!=null?Number(a.number):9999;
      const bn=b.type==='player'&&b.number!==''&&b.number!=null?Number(b.number):9999;
      return an-bn||String(a.name||'').localeCompare(String(b.name||''),'it');
    });
-   let filtered=people;
-   if(q){
-     if(/^\d+$/.test(q)){
-       const exact=people.filter(p=>p.type==='player'&&String(p.number??'')===q);
-       const prefix=people.filter(p=>p.type==='player'&&String(p.number??'').startsWith(q)&&String(p.number??'')!==q);
-       filtered=[...exact,...prefix];
-     }else filtered=people.filter(p=>(p.searchKey||'').includes(q));
+   if(!q)return people;
+   if(/^\d+$/.test(q)){
+     const exact=people.filter(p=>p.type==='player'&&String(p.number??'')===q);
+     const prefix=people.filter(p=>p.type==='player'&&String(p.number??'').startsWith(q)&&String(p.number??'')!==q);
+     return [...exact,...prefix];
    }
-   const selectedStillVisible=filtered.some(p=>p.id===selected);
-   const first='<option value="">Seleziona marcatore/autogol</option>';
-   return first+filtered.map(p=>`<option value="${UI.esc(p.id)}" ${p.id===selected&&selectedStillVisible?'selected':''}>${UI.esc(p.label)}</option>`).join('')+(filtered.length?'':'<option value="" disabled>Nessun risultato</option>');
+   return people.filter(p=>(p.searchKey||'').includes(q));
  }
- function updateEventPlayerPickers(form,kind){
+ function playerOptionsForTeam(state,teamId,search='',selected='',kind='goal',match=null){
+   const people=participantChoicesForTeam(state,teamId,search,kind,match);
+   const first=`<option value="">${people.length?'Seleziona partecipante':'Nessun risultato'}</option>`;
+   return first+people.map(p=>`<option value="${UI.esc(p.id)}" ${p.id===selected?'selected':''}>${UI.esc(p.label)}</option>`).join('');
+ }
+ function participantResultMarkup(person,index,kind){
+   const icon=person.type==='own-goal'?'↩':(person.type==='president'?'RIG':'⚽');
+   const primary=person.type==='player'?`${person.number!==''&&person.number!=null?`#${person.number} · `:''}${person.name}`:(person.type==='president'?`${person.name} · Gol (rig.)`:'Autogol');
+   const secondary=person.type==='own-goal'?`Rete assegnata a ${person.teamName}`:person.teamName;
+   return `<button class="participant-result" type="button" role="option" aria-selected="false" data-select-${kind}-participant="${UI.esc(person.id)}" data-result-index="${index}"><span class="participant-result-icon" aria-hidden="true">${icon}</span><span><strong>${UI.esc(primary)}</strong><small>${UI.esc(secondary)}</small></span></button>`;
+ }
+ function selectedParticipantMarkup(state,value){
+   if(!value)return '';
+   if(isOwnGoalValue(value)){
+     const team=store.getTeam(state,ownGoalTeamFromValue(value));
+     return `<span class="selected-participant-icon" aria-hidden="true">↩</span><span><strong>Autogol</strong><small>Rete assegnata a ${UI.esc(team?.name||'squadra')}</small></span>`;
+   }
+   const participant=store.getParticipant(state,value);
+   if(!participant)return '';
+   const number=participant.type==='player'&&participant.number!==''&&participant.number!=null?`#${participant.number} · `:'';
+   return `<span class="selected-participant-icon" aria-hidden="true">${participant.type==='president'?'RIG':'⚽'}</span><span><strong>${UI.esc(`${number}${participant.name}`)}</strong><small>${UI.esc(participant.team.name)}${participant.type==='president'?' · Gol (rig.)':''}</small></span>`;
+ }
+ function renderParticipantResults(form,kind,{open=false}={}){
    const teamPicker=form.querySelector(`[data-${kind}-team-picker]`);
    const search=form.querySelector(`[data-${kind}-player-search]`);
-   const playerPicker=form.querySelector(`[data-${kind}-player-picker]`);
-   if(!teamPicker||!playerPicker)return;
-   const match=A.state().matches.find(item=>item.id===form.dataset.matchId);
-   playerPicker.innerHTML=playerOptionsForTeam(A.state(),teamPicker.value,search?.value||'',playerPicker.value,kind,match);
+   const picker=form.querySelector(`[data-${kind}-player-picker]`);
+   const results=form.querySelector(`[data-${kind}-player-results]`);
+   const selected=form.querySelector(`[data-${kind}-selected-participant]`);
+   if(!teamPicker||!picker)return;
+   const state=A.state();
+   const match=state.matches.find(item=>item.id===form.dataset.matchId);
+   if(!results){
+     picker.innerHTML=playerOptionsForTeam(state,teamPicker.value,search?.value||'',picker.value,kind,match);
+     return;
+   }
+   const people=participantChoicesForTeam(state,teamPicker.value,search?.value||'',kind,match).slice(0,24);
+   results.innerHTML=people.length?people.map((person,index)=>participantResultMarkup(person,index,kind)).join(''):'<div class="participant-no-results" role="status">Nessun risultato tra le squadre della partita.</div>';
+   results.dataset.activeIndex='-1';
+   const shouldOpen=open||Boolean(search?.value?.trim());
+   results.hidden=!shouldOpen;
+   search?.setAttribute('aria-expanded',String(shouldOpen));
+   if(selected){
+     const markup=selectedParticipantMarkup(state,picker.value);
+     selected.innerHTML=markup?`${markup}<button type="button" class="selected-participant-clear" data-clear-${kind}-participant aria-label="Rimuovi selezione">×</button>`:'';
+     selected.hidden=!markup;
+   }
+   if(kind==='goal')syncQuickGoalDoublePicker(form);
+ }
+ function updateEventPlayerPickers(form,kind){
+   renderParticipantResults(form,kind);
+ }
+ function selectParticipant(form,kind,value){
+   const picker=form.querySelector(`[data-${kind}-player-picker]`);
+   const search=form.querySelector(`[data-${kind}-player-search]`);
+   const results=form.querySelector(`[data-${kind}-player-results]`);
+   if(!picker)return;
+   picker.value=value||'';
+   if(search)search.value='';
+   if(results)results.hidden=true;
+   search?.setAttribute('aria-expanded','false');
+   renderParticipantResults(form,kind);
+   if(kind==='goal')updateAddGoalState(form);
+   else if(kind==='card')updateAddCardState(form);
  }
  function syncQuickGoalDoublePicker(form){
    const doubleInput=form?.querySelector('[data-goal-double-count-picker]');if(!doubleInput)return;
@@ -147,13 +201,17 @@
    const picked=form.querySelector('[data-goal-player-picker]')?.value||'';
    const participant=store.getParticipant(A.state(),picked);
    const enabled=Boolean(isKings(A.state())&&participant&&participant.type==='player');
+   const doubleControl=doubleInput.closest('[data-goal-double-control]');
    doubleInput.disabled=!enabled;
+   doubleControl?.classList.toggle('is-disabled',!enabled);
+   doubleControl?.querySelectorAll('button').forEach(button=>button.disabled=!enabled);
    doubleInput.value=enabled?String(Math.max(0,Math.min(99,Number(doubleInput.value)||0))):'0';
    if(normalInput){
      normalInput.value=String(Math.max(0,Math.min(99,Number(normalInput.value)||0)));
-     const label=normalInput.closest('div')?.querySelector('label');
+     const label=form.querySelector('[data-goal-normal-label]');
      if(label)label.textContent=participant?.type==='president'?'Gol (rig.)':(isOwnGoalValue(picked)?'Autogol':'Gol normali');
    }
+   updateAddGoalState(form);
  }
  function cardTypeSelect(selected='yellow'){
    return `<select data-card-type-picker><option value="yellow" ${selected==='yellow'?'selected':''}>Giallo</option><option value="red" ${selected==='red'?'selected':''}>Rosso</option></select>`;
@@ -218,13 +276,43 @@
    return Array.from(grouped.values());
  }
  function cardLabel(type){return type==='red'?'Rosso':'Giallo';}
+ function quantityStepperHtml({name='',dataAttr='',value=0,label='',labelAttr='',ariaLabel='',help='',disabled=false,controlAttr=''}){
+   const attrs=[name?`name="${name}"`:'',dataAttr,`value="${Math.max(0,Math.min(99,Number(value)||0))}"`].filter(Boolean).join(' ');
+   return `<div class="goal-quantity-control ${disabled?'is-disabled':''}" ${controlAttr}>
+     <label ${labelAttr}>${UI.esc(label)}</label>
+     <div class="number-stepper" data-number-stepper>
+       <button type="button" data-step="-1" aria-label="Diminuisci ${UI.esc(ariaLabel||label)}" ${disabled?'disabled':''}>−</button>
+       <input ${attrs} type="number" min="0" max="99" step="1" inputmode="numeric" aria-label="${UI.esc(ariaLabel||label)}" ${disabled?'disabled':''}>
+       <button type="button" data-step="1" aria-label="Aumenta ${UI.esc(ariaLabel||label)}" ${disabled?'disabled':''}>+</button>
+     </div>
+     ${help?`<small>${UI.esc(help)}</small>`:''}
+   </div>`;
+ }
+ function goalDraftTeamId(state,g){
+   if(g?.ownGoal)return g.teamId||'';
+   return store.getParticipant(state,g?.playerId)?.team?.id||'';
+ }
+ function scorerGroupShell(state,match,teamId){
+   const team=store.getTeam(state,teamId);
+   return `<section class="scorer-team-group" data-goal-team-group="${UI.esc(teamId)}" hidden>
+     <header class="scorer-team-group-head"><div>${team?UI.logo(team,false):''}<span><strong>${UI.esc(team?.name||'Squadra')}</strong><small><b data-team-scorer-count>0</b> marcatori/eventi</small></span></div><span class="scorer-team-total">Totale <b data-team-score>0</b></span></header>
+     <div class="scorer-team-rows" data-goal-team-rows="${UI.esc(teamId)}"></div>
+   </section>`;
+ }
+ function goalGroupsShell(state,match){
+   return `<div class="scorer-groups">${[match.homeTeamId,match.awayTeamId].filter(Boolean).map(teamId=>scorerGroupShell(state,match,teamId)).join('')}</div>`;
+ }
+ function scorerIdentityMarkup(state,participant,isPresident=false){
+   const number=participant?.type==='player'&&participant.number!==''&&participant.number!=null?`#${participant.number} · `:'';
+   return `<strong class="scorer-display-name">${UI.esc(`${number}${participant?.name||'Giocatore'}`)}</strong><small>${UI.esc(participant?.team?.name||'Squadra')}${isPresident?' · Classifica presidenti separata':''}</small>`;
+ }
  function goalDraftItem(state,match,arg,weight=1){
    const g=(arg&&typeof arg==='object')?arg:{playerId:arg,normalCount:Number(weight)===2?0:1,doubleCount:Number(weight)===2?1:0};
    const legacyCount=Math.max(0,Math.min(99,Number(g.count)||0));
    const legacyDouble=Math.max(0,Math.min(legacyCount,Number(g.doubleCount ?? (Number(g.weight)===2?legacyCount:0))||0));
    let normalCount=Math.max(0,Math.min(99,Number(g.normalCount ?? (legacyCount-legacyDouble))||0));
    let doubleCount=Math.max(0,Math.min(99,Number(g.doubleCount ?? legacyDouble)||0));
-   if(!normalCount&&!doubleCount){normalCount=1;}
+   if(!normalCount&&!doubleCount)normalCount=1;
    const singleMinutesValue=UI.esc(JSON.stringify(Array.isArray(g.singleMinutes)?g.singleMinutes:[]));
    const doubleMinutesValue=UI.esc(JSON.stringify(Array.isArray(g.doubleMinutes)?g.doubleMinutes:[]));
    const singleIdsValue=UI.esc(JSON.stringify(Array.isArray(g.singleIds)?g.singleIds:[]));
@@ -233,7 +321,7 @@
      const teamId=g.teamId||'';
      const team=store.getTeam(state,teamId);
      if(!team)return '';
-     return `<div class="event-item goal-draft-row scorer-editor-row is-own-goal-scorer" data-event-item data-own-goal-team="${UI.esc(teamId)}">
+     return `<article class="goal-draft-row scorer-card is-own-goal-scorer" data-event-item data-own-goal-team="${UI.esc(teamId)}" data-scorer-team="${UI.esc(teamId)}">
       <input type="hidden" name="goalOwnGoal" value="1">
       <input type="hidden" name="goalTeamId" value="${UI.esc(teamId)}">
       <input type="hidden" name="goalPlayerId" value="">
@@ -242,36 +330,32 @@
       <input type="hidden" name="goalDoubleMinutes" value="[]">
       <input type="hidden" name="goalSingleIds" value="${singleIdsValue}">
       <input type="hidden" name="goalDoubleIds" value="[]">
-      <span class="event-icon" aria-hidden="true">↩️</span>
-      <div class="scorer-editor-main"><label>Evento</label><strong>Autogol a favore di ${UI.esc(team.name||'squadra')}</strong><small>Attribuito alla squadra, senza classifica marcatore.</small></div>
-      <div class="scorer-editor-number"><label>Maglia</label><input value="—" aria-label="Numero di maglia" readonly></div>
-      <div class="scorer-editor-count"><label>Autogol</label><input name="goalNormalCount" type="number" min="0" max="99" step="1" inputmode="numeric" value="${normalCount}" aria-label="Numero di autogol"></div>
-      <button class="btn small danger scorer-remove-btn" type="button" data-remove-draft-row>Rimuovi</button>
-     </div>`;
+      <header class="scorer-card-head"><span class="event-icon" aria-hidden="true">↩</span><div class="scorer-editor-main"><span class="scorer-kind">Autogol</span><strong class="scorer-display-name">Autogol a favore di ${UI.esc(team.name||'squadra')}</strong><small>Attribuito alla squadra, senza classifica marcatore.</small></div><div class="scorer-card-actions"><button class="btn small danger scorer-remove-btn" type="button" data-remove-draft-row aria-label="Elimina autogol">Elimina</button></div></header>
+      <div class="scorer-card-controls">${quantityStepperHtml({name:'goalNormalCount',value:normalCount,label:'Autogol',ariaLabel:'numero di autogol'})}</div>
+     </article>`;
    }
    const playerId=g.playerId;
-   if(store.isPresidentId(state,playerId)&&!isPresidentScorerAllowed(state)) return '';
+   if(store.isPresidentId(state,playerId)&&!isPresidentScorerAllowed(state))return '';
    const participant=store.getParticipant(state,playerId);
    if(!participant)return '';
    const isPresident=participant.type==='president';
    if(isPresident){normalCount=Math.max(1,normalCount+doubleCount);doubleCount=0;}
+   const teamId=participant.team.id;
    const doubleField=isKings(state)&&!isPresident
-     ?`<div class="scorer-editor-weight"><label>Gol doppi</label><input name="goalDoubleCount" type="number" min="0" max="99" step="1" inputmode="numeric" value="${doubleCount}" aria-label="Numero di gol doppi"></div>`
-     :`<input type="hidden" name="goalDoubleCount" value="0">`;
-   return `<div class="event-item goal-draft-row scorer-editor-row ${isPresident?'is-president-scorer':''}" data-event-item>
+     ?quantityStepperHtml({name:'goalDoubleCount',value:doubleCount,label:'Gol doppi',ariaLabel:'numero di gol doppi',help:'Valgono 2 nel risultato e 1 nella classifica marcatori.'})
+     :'<input type="hidden" name="goalDoubleCount" value="0">';
+   return `<article class="goal-draft-row scorer-card ${isPresident?'is-president-scorer':''}" data-event-item data-scorer-team="${UI.esc(teamId)}">
     <input type="hidden" name="goalOwnGoal" value="0">
     <input type="hidden" name="goalTeamId" value="">
     <input type="hidden" name="goalSingleMinutes" value="${singleMinutesValue}">
     <input type="hidden" name="goalDoubleMinutes" value="${doubleMinutesValue}">
     <input type="hidden" name="goalSingleIds" value="${singleIdsValue}">
     <input type="hidden" name="goalDoubleIds" value="${doubleIdsValue}">
-    <span class="event-icon" aria-hidden="true">⚽</span>
-    <div class="scorer-editor-main"><label>${isPresident?'Presidente':'Giocatore'}</label><select name="goalPlayerId" data-goal-row-player aria-label="Modifica marcatore">${matchGoalPlayerOptions(state,match,playerId)}</select><small>${UI.esc(participant.team.name)}${isPresident?' · Classifica presidenti separata':''}</small></div>
-    <div class="scorer-editor-number"><label>Maglia</label><input data-goal-jersey value="${UI.esc(participantNumber(state,playerId)||'—')}" aria-label="Numero di maglia" readonly></div>
-    <div class="scorer-editor-count"><label>${isPresident?'Gol (rig.)':'Gol normali'}</label><input name="goalNormalCount" type="number" min="0" max="99" step="1" inputmode="numeric" value="${normalCount}" aria-label="${isPresident?'Numero di gol del presidente':'Numero di gol normali'}"></div>
-    ${doubleField}
-    <button class="btn small danger scorer-remove-btn" type="button" data-remove-draft-row>Rimuovi</button>
-   </div>`;
+    <header class="scorer-card-head"><span class="event-icon" aria-hidden="true">${isPresident?'RIG':'⚽'}</span><div class="scorer-editor-main"><span class="scorer-kind">${isPresident?'Presidente':'Giocatore'}</span>${scorerIdentityMarkup(state,participant,isPresident)}</div><div class="scorer-card-actions"><button class="btn small" type="button" data-toggle-scorer-player aria-expanded="false">Modifica</button><button class="btn small danger scorer-remove-btn" type="button" data-remove-draft-row aria-label="Elimina ${UI.esc(participant.name)}">Elimina</button></div></header>
+    <div class="scorer-player-editor" data-scorer-player-editor hidden><label>Cambia giocatore associato</label><div><select name="goalPlayerId" data-goal-row-player aria-label="Modifica marcatore">${matchGoalPlayerOptions(state,match,playerId)}</select><button class="btn small" type="button" data-cancel-scorer-player>Chiudi modifica</button></div></div>
+    <div class="scorer-card-meta"><span><small>Maglia</small><output data-goal-jersey>${UI.esc(participantNumber(state,playerId)||'—')}</output></span><span><small>Squadra</small><strong>${UI.esc(participant.team.name)}</strong></span></div>
+    <div class="scorer-card-controls">${quantityStepperHtml({name:'goalNormalCount',value:normalCount,label:isPresident?'Gol (rig.)':'Gol normali',ariaLabel:isPresident?'numero di gol del presidente':'numero di gol normali'})}${doubleField}</div>
+   </article>`;
  }
  function cardDraftItem(state,arg,type='yellow'){
    const c=(arg&&typeof arg==='object')?arg:{playerId:arg,type};
@@ -391,39 +475,131 @@
    const base=draftFromMatch(m);
    return JSON.stringify(d)!==JSON.stringify(base);
  }
- function draftGoalRows(s,m,draft){return compactGoalDrafts((draft.goals||[]).filter(g=>g.ownGoal||(g.playerId&&(!store.isPresidentId(s,g.playerId)||isPresidentScorerAllowed(s))))).map(g=>goalDraftItem(s,m,g,isKings(s)?(g.weight||1):1)).join('');}
+ function draftGoalRows(s,m,draft){
+   const compact=compactGoalDrafts((draft.goals||[]).filter(g=>g.ownGoal||(g.playerId&&(!store.isPresidentId(s,g.playerId)||isPresidentScorerAllowed(s)))));
+   if(!compact.length)return emptyGoals();
+   const groups=new Map([m.homeTeamId,m.awayTeamId].filter(Boolean).map(id=>[id,[]]));
+   compact.forEach(g=>{
+     const teamId=goalDraftTeamId(s,g);
+     if(!groups.has(teamId))groups.set(teamId,[]);
+     groups.get(teamId).push(goalDraftItem(s,m,g,isKings(s)?(g.weight||1):1));
+   });
+   return `<div class="scorer-groups">${Array.from(groups.entries()).map(([teamId,rows])=>{
+     const team=store.getTeam(s,teamId);
+     return `<section class="scorer-team-group" data-goal-team-group="${UI.esc(teamId)}" ${rows.length?'':'hidden'}><header class="scorer-team-group-head"><div>${team?UI.logo(team,false):''}<span><strong>${UI.esc(team?.name||'Squadra')}</strong><small><b data-team-scorer-count>${rows.length}</b> marcatori/eventi</small></span></div><span class="scorer-team-total">Totale <b data-team-score>0</b></span></header><div class="scorer-team-rows" data-goal-team-rows="${UI.esc(teamId)}">${rows.join('')}</div></section>`;
+   }).join('')}</div>`;
+ }
  function draftCardRows(s,draft){return (draft.cards||[]).map(c=>cardDraftItem(s,c)).join('');}
-
+ function goalBreakdownFromRows(state,match,rows){
+   const byTeam={};
+   [match?.homeTeamId,match?.awayTeamId].filter(Boolean).forEach(id=>{byTeam[id]={normal:0,double:0,president:0,own:0};});
+   (rows||[]).forEach(row=>{
+     const own=String(row.querySelector('[name="goalOwnGoal"]')?.value||'')==='1';
+     const normal=Math.max(0,Math.min(99,Number(row.querySelector('[name="goalNormalCount"]')?.value)||0));
+     const doubles=Math.max(0,Math.min(99,Number(row.querySelector('[name="goalDoubleCount"]')?.value)||0));
+     if(own){
+       const teamId=String(row.querySelector('[name="goalTeamId"]')?.value||'');
+       if(byTeam[teamId])byTeam[teamId].own+=normal;
+       return;
+     }
+     const participant=store.getParticipant(state,String(row.querySelector('[name="goalPlayerId"]')?.value||''));
+     const teamId=participant?.team?.id;
+     if(!teamId||!byTeam[teamId])return;
+     if(participant.type==='president')byTeam[teamId].president+=normal+doubles;
+     else{byTeam[teamId].normal+=normal;byTeam[teamId].double+=doubles;}
+   });
+   return byTeam;
+ }
  function countDraftGoalsByTeam(state,match,form){
-   const goals=goalEventsFromRows(state,match,Array.from(form.querySelectorAll('.goal-draft-row')));
+   const rows=Array.from(form.querySelectorAll('.goal-draft-row'));
+   const goals=goalEventsFromRows(state,match,rows);
    const score=store.matchGoals(state,{...match,goals});
-   return {home:score.home,away:score.away,actual:goals.length};
+   return {home:score.home,away:score.away,actual:goals.length,breakdown:goalBreakdownFromRows(state,match,rows)};
  }
  function countCards(form){
    const types=new FormData(form).getAll('cardType');
    return {yellow:types.filter(t=>t==='yellow').length, red:types.filter(t=>t==='red').length};
  }
+ function ensureGoalGroup(box,state,match,teamId){
+   let groups=box.querySelector('.scorer-groups');
+   if(!groups){box.innerHTML=goalGroupsShell(state,match);groups=box.querySelector('.scorer-groups');}
+   let group=groups?.querySelector(`[data-goal-team-group="${CSS.escape(teamId)}"]`);
+   if(!group&&groups){groups.insertAdjacentHTML('beforeend',scorerGroupShell(state,match,teamId));group=groups.lastElementChild;}
+   return group;
+ }
+ function appendGoalRow(form,html,teamId){
+   const state=A.state();
+   const match=state.matches.find(item=>item.id===form.dataset.matchId);
+   const box=form.querySelector('[data-goal-rows]');
+   if(!match||!box)return null;
+   box.querySelector('[data-empty-goals]')?.remove();
+   const group=ensureGoalGroup(box,state,match,teamId);
+   const rows=group?.querySelector('[data-goal-team-rows]');
+   rows?.insertAdjacentHTML('beforeend',html);
+   group?.removeAttribute('hidden');
+   return rows?.lastElementChild||null;
+ }
+ function refreshGoalGroups(form,score=null){
+   const state=A.state();
+   const match=state.matches.find(item=>item.id===form?.dataset.matchId);
+   const box=form?.querySelector('[data-goal-rows]');
+   if(!match||!box)return;
+   const rows=Array.from(box.querySelectorAll('.goal-draft-row'));
+   if(!rows.length){box.innerHTML=emptyGoals();return;}
+   box.querySelector('[data-empty-goals]')?.remove();
+   rows.forEach(row=>{
+     const teamId=row.dataset.scorerTeam||String(row.querySelector('[name="goalTeamId"]')?.value||'');
+     if(!teamId)return;
+     const group=ensureGoalGroup(box,state,match,teamId);
+     const holder=group?.querySelector('[data-goal-team-rows]');
+     if(holder&&row.parentElement!==holder)holder.appendChild(row);
+   });
+   box.querySelectorAll('[data-goal-team-group]').forEach(group=>{
+     const teamId=group.dataset.goalTeamGroup||'';
+     const count=group.querySelectorAll('.goal-draft-row').length;
+     group.hidden=count===0;
+     const countEl=group.querySelector('[data-team-scorer-count]');if(countEl)countEl.textContent=String(count);
+     const scoreEl=group.querySelector('[data-team-score]');
+     if(scoreEl&&score){scoreEl.textContent=String(teamId===match.homeTeamId?score.home:(teamId===match.awayTeamId?score.away:0));}
+   });
+ }
+ function updateAddGoalState(form){
+   if(!form)return;
+   const picked=form.querySelector('[data-goal-player-picker]')?.value||'';
+   const normal=Math.max(0,Number(form.querySelector('[data-goal-normal-count-picker]')?.value)||0);
+   const doubles=Math.max(0,Number(form.querySelector('[data-goal-double-count-picker]')?.value)||0);
+   const button=form.querySelector('[data-add-goal-row]');
+   if(button){
+     button.disabled=!picked||(normal+doubles<1);
+     button.setAttribute('aria-disabled',String(button.disabled));
+   }
+ }
+ function updateAddCardState(form){
+   if(!form)return;
+   const button=form.querySelector('[data-add-card-row]');
+   if(button){button.disabled=!form.querySelector('[data-card-player-picker]')?.value;button.setAttribute('aria-disabled',String(button.disabled));}
+ }
  function updateDraftSummary(form){
    const s=A.state(), m=s.matches.find(x=>x.id===form.dataset.matchId);
-   if(!m) return;
+   if(!m)return;
    const score=countDraftGoalsByTeam(s,m,form);
    const cards=countCards(form);
-   const totalGoals=score.actual;
    const badge=form.querySelector('[data-draft-score]');
-   const homeCount=form.querySelector('[data-home-goals-count]');
-   const awayCount=form.querySelector('[data-away-goals-count]');
-   const totalGoalsCount=form.querySelector('[data-total-goals-count]');
-   const yellowCount=form.querySelector('[data-yellow-count]');
-   const redCount=form.querySelector('[data-red-count]');
-   if(badge) badge.textContent=`Risultato bozza: ${score.home} - ${score.away}`;
-   if(homeCount) homeCount.textContent=score.home;
-   if(awayCount) awayCount.textContent=score.away;
-   if(totalGoalsCount) totalGoalsCount.textContent=totalGoals;
-   if(yellowCount) yellowCount.textContent=cards.yellow;
-   if(redCount) redCount.textContent=cards.red;
+   if(badge)badge.textContent=`Risultato bozza: ${score.home} – ${score.away}`;
+   const homeCount=form.querySelector('[data-home-goals-count]');if(homeCount)homeCount.textContent=score.home;
+   const awayCount=form.querySelector('[data-away-goals-count]');if(awayCount)awayCount.textContent=score.away;
+   const totalGoalsCount=form.querySelector('[data-total-goals-count]');if(totalGoalsCount)totalGoalsCount.textContent=score.actual;
+   const yellowCount=form.querySelector('[data-yellow-count]');if(yellowCount)yellowCount.textContent=cards.yellow;
+   const redCount=form.querySelector('[data-red-count]');if(redCount)redCount.textContent=cards.red;
+   [m.homeTeamId,m.awayTeamId].filter(Boolean).forEach(teamId=>{
+     const data=score.breakdown[teamId]||{normal:0,double:0,president:0,own:0};
+     ['normal','double','president','own'].forEach(kind=>{
+       const el=form.querySelector(`[data-team-${kind}="${CSS.escape(teamId)}"]`);if(el)el.textContent=String(data[kind]||0);
+     });
+   });
+   refreshGoalGroups(form,score);
+   updateAddGoalState(form);
  }
-
-
  function goalRowIdentity(row){
    if(!row)return '';
    if(String(row.querySelector('[name="goalOwnGoal"]')?.value||'')==='1')return `own:${row.querySelector('[name="goalTeamId"]')?.value||''}`;
@@ -446,37 +622,46 @@
    ['goalSingleMinutes','goalDoubleMinutes','goalSingleIds','goalDoubleIds'].forEach(mergeArray);
    row.remove();
    refreshGoalRowParticipant(A.state(),duplicate);
+   refreshGoalGroups(form);
    return duplicate;
  }
  function refreshGoalRowParticipant(state,row){
    const picker=row?.querySelector('[data-goal-row-player]');if(!picker)return;
-   const participant=store.getParticipant(state,picker.value);
-   const jersey=row.querySelector('[data-goal-jersey]');if(jersey)jersey.value=participantNumber(state,picker.value)||'—';
-   const meta=row.querySelector('.scorer-editor-main small');if(meta)meta.textContent=participant?.team?.name?(participant.type==='president'?`${participant.team.name} · Classifica presidenti separata`:participant.team.name):'Giocatore non disponibile';
-   const normalLabel=row.querySelector('.scorer-editor-count label');
+   const participant=store.getParticipant(state,picker.value);if(!participant)return;
+   const isPresident=participant.type==='president';
+   row.dataset.scorerTeam=participant.team.id;
+   const jersey=row.querySelector('[data-goal-jersey]');if(jersey){jersey.textContent=participantNumber(state,picker.value)||'—';jersey.value=participantNumber(state,picker.value)||'—';}
+   const meta=row.querySelector('.scorer-editor-main small');if(meta)meta.textContent=isPresident?`${participant.team.name} · Classifica presidenti separata`:participant.team.name;
+   const display=row.querySelector('.scorer-display-name');if(display){const number=participant.type==='player'&&participant.number!==''&&participant.number!=null?`#${participant.number} · `:'';display.textContent=`${number}${participant.name}`;}
+   const kind=row.querySelector('.scorer-kind');if(kind)kind.textContent=isPresident?'Presidente':'Giocatore';
+   const icon=row.querySelector('.event-icon');if(icon)icon.textContent=isPresident?'RIG':'⚽';
+   const teamMeta=row.querySelector('.scorer-card-meta span:nth-child(2) strong');if(teamMeta)teamMeta.textContent=participant.team.name;
    const normalInput=row.querySelector('[name="goalNormalCount"]');
-   row.classList.toggle('is-president-scorer',participant?.type==='president');
+   const normalControl=normalInput?.closest('.goal-quantity-control');
+   const normalLabel=normalControl?.querySelector('label');
+   row.classList.toggle('is-president-scorer',isPresident);
    let doubleInput=row.querySelector('[name="goalDoubleCount"]');
-   const holder=row.querySelector('.scorer-editor-weight');
-   if(participant?.type==='president'||!isKings(state)){
-     if(holder){
-       const normal=Math.max(0,Number(normalInput?.value)||0)+(Math.max(0,Number(doubleInput?.value)||0));
+   const doubleControl=doubleInput?.closest('.goal-quantity-control');
+   if(isPresident||!isKings(state)){
+     if(doubleControl){
+       const normal=Math.max(0,Number(normalInput?.value)||0)+Math.max(0,Number(doubleInput?.value)||0);
        if(normalInput)normalInput.value=String(Math.min(99,normal));
-       holder.outerHTML='<input type="hidden" name="goalDoubleCount" value="0">';
+       doubleControl.outerHTML='<input type="hidden" name="goalDoubleCount" value="0">';
      }
-     if(normalLabel)normalLabel.textContent=participant?.type==='president'?'Gol (rig.)':'Gol normali';
-     if(normalInput)normalInput.setAttribute('aria-label',participant?.type==='president'?'Numero di gol del presidente':'Numero di gol normali');
+     if(normalLabel)normalLabel.textContent=isPresident?'Gol (rig.)':'Gol normali';
+     if(normalInput)normalInput.setAttribute('aria-label',isPresident?'Numero di gol del presidente':'Numero di gol normali');
    }else{
      if(normalLabel)normalLabel.textContent='Gol normali';
-     if(!holder){
-       const hidden=row.querySelector('input[type="hidden"][name="goalDoubleCount"]');
-       const wrapper=document.createElement('div');wrapper.className='scorer-editor-weight';wrapper.innerHTML='<label>Gol doppi</label><input name="goalDoubleCount" type="number" min="0" max="99" step="1" inputmode="numeric" value="0" aria-label="Numero di gol doppi">';
-       hidden?.replaceWith(wrapper);
+     if(doubleInput?.type==='hidden'){
+       doubleInput.insertAdjacentHTML('afterend',quantityStepperHtml({name:'goalDoubleCount',value:0,label:'Gol doppi',ariaLabel:'numero di gol doppi',help:'Valgono 2 nel risultato e 1 nella classifica marcatori.'}));
+       doubleInput.remove();
      }
    }
+   const remove=row.querySelector('[data-remove-draft-row]');if(remove)remove.setAttribute('aria-label',`Elimina ${participant.name}`);
+   const editor=row.querySelector('[data-scorer-player-editor]');if(editor)editor.hidden=true;
+   const toggle=row.querySelector('[data-toggle-scorer-player]');if(toggle)toggle.setAttribute('aria-expanded','false');
+   refreshGoalGroups(row.closest('.report-complete-form'));
  }
-
-
 
  function draftScoreFromDraft(state,m,d){
    // Calcola il punteggio teorico considerando i goal del draft (anche se non ancora salvati)
@@ -491,6 +676,12 @@
    // Includo anche 0-0: a volte i KO finiscono 0-0 e si va ai rigori.
    return sc.home===sc.away;
  }
+ function matchTaskFooterHtml({isLive=false,label='Salva partita'}={}){
+   return `<footer class="match-task-footer" aria-label="Azioni finali della partita"><button class="btn" type="button" data-back-match-menu>Torna alla partita</button><div class="match-task-footer-primary">${isLive?'<button class="btn live-update-btn" type="button" data-update-live-context>🔴 Aggiorna Live</button>':''}<button class="btn primary" type="button" data-save-match-context>${UI.esc(label)}</button></div></footer>`;
+ }
+ function teamDraftSummaryHtml(s,m){
+   return `<div class="match-draft-summary" aria-label="Riepilogo provvisorio" aria-live="polite">${[m.homeTeamId,m.awayTeamId].filter(Boolean).map((teamId,index)=>`<div class="match-draft-team"><strong>${UI.esc(store.teamName(s,teamId))}</strong><div class="match-draft-breakdown"><span><b data-team-normal="${UI.esc(teamId)}">0</b> normali</span>${isKings(s)?`<span><b data-team-double="${UI.esc(teamId)}">0</b> doppi</span><span><b data-team-president="${UI.esc(teamId)}">0</b> presidente</span>`:''}<span><b data-team-own="${UI.esc(teamId)}">0</b> autogol</span></div><em>Totale <b ${index===0?'data-home-goals-count':'data-away-goals-count'}>0</b></em></div>`).join('')}</div>`;
+ }
  function infoFormHtml(s,m){
    const d=getReportDraft(m);
    const isLive=d.status==='live';
@@ -498,7 +689,7 @@
    const showPenalty=shouldShowPenaltyFields(s,m,d);
    const score=draftScoreFromDraft(s,m,d);
    const penaltyBlock=showPenalty?`
-      <div class="penalty-fields-block">
+      <div class="penalty-fields-block field-full">
         <div class="penalty-header">
           <strong>⚽ Rigori (fase a eliminazione diretta)</strong>
           <small>Punteggio bozza ${score.home}-${score.away}: in caso di parità inserisci i rigori per determinare il vincitore.</small>
@@ -506,15 +697,19 @@
         <div><label>Rigori ${UI.esc(store.teamName(s,m.homeTeamId,m.homeLabel))}</label><input name="penaltiesHome" type="number" min="0" max="99" inputmode="numeric" value="${UI.esc(d.penaltiesHome||'')}" placeholder="es. 5"></div>
         <div><label>Rigori ${UI.esc(store.teamName(s,m.awayTeamId,m.awayLabel))}</label><input name="penaltiesAway" type="number" min="0" max="99" inputmode="numeric" value="${UI.esc(d.penaltiesAway||'')}" placeholder="es. 3"></div>
       </div>`:'';
-   return `<form class="match-edit-form form-grid" data-match-id="${m.id}">
-      <div><label>Campo</label><input name="field" value="${UI.esc(d.field||'')}" placeholder="Es. Campo 1"></div>
-      <div><label>Arbitro</label><input name="referee" value="${UI.esc(d.referee||'')}" placeholder="Nome arbitro"></div>
-      ${s.rules.oneDay?`<div><label>Ora partita</label><input name="time" type="time" value="${UI.esc(d.time||'')}"></div>`:`<div><label>Data</label><input name="date" type="date" value="${UI.esc(d.date||'')}"></div><div><label>Ora</label><input name="time" type="time" value="${UI.esc(d.time||'')}"></div>`}
-      <label class="check-card field-full live-toggle ${isLive?'is-active':''}">
-        <input name="isLive" type="checkbox" ${isLive?'checked':''} ${isPlayed?'disabled':''}>
-        <span><strong>🔴 Partita Live</strong><small>${isPlayed?'La partita è già stata segnata come Giocata. Pulisci il referto per riabilitare lo stato Live.':'Attiva mentre la partita è in corso. Il punteggio sarà visibile in arancione, ma la partita non entra in classifica finché non la chiudi come Giocata.'}</small></span>
-      </label>
-      ${penaltyBlock}
+   return `<form class="match-edit-form match-info-form" data-match-id="${m.id}">
+      <div class="report-head clean"><div><span class="section-kicker">Informazioni partita</span><h3>Dettagli e stato</h3><p class="muted">${UI.esc(store.teamName(s,m.homeTeamId,m.homeLabel))} vs ${UI.esc(store.teamName(s,m.awayTeamId,m.awayLabel))}</p></div><span class="score-badge">${score.home} – ${score.away}</span></div>
+      <section class="event-panel match-task-panel-body match-info-grid">
+        <div><label>Campo</label><input name="field" value="${UI.esc(d.field||'')}" placeholder="Es. Campo 1"></div>
+        <div><label>Arbitro</label><input name="referee" value="${UI.esc(d.referee||'')}" placeholder="Nome arbitro"></div>
+        ${s.rules.oneDay?`<div><label>Ora partita</label><input name="time" type="time" value="${UI.esc(d.time||'')}"></div>`:`<div><label>Data</label><input name="date" type="date" value="${UI.esc(d.date||'')}"></div><div><label>Ora</label><input name="time" type="time" value="${UI.esc(d.time||'')}"></div>`}
+        <label class="check-card field-full live-toggle ${isLive?'is-active':''}">
+          <input name="isLive" type="checkbox" ${isLive?'checked':''} ${isPlayed?'disabled':''}>
+          <span><strong>🔴 Partita Live</strong><small>${isPlayed?'La partita è già stata segnata come Giocata. Pulisci il referto per riabilitare lo stato Live.':'Attiva mentre la partita è in corso. Il punteggio sarà visibile in arancione, ma la partita non entra in classifica finché non la chiudi come Giocata.'}</small></span>
+        </label>
+        ${penaltyBlock}
+      </section>
+      ${matchTaskFooterHtml({isLive,label:isLive?'Salva e concludi':'Salva partita'})}
     </form>`;
  }
  function reportFormHtml(s,m,mode='goals'){
@@ -527,34 +722,32 @@
    const cardsRows=draftCardRows(s,draft);
    const hiddenGoals=mode==='cards'?`<div class="hidden-event-cache">${goalsRows}</div>`:'';
    const hiddenCards=mode==='goals'?`<div class="hidden-event-cache">${cardsRows}</div>`:'';
+   const searchResultsId=`${mode}-participant-results-${m.id}`;
    return `<form class="report-complete-form" data-match-id="${m.id}">
-      <div class="report-head clean"><div><h3>${mode==='goals'?'Marcatori e autogol':'Cartellini'}</h3><p class="muted">${UI.esc(store.teamName(s,m.homeTeamId,m.homeLabel))} vs ${UI.esc(store.teamName(s,m.awayTeamId,m.awayLabel))}</p></div><span class="score-badge" data-draft-score>${savedScore.home} - ${savedScore.away}</span></div>
-      ${mode==='goals'?`
+      <div class="report-head clean"><div><span class="section-kicker">Gestione referto</span><h3>${mode==='goals'?'Marcatori e autogol':'Cartellini'}</h3><p class="muted">${UI.esc(store.teamName(s,m.homeTeamId,m.homeLabel))} vs ${UI.esc(store.teamName(s,m.awayTeamId,m.awayLabel))}</p></div><span class="score-badge" data-draft-score>Risultato bozza: ${savedScore.home} – ${savedScore.away}</span></div>
+      ${mode==='goals'?`${teamDraftSummaryHtml(s,m)}
       <section class="event-panel match-task-panel-body margin-top">
-        <div class="section-title compact"><div><h3>Marcatori e autogol</h3><p>${isKings(s)?'Inserisci ogni giocatore una sola volta e gestisci separatamente gol normali, gol doppi e gol del presidente.':'Inserisci ogni giocatore una sola volta e modifica direttamente la quantità dei gol.'}</p></div></div>
-        <div class="quick-add-bar event-picker-grid">
-          <div><label>Squadra gol</label><select data-goal-team-picker>${teamEventOptions(s,m)}</select></div>
-          <div><label>Cerca nome, numero o autogol</label><input data-goal-player-search inputmode="search" placeholder="Es. 10, Paolo o autogol" autocomplete="off"></div>
-          <div><label>Nuovo marcatore</label><select data-goal-player-picker><option value="">Seleziona prima una squadra</option></select></div>
-          <div><label>Gol normali</label><input data-goal-normal-count-picker type="number" min="0" max="99" step="1" inputmode="numeric" value="1"></div>
-          ${isKings(s)?`<div><label>Gol doppi</label><input data-goal-double-count-picker type="number" min="0" max="99" step="1" inputmode="numeric" value="0"><small>Ogni gol doppio vale 2 nel risultato e 1 nella classifica marcatori.</small></div>`:''}
-          <button class="btn primary" type="button" data-add-goal-row>Aggiungi marcatore</button>
+        <div class="section-title compact"><div><span class="section-kicker">Inserimento rapido</span><h3>Aggiungi un marcatore</h3><p>${isKings(s)?'Seleziona il partecipante e gestisci separatamente gol normali, doppi, autogol e gol del presidente.':'Seleziona il partecipante e indica la quantità dei gol.'}</p></div></div>
+        <div class="quick-add-bar scorer-add-grid">
+          <div class="scorer-add-team"><label>Squadra del gol</label><select data-goal-team-picker>${teamEventOptions(s,m)}</select></div>
+          <div class="participant-search-field"><label for="goal-search-${UI.esc(m.id)}">Cerca per nome o numero di maglia</label><div class="participant-combobox"><input id="goal-search-${UI.esc(m.id)}" data-goal-player-search type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="${UI.esc(searchResultsId)}" placeholder="Cerca per nome o numero di maglia" autocomplete="off"><input data-goal-player-picker type="hidden" value=""><div id="${UI.esc(searchResultsId)}" class="participant-results" data-goal-player-results role="listbox" hidden></div></div><div class="selected-participant" data-goal-selected-participant hidden></div><small>Puoi cercare anche “autogol” o “presidente”. I risultati includono solo le squadre della partita.</small></div>
+          <div class="scorer-add-quantities">${quantityStepperHtml({dataAttr:'data-goal-normal-count-picker',value:1,label:'Gol normali',labelAttr:'data-goal-normal-label',ariaLabel:'numero di gol normali'})}${isKings(s)?quantityStepperHtml({dataAttr:'data-goal-double-count-picker',value:0,label:'Gol doppi',ariaLabel:'numero di gol doppi',help:'Valgono 2 nel risultato e 1 nella classifica marcatori.',disabled:true,controlAttr:'data-goal-double-control'}):'<input type="hidden" data-goal-double-count-picker value="0">'}</div>
+          <div class="scorer-add-action"><button class="btn primary" type="button" data-add-goal-row disabled>Aggiungi marcatore</button><div class="form-feedback" data-goal-feedback role="status" aria-live="polite"></div></div>
         </div>
-        <div class="stack margin-top" data-goal-rows>${goalsRows||emptyGoals()}</div>
-        ${hiddenCards}
-      </section>`:`
+      </section>
+      <section class="event-panel match-task-panel-body scorer-list-panel margin-top"><div class="section-title compact"><div><span class="section-kicker">Marcatori inseriti</span><h3>Riepilogo per squadra</h3><p>Modifica direttamente le quantità oppure cambia il giocatore associato. Le variazioni aggiornano subito il risultato provvisorio.</p></div></div><div class="stack" data-goal-rows>${goalsRows}</div><div class="undo-notice" data-undo-notice role="status" aria-live="polite" hidden></div>${hiddenCards}</section>`:`
       <section class="event-panel match-task-panel-body margin-top">
-        <div class="section-title compact"><div><h3>Cartellini</h3><p>Cerca per numero maglia. Il presidente non è selezionabile.</p></div></div>
-        <div class="quick-add-bar card-add-bar event-picker-grid">
-          <div><label>Squadra cartellino</label><select data-card-team-picker>${teamEventOptions(s,m)}</select></div>
-          <div><label>Cerca numero</label><input data-card-player-search inputmode="numeric" placeholder="Es. 10" autocomplete="off"></div>
-          <div><label>Calciatore</label><select data-card-player-picker><option value="">Seleziona prima una squadra</option></select></div>
+        <div class="section-title compact"><div><span class="section-kicker">Disciplina</span><h3>Aggiungi un cartellino</h3><p>Cerca per nome o numero di maglia. Il presidente non è selezionabile.</p></div></div>
+        <div class="quick-add-bar card-add-grid">
+          <div><label>Squadra</label><select data-card-team-picker>${teamEventOptions(s,m)}</select></div>
+          <div class="participant-search-field"><label for="card-search-${UI.esc(m.id)}">Cerca calciatore</label><div class="participant-combobox"><input id="card-search-${UI.esc(m.id)}" data-card-player-search type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="${UI.esc(searchResultsId)}" placeholder="Nome o numero di maglia" autocomplete="off"><input data-card-player-picker type="hidden" value=""><div id="${UI.esc(searchResultsId)}" class="participant-results" data-card-player-results role="listbox" hidden></div></div><div class="selected-participant" data-card-selected-participant hidden></div></div>
           <div><label>Tipo</label>${cardTypeSelect('yellow')}</div>
-          <button class="btn" type="button" data-add-card-row>Aggiungi cartellino</button>
+          <button class="btn primary" type="button" data-add-card-row disabled>Aggiungi cartellino</button>
         </div>
-        <div class="stack margin-top" data-card-rows>${cardsRows||emptyCards()}</div>
+        <div class="stack margin-top" data-card-rows>${cardsRows||emptyCards()}</div><div class="undo-notice" data-undo-notice role="status" aria-live="polite" hidden></div>
         ${hiddenGoals}
       </section>`}
+      ${matchTaskFooterHtml({isLive:draft.status==='live',label:draft.status==='live'?'Salva e concludi':'Salva partita'})}
     </form>`;
  }
  function ensureMatchListModal(){
@@ -588,7 +781,7 @@
    modal.id='matchTaskModal';
    modal.setAttribute('role','dialog');
    modal.setAttribute('aria-modal','true');
-   modal.innerHTML=`<div class="modal-content match-task-content"><div class="match-task-toolbar"><h2 id="matchTaskTitle">Partita</h2><button class="btn danger" id="closeMatchTaskModal" type="button">Chiudi</button></div><div id="matchTaskBody"></div></div>`;
+   modal.innerHTML=`<div class="modal-content match-task-content" aria-labelledby="matchTaskTitle"><header class="match-task-toolbar"><div class="match-task-heading"><span class="match-task-eyebrow">Gestione partita</span><h2 id="matchTaskTitle">Partita</h2><p id="matchTaskTeams"></p></div><button class="btn danger match-task-close" id="closeMatchTaskModal" type="button" aria-label="Chiudi gestione partita"><span aria-hidden="true">×</span><span>Chiudi</span></button></header><div id="matchTaskBody" class="match-task-body-scroll"></div></div>`;
    document.body.appendChild(modal);return modal;
  }
  function openMatchPanel(mode='menu'){
@@ -608,10 +801,20 @@
      }
    }
    const modal=ensureMatchTaskModal();
-   const title=mode==='info'?'Info partita':mode==='goals'?'Marcatori':mode==='cards'?'Cartellini':'Scegli cosa modificare';
-   UI.$('#matchTaskTitle').textContent=`${title} · ${store.teamName(s,m.homeTeamId,m.homeLabel)} vs ${store.teamName(s,m.awayTeamId,m.awayLabel)}`;
-   UI.$('#matchTaskBody').innerHTML=mode==='menu'?matchCommandHtml(s,m):(mode==='info'?infoFormHtml(s,m):reportFormHtml(s,m,mode));
+   const title=mode==='info'?'Info partita':mode==='goals'?'Marcatori':mode==='cards'?'Cartellini':'Gestione partita';
+   UI.$('#matchTaskTitle').textContent=title;
+   UI.$('#matchTaskTeams').textContent=`${store.teamName(s,m.homeTeamId,m.homeLabel)} vs ${store.teamName(s,m.awayTeamId,m.awayLabel)}`;
+   const body=UI.$('#matchTaskBody');
+   body.innerHTML=mode==='menu'?matchCommandHtml(s,m):(mode==='info'?infoFormHtml(s,m):reportFormHtml(s,m,mode));
    modal.classList.add('open');
+   const reportForm=body.querySelector('.report-complete-form');
+   if(reportForm){
+     updateEventPlayerPickers(reportForm,'goal');
+     updateEventPlayerPickers(reportForm,'card');
+     updateDraftSummary(reportForm);
+     updateAddCardState(reportForm);
+   }
+   body.scrollTop=0;
  }
  function closeMatchTaskModal(opts={}){
    syncOpenTaskDraft();
@@ -625,6 +828,10 @@
    }
    currentTaskMode='menu';previousTaskMode='menu';
    UI.$('#matchTaskModal')?.classList.remove('open');
+   const savedFocus=taskFocusReturn instanceof HTMLElement&&document.contains(taskFocusReturn)?taskFocusReturn:null;
+   const focusTarget=savedFocus||UI.$('#openTeamMatchesBtn')||UI.$(`[data-match-team="${teamFilter}"]`);
+   taskFocusReturn=null;
+   if(focusTarget instanceof HTMLElement)setTimeout(()=>{if(document.contains(focusTarget))focusTarget.focus({preventScroll:true});},60);
  }
  function matchCommandHtml(s,m){
    const d=getReportDraft(m);
@@ -839,10 +1046,10 @@ Verrà svuotato il campo arbitro in ${withRef.length} partita/e. Campo, data, or
    // Mantengo il draft in memoria così l'admin può continuare a editare senza perdere lo stato corrente.
    reportDrafts.set(selectedMatch, draft);
    render();
-   if(!opts.silent){
-     if(UI.$('#matchTaskModal')?.classList.contains('open')){
-       openMatchPanel('menu');
-     }
+   if(UI.$('#matchTaskModal')?.classList.contains('open')){
+     // Al primo click su Live resta nel pannello corrente, ma lo rigenera subito
+     // per mostrare le azioni e le etichette coerenti con lo stato Live.
+     openMatchPanel(opts.silent?(currentTaskMode||'info'):'menu');
    }
    // Feedback piccolo, non blocking
    try{ const el=UI.$('#matchTaskTitle'); if(el){const old=el.textContent; el.textContent='🔴 Live aggiornato'; setTimeout(()=>{el.textContent=old;},1400);}}catch(_){}
@@ -878,12 +1085,12 @@ Verrà svuotato il campo arbitro in ${withRef.length} partita/e. Campo, data, or
    const clearInline=e.target.closest('[data-clear-report-match]');
    if(clearInline){e.preventDefault();e.stopPropagation();clearReportForMatch(clearInline.dataset.clearReportMatch);return;}
    const match=e.target.closest('[data-select-match]');
-   if(match){selectedMatch=match.dataset.selectMatch;render();closeMatchListModal();openMatchPanel('menu');return;}
+   if(match){selectedMatch=match.dataset.selectMatch;render();taskFocusReturn=UI.$('#openTeamMatchesBtn')||UI.$(`[data-match-team="${teamFilter}"]`);closeMatchListModal();openMatchPanel('menu');return;}
    const panel=e.target.closest('[data-open-match-panel]');if(panel){syncOpenTaskDraft();openMatchPanel(panel.dataset.openMatchPanel);return;}
-   if(e.target.id==='closeMatchListModal')closeMatchListModal();
-   if(e.target.id==='matchListModal'){e.preventDefault();e.stopPropagation();closeMatchListModal();}
-   if(e.target.id==='closeMatchTaskModal')closeMatchTaskModal();
-   if(e.target.id==='matchTaskModal'){e.preventDefault();e.stopPropagation();closeMatchTaskModal({force:true});}
+   if(e.target.closest('#closeMatchListModal')){closeMatchListModal();return;}
+   if(e.target.id==='matchListModal'){e.preventDefault();e.stopPropagation();closeMatchListModal();return;}
+   if(e.target.closest('#closeMatchTaskModal')){closeMatchTaskModal({force:true});return;}
+   if(e.target.id==='matchTaskModal'){e.preventDefault();e.stopPropagation();closeMatchTaskModal({force:true});return;}
  });
  UI.$('#adminMatchRoundFilter').addEventListener('change',e=>{roundFilter=e.target.value;selectedMatch='';render();if(teamFilter)openTeamMatchesModal();});
  document.addEventListener('submit',e=>{
@@ -898,36 +1105,104 @@ Verrà svuotato il campo arbitro in ${withRef.length} partita/e. Campo, data, or
    }
  });
 
+ function closeParticipantResults(form,kind){
+   const results=form?.querySelector(`[data-${kind}-player-results]`);
+   const search=form?.querySelector(`[data-${kind}-player-search]`);
+   if(results)results.hidden=true;
+   search?.setAttribute('aria-expanded','false');
+ }
+ function showGoalFeedback(form,message){
+   const box=form?.querySelector('[data-goal-feedback]');if(!box)return;
+   box.textContent=message;
+   box.classList.add('is-visible');
+   clearTimeout(Number(box.dataset.timer)||0);
+   box.dataset.timer=String(setTimeout(()=>{box.textContent='';box.classList.remove('is-visible');},1800));
+ }
+ function clearPendingUndo(){
+   if(!pendingUndo)return;
+   clearTimeout(pendingUndo.timer);
+   const notice=pendingUndo.form?.querySelector('[data-undo-notice]');if(notice){notice.hidden=true;notice.innerHTML='';}
+   pendingUndo=null;
+ }
+ function rowSnapshotHtml(row){
+   const clone=row.cloneNode(true);
+   const sourceControls=row.querySelectorAll('input,select,textarea');
+   const cloneControls=clone.querySelectorAll('input,select,textarea');
+   sourceControls.forEach((control,index)=>{
+     const target=cloneControls[index];if(!target)return;
+     if(control.tagName==='SELECT'){
+       Array.from(target.options).forEach((option,optionIndex)=>option.toggleAttribute('selected',Boolean(control.options[optionIndex]?.selected)));
+     }else if(control.type==='checkbox'||control.type==='radio')target.toggleAttribute('checked',control.checked);
+     else{
+       target.value=control.value;
+       target.setAttribute('value',control.value);
+       if(target.tagName==='TEXTAREA')target.textContent=control.value;
+     }
+   });
+   clone.querySelectorAll('[data-scorer-player-editor]').forEach(editor=>editor.hidden=true);
+   clone.querySelectorAll('[data-toggle-scorer-player]').forEach(button=>button.setAttribute('aria-expanded','false'));
+   return clone.outerHTML;
+ }
+ function queueUndo(form,row){
+   clearPendingUndo();
+   const type=row.classList.contains('goal-draft-row')?'goal':'card';
+   const notice=form.querySelector('[data-undo-notice]')||form.querySelector('[data-card-rows]')?.parentElement?.querySelector('[data-undo-notice]');
+   pendingUndo={form,type,html:rowSnapshotHtml(row),teamId:row.dataset.scorerTeam||row.dataset.ownGoalTeam||'',timer:0};
+   row.remove();
+   if(notice){notice.innerHTML=`<span>${type==='goal'?'Marcatore':'Cartellino'} eliminato.</span><button class="btn small" type="button" data-undo-remove>Annulla</button>`;notice.hidden=false;}
+   pendingUndo.timer=setTimeout(clearPendingUndo,6500);
+ }
+ function restorePendingUndo(){
+   if(!pendingUndo)return;
+   const {form,type,html,teamId}=pendingUndo;
+   if(type==='goal')appendGoalRow(form,html,teamId);
+   else{
+     const box=form.querySelector('[data-card-rows]');
+     box?.querySelector('[data-empty-cards]')?.remove();
+     box?.insertAdjacentHTML('beforeend',html);
+   }
+   clearPendingUndo();
+   updateDraftSummary(form);syncFormDraft(form);
+ }
+ function resultButtons(form,kind){return Array.from(form.querySelectorAll(`[data-${kind}-player-results] .participant-result`));}
+ function focusParticipantResult(form,kind,index){
+   const buttons=resultButtons(form,kind);if(!buttons.length)return;
+   const next=(index+buttons.length)%buttons.length;
+   buttons.forEach((button,i)=>{button.classList.toggle('is-active',i===next);button.setAttribute('aria-selected',String(i===next));});
+   buttons[next].focus();
+ }
+
  document.addEventListener('change',e=>{
    if(e.target.matches('.match-edit-form [name="isLive"]')){
      const card=e.target.closest('.live-toggle');
      if(card)card.classList.toggle('is-active',e.target.checked);
      const form=e.target.closest('.match-edit-form');
      if(form)syncFormDraft(form);
-     // FIRST-CLICK LIVE SAVE: se l'utente ha appena ATTIVATO il flag Live e la partita
-     // non era già 'live' nello store, salviamo subito come live (primo salvataggio implicito).
-     // Gli aggiornamenti successivi useranno i bottoni "Aggiorna Live" / "Salva tutto".
      if(e.target.checked && selectedMatch){
        const s=A.state();
        const m=s.matches.find(x=>x.id===selectedMatch);
-       if(m && m.status!=='live' && m.status!=='played'){
-         // Trigger silenzioso di updateLiveContext: persiste status='live' senza conferme.
-         updateLiveContext({silent:true});
-       }
+       if(m && m.status!=='live' && m.status!=='played')updateLiveContext({silent:true});
      }
      return;
    }
    const form=e.target.closest('.report-complete-form');
    if(!form)return;
-   if(e.target.matches('[data-goal-team-picker]')){form.querySelector('[data-goal-player-search]').value='';updateEventPlayerPickers(form,'goal');syncQuickGoalDoublePicker(form);return;}
-   if(e.target.matches('[data-card-team-picker]')){form.querySelector('[data-card-player-search]').value='';updateEventPlayerPickers(form,'card');return;}
+   if(e.target.matches('[data-goal-team-picker]')){
+     selectParticipant(form,'goal','');
+     renderParticipantResults(form,'goal');
+     return;
+   }
+   if(e.target.matches('[data-card-team-picker]')){
+     selectParticipant(form,'card','');
+     renderParticipantResults(form,'card');
+     return;
+   }
    if(e.target.matches('[data-goal-row-player]')){
      const row=e.target.closest('.goal-draft-row');
      refreshGoalRowParticipant(A.state(),row);
      mergeDuplicateGoalRow(form,row);
      updateDraftSummary(form);syncFormDraft(form);return;
    }
-   if(e.target.matches('[data-goal-player-picker]')){syncQuickGoalDoublePicker(form);return;}
    if(e.target.matches('.goal-draft-row [name="goalNormalCount"],.goal-draft-row [name="goalDoubleCount"]')){updateDraftSummary(form);syncFormDraft(form);}
  });
  document.addEventListener('input',e=>{
@@ -935,8 +1210,14 @@ Verrà svuotato il campo arbitro in ${withRef.length} partita/e. Campo, data, or
    if(info){syncFormDraft(info);return;}
    const form=e.target.closest('.report-complete-form');
    if(!form)return;
-   if(e.target.matches('[data-goal-player-search]')){updateEventPlayerPickers(form,'goal');return;}
-   if(e.target.matches('[data-card-player-search]')){updateEventPlayerPickers(form,'card');return;}
+   if(e.target.matches('[data-goal-player-search]')){
+     const picker=form.querySelector('[data-goal-player-picker]');if(picker)picker.value='';
+     renderParticipantResults(form,'goal',{open:true});updateAddGoalState(form);return;
+   }
+   if(e.target.matches('[data-card-player-search]')){
+     const picker=form.querySelector('[data-card-player-picker]');if(picker)picker.value='';
+     renderParticipantResults(form,'card',{open:true});updateAddCardState(form);return;
+   }
    if(e.target.matches('[data-goal-normal-count-picker],[data-goal-double-count-picker]')){
      const value=Math.max(0,Math.min(99,Number(e.target.value)||0));
      if(String(e.target.value)!==String(value))e.target.value=String(value);
@@ -948,100 +1229,144 @@ Verrà svuotato il campo arbitro in ${withRef.length} partita/e. Campo, data, or
      updateDraftSummary(form);syncFormDraft(form);return;
    }
  });
+ document.addEventListener('focusin',e=>{
+   const form=e.target.closest('.report-complete-form');if(!form)return;
+   if(e.target.matches('[data-goal-player-search]'))renderParticipantResults(form,'goal',{open:true});
+   if(e.target.matches('[data-card-player-search]'))renderParticipantResults(form,'card',{open:true});
+ });
+ document.addEventListener('keydown',e=>{
+   const form=e.target.closest('.report-complete-form');if(!form)return;
+   const kind=e.target.matches('[data-goal-player-search]')?'goal':(e.target.matches('[data-card-player-search]')?'card':'');
+   if(kind){
+     if(e.key==='ArrowDown'){
+       e.preventDefault();renderParticipantResults(form,kind,{open:true});focusParticipantResult(form,kind,0);return;
+     }
+     if(e.key==='Escape'){e.preventDefault();closeParticipantResults(form,kind);return;}
+     if(e.key==='Enter'){
+       e.preventDefault();
+       const selected=form.querySelector(`[data-${kind}-player-picker]`)?.value;
+       const add=form.querySelector(kind==='goal'?'[data-add-goal-row]':'[data-add-card-row]');
+       if(selected&&!add?.disabled){add.click();return;}
+       renderParticipantResults(form,kind,{open:true});
+       const first=resultButtons(form,kind)[0];if(first)first.click();
+       return;
+     }
+   }
+   if(e.key==='Enter'&&e.target.matches('[data-goal-normal-count-picker],[data-goal-double-count-picker]')){
+     const add=form.querySelector('[data-add-goal-row]');
+     if(add&&!add.disabled){e.preventDefault();add.click();return;}
+   }
+   const result=e.target.closest('.participant-result');
+   if(result){
+     const resultKind=result.hasAttribute('data-select-goal-participant')?'goal':'card';
+     const buttons=resultButtons(form,resultKind);const index=buttons.indexOf(result);
+     if(e.key==='ArrowDown'){e.preventDefault();focusParticipantResult(form,resultKind,index+1);}
+     if(e.key==='ArrowUp'){e.preventDefault();focusParticipantResult(form,resultKind,index-1);}
+     if(e.key==='Escape'){
+       e.preventDefault();
+       // Il focus riattiva il combobox tramite focusin: spostalo prima e chiudi
+       // subito dopo, così Escape lascia il campo attivo ma l'elenco chiuso.
+       form.querySelector(`[data-${resultKind}-player-search]`)?.focus();
+       closeParticipantResults(form,resultKind);
+     }
+   }
+ });
  document.addEventListener('click',e=>{
+   const step=e.target.closest('[data-step]');
+   if(step){
+     e.preventDefault();
+     const input=step.closest('[data-number-stepper]')?.querySelector('input');
+     if(input&&!input.disabled){input.value=String(Math.max(0,Math.min(99,(Number(input.value)||0)+Number(step.dataset.step||0))));input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));}
+     return;
+   }
+   const participantResult=e.target.closest('.participant-result');
+   if(participantResult){
+     const form=participantResult.closest('.report-complete-form');
+     const kind=participantResult.hasAttribute('data-select-goal-participant')?'goal':'card';
+     const value=participantResult.getAttribute(`data-select-${kind}-participant`)||'';
+     selectParticipant(form,kind,value);
+     const next=form.querySelector(kind==='goal'?'[data-goal-normal-count-picker]':'[data-add-card-row]');next?.focus();
+     return;
+   }
+   const clearSelection=e.target.closest('[data-clear-goal-participant],[data-clear-card-participant]');
+   if(clearSelection){
+     const form=clearSelection.closest('.report-complete-form');const kind=clearSelection.hasAttribute('data-clear-goal-participant')?'goal':'card';
+     selectParticipant(form,kind,'');form.querySelector(`[data-${kind}-player-search]`)?.focus();return;
+   }
+   const togglePlayer=e.target.closest('[data-toggle-scorer-player]');
+   if(togglePlayer){
+     const editor=togglePlayer.closest('.scorer-card')?.querySelector('[data-scorer-player-editor]');
+     if(editor){editor.hidden=!editor.hidden;togglePlayer.setAttribute('aria-expanded',String(!editor.hidden));if(!editor.hidden)editor.querySelector('select')?.focus();}
+     return;
+   }
+   const cancelPlayer=e.target.closest('[data-cancel-scorer-player]');
+   if(cancelPlayer){const row=cancelPlayer.closest('.scorer-card');const editor=row?.querySelector('[data-scorer-player-editor]');if(editor)editor.hidden=true;row?.querySelector('[data-toggle-scorer-player]')?.setAttribute('aria-expanded','false');return;}
+   const undo=e.target.closest('[data-undo-remove]');if(undo){restorePendingUndo();return;}
+   const back=e.target.closest('[data-back-match-menu]');if(back){e.preventDefault();syncOpenTaskDraft();openMatchPanel('menu');return;}
    const addGoal=e.target.closest('[data-add-goal-row]');
    const addCard=e.target.closest('[data-add-card-row]');
    const remove=e.target.closest('[data-remove-draft-row]');
    const saveContext=e.target.closest('[data-save-match-context]');
-   if(saveContext){
-     e.preventDefault();
-     saveMatchContext();
-     return;
-   }
+   if(saveContext){e.preventDefault();saveMatchContext();return;}
    const updateLive=e.target.closest('[data-update-live-context]');
-   if(updateLive){
-     e.preventDefault();
-     updateLiveContext();
-     return;
-   }
+   if(updateLive){e.preventDefault();updateLiveContext();return;}
    const clearReport=e.target.closest('[data-clear-report]');
-   if(clearReport){
-     e.preventDefault();
-     const form=clearReport.closest('.report-complete-form');
-     const matchId=form?.dataset.matchId || selectedMatch;
-     clearReportForMatch(matchId);
-     return;
-   }
+   if(clearReport){e.preventDefault();const form=clearReport.closest('.report-complete-form');clearReportForMatch(form?.dataset.matchId||selectedMatch);return;}
    if(addGoal){
-     const form=addGoal.closest('.report-complete-form'), s=A.state(), box=form.querySelector('[data-goal-rows]');
-     const picker=form.querySelector('[data-goal-player-picker]');
-     const picked=picker?.value||'';
+     const form=addGoal.closest('.report-complete-form'),s=A.state(),box=form.querySelector('[data-goal-rows]');
+     const picked=form.querySelector('[data-goal-player-picker]')?.value||'';
      let normalCount=Math.max(0,Math.min(99,Number(form.querySelector('[data-goal-normal-count-picker]')?.value)||0));
      let doubleCount=Math.max(0,Math.min(99,Number(form.querySelector('[data-goal-double-count-picker]')?.value)||0));
      const match=s.matches.find(x=>x.id===form.dataset.matchId);
-     if(!picked){alert('Seleziona marcatore o autogol.');return;}
-     if(!match){alert('Partita non disponibile.');return;}
-     let existing=null;
+     if(!picked||!match)return;
+     let existing=null,teamId='';
      if(isOwnGoalValue(picked)){
-       doubleCount=0;
-       if(normalCount<1){alert('Inserisci almeno un autogol.');return;}
-       const teamId=ownGoalTeamFromValue(picked);
-       if(teamId!==match.homeTeamId&&teamId!==match.awayTeamId){alert('Autogol non valido per questa partita.');return;}
-       box.querySelector('[data-empty-goals]')?.remove();
+       doubleCount=0;teamId=ownGoalTeamFromValue(picked);
+       if(normalCount<1||![match.homeTeamId,match.awayTeamId].includes(teamId))return;
        existing=Array.from(box.querySelectorAll('.goal-draft-row')).find(row=>goalRowIdentity(row)===`own:${teamId}`);
-       if(existing){
-         const input=existing.querySelector('[name="goalNormalCount"]');
-         if(input)input.value=String(Math.min(99,(Number(input.value)||0)+normalCount));
-       }else box.insertAdjacentHTML('beforeend',goalDraftItem(s,match,{ownGoal:true,teamId,normalCount,doubleCount:0}));
-     } else {
-       const playerId=picked;
-       if(store.isPresidentId(s,playerId)&&!isPresidentScorerAllowed(s)){alert('Fuori dalla Kings League il presidente non può essere selezionato come marcatore.');return;}
-       const participant=store.getParticipant(s,playerId);
-       if(!participant||![match.homeTeamId,match.awayTeamId].includes(participant.team.id)){alert('Il marcatore non appartiene alle squadre della partita.');return;}
+       if(existing){const input=existing.querySelector('[name="goalNormalCount"]');if(input)input.value=String(Math.min(99,(Number(input.value)||0)+normalCount));}
+       else appendGoalRow(form,goalDraftItem(s,match,{ownGoal:true,teamId,normalCount,doubleCount:0}),teamId);
+     }else{
+       const participant=store.getParticipant(s,picked);
+       if(!participant||![match.homeTeamId,match.awayTeamId].includes(participant.team.id))return;
+       teamId=participant.team.id;
        if(participant.type==='president'||!isKings(s)){normalCount+=doubleCount;doubleCount=0;}
-       if(normalCount+doubleCount<1){alert('Inserisci almeno un gol normale, doppio o del presidente.');return;}
-       box.querySelector('[data-empty-goals]')?.remove();
-       existing=Array.from(box.querySelectorAll('.goal-draft-row')).find(row=>goalRowIdentity(row)===`player:${playerId}`);
+       if(normalCount+doubleCount<1)return;
+       existing=Array.from(box.querySelectorAll('.goal-draft-row')).find(row=>goalRowIdentity(row)===`player:${picked}`);
        if(existing){
-         const normalInput=existing.querySelector('[name="goalNormalCount"]');
-         const doubleInput=existing.querySelector('[name="goalDoubleCount"]');
+         const normalInput=existing.querySelector('[name="goalNormalCount"]');const doubleInput=existing.querySelector('[name="goalDoubleCount"]');
          if(normalInput)normalInput.value=String(Math.min(99,(Number(normalInput.value)||0)+normalCount));
          if(doubleInput)doubleInput.value=String(Math.min(99,(Number(doubleInput.value)||0)+doubleCount));
          refreshGoalRowParticipant(s,existing);
-       } else box.insertAdjacentHTML('beforeend',goalDraftItem(s,match,{playerId,normalCount,doubleCount}));
+       }else appendGoalRow(form,goalDraftItem(s,match,{playerId:picked,normalCount,doubleCount}),teamId);
      }
-     picker.value='';
-     form.querySelector('[data-goal-player-search]').value='';
+     const personLabel=isOwnGoalValue(picked)?'Autogol':(store.getParticipant(s,picked)?.name||'Marcatore');
+     selectParticipant(form,'goal','');
      const normalPicker=form.querySelector('[data-goal-normal-count-picker]');if(normalPicker)normalPicker.value='1';
      const doublePicker=form.querySelector('[data-goal-double-count-picker]');if(doublePicker)doublePicker.value='0';
-     updateEventPlayerPickers(form,'goal');syncQuickGoalDoublePicker(form);
-     updateDraftSummary(form);syncFormDraft(form);
+     syncQuickGoalDoublePicker(form);updateDraftSummary(form);syncFormDraft(form);
+     showGoalFeedback(form,existing?`${personLabel}: quantità aggiornata.`:`${personLabel} aggiunto.`);
+     form.querySelector('[data-goal-player-search]')?.focus();
+     return;
    }
    if(addCard){
-     const form=addCard.closest('.report-complete-form'), s=A.state(), box=form.querySelector('[data-card-rows]');
-     const picker=form.querySelector('[data-card-player-picker]');
-     const typePicker=form.querySelector('[data-card-type-picker]');
-     const playerId=picker?.value;
-     const type=typePicker?.value==='red'?'red':'yellow';
-     if(!playerId){alert('Seleziona prima il calciatore.');return;}
-     if(store.isPresidentId(s,playerId)){alert('Il presidente non può ricevere cartellini.');return;}
-     box.querySelector('[data-empty-cards]')?.remove();
-     box.insertAdjacentHTML('beforeend',cardDraftItem(s,playerId,type));
-     picker.value='';
-     form.querySelector('[data-card-player-search]').value='';
-     updateEventPlayerPickers(form,'card');
-     typePicker.value='yellow';
-     updateDraftSummary(form);syncFormDraft(form);
+     const form=addCard.closest('.report-complete-form'),s=A.state(),box=form.querySelector('[data-card-rows]');
+     const picker=form.querySelector('[data-card-player-picker]');const typePicker=form.querySelector('[data-card-type-picker]');
+     const playerId=picker?.value;const type=typePicker?.value==='red'?'red':'yellow';
+     if(!playerId||store.isPresidentId(s,playerId))return;
+     box.querySelector('[data-empty-cards]')?.remove();box.insertAdjacentHTML('beforeend',cardDraftItem(s,playerId,type));
+     selectParticipant(form,'card','');typePicker.value='yellow';updateDraftSummary(form);syncFormDraft(form);form.querySelector('[data-card-player-search]')?.focus();return;
    }
    if(remove){
-     const form=remove.closest('.report-complete-form');
-     remove.closest('[data-event-item]')?.remove();
-     const goals=form.querySelector('[data-goal-rows]');
-     const cards=form.querySelector('[data-card-rows]');
-     if(goals && !goals.querySelector('.goal-draft-row')) goals.innerHTML=emptyGoals();
-     if(cards && !cards.querySelector('.card-draft-row')) cards.innerHTML=emptyCards();
-     updateDraftSummary(form);syncFormDraft(form);
+     const form=remove.closest('.report-complete-form');const row=remove.closest('[data-event-item]');if(!form||!row)return;
+     queueUndo(form,row);
+     const goals=form.querySelector('[data-goal-rows]');const cards=form.querySelector('[data-card-rows]');
+     if(goals&&!goals.querySelector('.goal-draft-row'))goals.innerHTML=emptyGoals();
+     if(cards&&!cards.querySelector('.card-draft-row'))cards.innerHTML=emptyCards();
+     updateDraftSummary(form);syncFormDraft(form);return;
    }
+   const form=e.target.closest('.report-complete-form');
+   if(form&&!e.target.closest('.participant-combobox')){closeParticipantResults(form,'goal');closeParticipantResults(form,'card');}
  });
 
 

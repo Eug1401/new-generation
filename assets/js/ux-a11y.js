@@ -456,6 +456,12 @@
       if(!overlay) return;
       const dialog = modalContainer(overlay);
       if(event.key === 'Escape'){
+        // Lascia al combobox aperto la prima pressione di Escape: chiude soltanto
+        // l'elenco dei risultati e riporta il focus alla ricerca. Una successiva
+        // pressione, con elenco già chiuso, continua a chiudere il dialog.
+        const combobox = event.target?.closest?.('.participant-combobox');
+        const openResults = combobox?.querySelector?.('.participant-results:not([hidden])');
+        if(openResults) return;
         event.preventDefault();
         event.stopPropagation();
         closeActiveOverlay(overlay);

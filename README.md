@@ -30,7 +30,7 @@ npm run lint
 npm run build
 ```
 
-La build genera `dist/`, pronta per il deploy statico. Il progetto consegnato non contiene script o artefatti di test: sono stati rimossi dopo l’esecuzione delle verifiche finali.
+La build genera `dist/`, pronta per il deploy statico. Il progetto consegnato non contiene script, screenshot o artefatti di test: sono stati rimossi dopo le verifiche finali.
 
 ## Struttura
 
@@ -49,20 +49,38 @@ La build genera `dist/`, pronta per il deploy statico. Il progetto consegnato no
 │   ├── validate-project.mjs
 │   └── build-static.mjs
 ├── dist/
-└── INTERVENTO_MARCATORI_KINGS_V129.md
+└── INTERVENTO_UI_GESTIONE_PARTITA_V131.md
 ```
+
+## Gestione partita responsive
+
+Dalla versione 1.31.0 la finestra di gestione partita utilizza una struttura responsive unica per desktop, tablet e smartphone:
+
+- intestazione e barra azioni sempre accessibili;
+- scroll esclusivamente verticale all’interno della finestra;
+- ricerca unificata per nome o numero di maglia, utilizzabile anche da tastiera;
+- contatori touch per gol normali e gol doppi;
+- marcatori raggruppati per squadra e mostrati come card responsive;
+- modifica diretta delle quantità e del giocatore associato;
+- eliminazione con possibilità di annullamento;
+- layout adattivo anche per info partita e cartellini;
+- focus visibile, chiusura con `Escape` e ripristino del focus.
+
+Il report completo dell’intervento e dei test è disponibile in `INTERVENTO_UI_GESTIONE_PARTITA_V131.md`.
+
+### Hardening e test 1.31.0
+
+La versione 1.31.0 aggiunge correzioni mirate alla gestione di `Escape` nei combobox e all’aggiornamento immediato dello stato Live. La verifica finale comprende 2.930 asserzioni browser, 12.400 asserzioni randomizzate sulla logica dei gol e una suite di regressione completa.
 
 ## Marcatori e modalità KINGS
 
-Dalla versione 1.29.0 la logica dei gol è centralizzata in `assets/js/store.js`.
+La logica dei gol resta centralizzata in `assets/js/store.js` e non è stata modificata dall’intervento UI 1.31.0.
 
 - Un gol normale vale 1 nella classifica marcatori e 1 nel risultato.
 - Un gol doppio KINGS vale 1 nella classifica marcatori e 2 nel risultato.
 - Il gol del presidente è separato dalla classifica ordinaria, alimenta la classifica presidenti e vale 1 nel risultato.
 - Gli autogol vengono attribuiti alla squadra avversaria.
 - Dettagli, statistiche, card ed export usano la stessa aggregazione per partecipante e tipologia.
-
-Il report completo dell’intervento, con cause, file modificati e test eseguiti, è disponibile in `INTERVENTO_MARCATORI_KINGS_V129.md`.
 
 ## Configurazione servizi
 
