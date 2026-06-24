@@ -183,7 +183,6 @@
     rules.playoffTeams=4;
     rules.eliminationCompetitions=[{id:'comp_sim_oro',name:'Playoff Oro',startRank:1,teams:8}];
     rules.superCup={enabled:false,homeCompetitionId:'comp_sim_oro',awayCompetitionId:''};
-    rules.calendarVariant='simulation-standard-v1';
     return rules;
   }
 
