@@ -392,24 +392,57 @@
     }
     return isPresidentId(state,g?.playerId)?presidentGoalLabel(state,g?.playerId):playerName(state,g?.playerId);
   }
+  function goalEventKind(state,g){
+    if(isOwnGoalEvent(g))return 'own-goal';
+    if(isPresidentId(state,g?.playerId))return 'president';
+    if(state?.rules?.isKingsLeague&&isDoubleGoalEvent(g))return 'double';
+    return 'normal';
+  }
+  function goalTypeLabel(kind,count=1){
+    if(kind==='president')return 'Gol (rig.)';
+    if(kind==='double')return Number(count)===1?'Gol doppio':'Gol doppi';
+    if(kind==='own-goal')return Number(count)===1?'Autogol':'Autogol';
+    return 'Gol';
+  }
+  function goalBreakdownText(row,options={}){
+    const includeNumber=options.includeNumber===true;
+    const alwaysQuantity=options.alwaysQuantity!==false;
+    const number=includeNumber&&row?.number!==''&&row?.number!=null?`#${row.number} `:'';
+    const quantity=alwaysQuantity||Number(row?.count)>1?` × ${Math.max(1,Number(row?.count)||1)}`:'';
+    return `${number}${row?.label||'Evento'} — ${row?.typeLabel||goalTypeLabel(row?.kind,row?.count)}${quantity}`;
+  }
+  function goalEventDescription(state,m,g,options={}){
+    const rows=aggregateGoalEvents(state,{...m,goals:[g]});
+    return rows.length?goalBreakdownText(rows[0],options):goalEventLabel(state,m,g);
+  }
   function aggregateGoalEvents(state,m){
     const groups=new Map();
     (m?.goals||[]).forEach(g=>{
       const own=isOwnGoalEvent(g);
+      const kind=goalEventKind(state,g);
       const teamId=goalScoringTeamId(state,m,g);
-      const key=own?`own:${teamId}`:`player:${g?.playerId||''}`;
+      const key=own?`own:${teamId}`:`player:${g?.playerId||''}:${kind}`;
       if(!groups.has(key)){
         const participant=own?null:getParticipant(state,g?.playerId);
+        const cleanLabel=own
+          ?`Autogol a favore di ${teamName(state,teamId,'squadra')}`
+          :(participant?.name||'Persona rimossa');
         groups.set(key,{
           key,
+          kind,
           teamId,
           playerId:own?'':(g?.playerId||''),
           ownGoal:own,
-          label:goalEventLabel(state,m,g),
+          isDouble:kind==='double',
+          isPresident:kind==='president',
+          label:cleanLabel,
+          typeLabel:goalTypeLabel(kind,1),
           number:participant?.type==='player'?(participant.number??''):'',
           count:0,
           scoreValue:0,
+          normalCount:0,
           doubleCount:0,
+          presidentCount:0,
           weights:new Set()
         });
       }
@@ -417,14 +450,24 @@
       row.count+=1;
       const value=eventScoreWeight(state,g);
       row.scoreValue+=value;
-      if(!own&&value===2)row.doubleCount+=1;
+      if(kind==='normal')row.normalCount+=1;
+      if(kind==='double')row.doubleCount+=1;
+      if(kind==='president')row.presidentCount+=1;
       row.weights.add(value);
     });
-    return Array.from(groups.values()).map(row=>({...row,weights:Array.from(row.weights).sort((a,b)=>a-b)}));
+    return Array.from(groups.values()).map(row=>({
+      ...row,
+      typeLabel:goalTypeLabel(row.kind,row.count),
+      weights:Array.from(row.weights).sort((a,b)=>a-b),
+      text:goalBreakdownText({...row,typeLabel:goalTypeLabel(row.kind,row.count)})
+    }));
   }
   function actualGoalCount(state,m,teamId){return (m.goals||[]).filter(g=>goalScoringTeamId(state,m,g)===teamId).length;}
   function eventScoreWeight(state,g){return isOwnGoalEvent(g)?1:(isPresidentId(state,g?.playerId)?1:((state?.rules?.isKingsLeague&&isDoubleGoalEvent(g))?2:1));}
-  function matchGoals(state,m){let home=0,away=0;(m.goals||[]).forEach(g=>{const tid=goalScoringTeamId(state,m,g);const w=eventScoreWeight(state,g);if(tid===m.homeTeamId)home+=w;if(tid===m.awayTeamId)away+=w;});return {home,away};}
+  function teamScoreValue(state,m,teamId){
+    return (m?.goals||[]).reduce((total,g)=>goalScoringTeamId(state,m,g)===teamId?total+eventScoreWeight(state,g):total,0);
+  }
+  function matchGoals(state,m){return {home:teamScoreValue(state,m,m?.homeTeamId),away:teamScoreValue(state,m,m?.awayTeamId)};}
   function isLive(state,m){return m?.status==='live';}
   function hasGoals(state,m){const sc=matchGoals(state,m);return sc.home+sc.away>0;}
   function hasScore(state,m){
@@ -2328,5 +2371,5 @@
   const memoTeamPhaseStats = memo(teamPhaseStats,'teamPhaseStats');
   const memoStats = memo(stats,'stats');
 
-  window.NexoraStore={ADMIN_KEY,PUBLIC_KEY,FORMAT_LABELS,PHASE_LABELS,FORMAT_HELP,STANDINGS_CRITERIA,defaultStandingsCriteriaOrder,normalizeStandingsCriteriaOrder,standingsCriterionMeta,uid,blankRules,defaultCalendarCustomization,normalizeCalendarCustomization,defaultGroupConfigs,defaultSite,normalizeSite,articleSlug,isArticlePublic,emptyState,normalizeState,readPendingRemoteState,newestAdminLocalState,publicCacheState,withoutHeavyMedia,mergeMissingMedia,eventScoreWeight,load,save,alignState,repairState,auditDataState,derivedSnapshot,integrityReport,getTeam,getPlayer,getPresident,getParticipant,isPresidentId,teamName,playerName,presidentGoalLabel,isOwnGoalEvent,goalScoringTeamId,goalEventLabel,aggregateGoalEvents,scoreText,matchGoals,actualGoalCount,hasScore,hasGoals,isPlayed,isLive,matchStatusInfo,normalizeJerseyNumber,normalizePenalties,isKnockoutPhase,penaltyWinnerId,winnerId,minimumTeams,plannedGroups,groupAssignmentsFromMatches,validateGroupAssignments,serpentineAssignments,randomAssignments,generateCalendar,ensureFreshCalendar,previewCalendar,isCalendarFresh,scheduleSignature,validateGeneration,validateCompetitionConfig,calendarPrerequisites,validateCalendarConstraintDefinitions,validateCalendarCustomization,calendarAvailableTimes,generationPlan,calendarConsecutiveStats,consecutiveResultMessage,rebalanceResolvedKnockoutSchedule,autoResolveKnockout,bracketData:memoBracketData,sortedCompetitions,seedEntrantsHighLow,allowedDateList,weekdayLabels,suggestEndDateForMatches,oneDayCalendarPauseEvent,groupFieldMap,allowedFieldsForMatch,groupFieldPolicyMessage,deriveFingerprint,selectors:{calculateStandings:memoCalculateStandings,officialStandings:memoOfficialStandings,officialTeamRecord:memoOfficialTeamRecord,teamPhaseStats:memoTeamPhaseStats,groupStandings:memoGroupStandings,groupNames,groupedStandings:memoGroupedStandings,hasGroupStage,playerStats:memoPlayerStats,presidentStats:memoPresidentStats,scorers:memoScorers,presidentScorers:memoPresidentScorers,stats:memoStats,phases,rounds,bracketData:memoBracketData,articles,allArticles,articleById,articleCategories}};
+  window.NexoraStore={ADMIN_KEY,PUBLIC_KEY,FORMAT_LABELS,PHASE_LABELS,FORMAT_HELP,STANDINGS_CRITERIA,defaultStandingsCriteriaOrder,normalizeStandingsCriteriaOrder,standingsCriterionMeta,uid,blankRules,defaultCalendarCustomization,normalizeCalendarCustomization,defaultGroupConfigs,defaultSite,normalizeSite,articleSlug,isArticlePublic,emptyState,normalizeState,readPendingRemoteState,newestAdminLocalState,publicCacheState,withoutHeavyMedia,mergeMissingMedia,eventScoreWeight,teamScoreValue,load,save,alignState,repairState,auditDataState,derivedSnapshot,integrityReport,getTeam,getPlayer,getPresident,getParticipant,isPresidentId,teamName,playerName,presidentGoalLabel,isOwnGoalEvent,goalScoringTeamId,goalEventLabel,goalEventKind,goalTypeLabel,goalBreakdownText,goalEventDescription,aggregateGoalEvents,scoreText,matchGoals,actualGoalCount,hasScore,hasGoals,isPlayed,isLive,matchStatusInfo,normalizeJerseyNumber,normalizePenalties,isKnockoutPhase,penaltyWinnerId,winnerId,minimumTeams,plannedGroups,groupAssignmentsFromMatches,validateGroupAssignments,serpentineAssignments,randomAssignments,generateCalendar,ensureFreshCalendar,previewCalendar,isCalendarFresh,scheduleSignature,validateGeneration,validateCompetitionConfig,calendarPrerequisites,validateCalendarConstraintDefinitions,validateCalendarCustomization,calendarAvailableTimes,generationPlan,calendarConsecutiveStats,consecutiveResultMessage,rebalanceResolvedKnockoutSchedule,autoResolveKnockout,bracketData:memoBracketData,sortedCompetitions,seedEntrantsHighLow,allowedDateList,weekdayLabels,suggestEndDateForMatches,oneDayCalendarPauseEvent,groupFieldMap,allowedFieldsForMatch,groupFieldPolicyMessage,deriveFingerprint,selectors:{calculateStandings:memoCalculateStandings,officialStandings:memoOfficialStandings,officialTeamRecord:memoOfficialTeamRecord,teamPhaseStats:memoTeamPhaseStats,groupStandings:memoGroupStandings,groupNames,groupedStandings:memoGroupedStandings,hasGroupStage,playerStats:memoPlayerStats,presidentStats:memoPresidentStats,scorers:memoScorers,presidentScorers:memoPresidentScorers,stats:memoStats,phases,rounds,bracketData:memoBracketData,articles,allArticles,articleById,articleCategories}};
 })();

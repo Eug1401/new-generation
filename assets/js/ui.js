@@ -53,15 +53,7 @@
   function playerStatsTable(rows){return `<table><thead><tr><th>Calciatore</th><th>Anno</th><th>Squadra</th><th>PG</th><th>Gol</th><th>Gialli</th><th>Rossi</th></tr></thead><tbody>${rows.map(r=>`<tr><td><strong>${esc(r.name)}</strong></td><td>${esc(r.birthYear||'-')}</td><td>${esc(r.teamName)}</td><td>${r.played}</td><td>${r.goals}</td><td>${r.yellow}</td><td>${r.red}</td></tr>`).join('')||'<tr><td colspan="7">Nessun giocatore.</td></tr>'}</tbody></table>`;}
   function presidentStatsTable(rows){return `<table><thead><tr><th>Presidente</th><th>Squadra</th><th>PG</th><th>Gol</th></tr></thead><tbody>${rows.map(r=>`<tr><td><strong>${esc(r.name)}</strong></td><td>${esc(r.teamName)}</td><td>${r.played}</td><td>${r.goals}</td></tr>`).join('')||'<tr><td colspan="4">Nessun gol presidente.</td></tr>'}</tbody></table>`;}
   function goalSummaryText(state,m){
-    const rows=store.aggregateGoalEvents?store.aggregateGoalEvents(state,m):[];
-    if(rows.length)return rows.map(row=>{
-      const number=row.number!==''&&row.number!=null?`#${row.number} `:'';
-      const quantity=row.count>1?` ×${row.count}`:'';
-      const doubles=Number(row.doubleCount)||0;
-      const doubleLabel=doubles?` · ${doubles===1?'1 gol doppio':`${doubles} gol doppi`}`:'';
-      return `${number}${row.label}${quantity}${doubleLabel}`;
-    }).join(', ');
-    return (m.goals||[]).map(g=>store.goalEventLabel?store.goalEventLabel(state,m,g):store.playerName(state,g.playerId)).join(', ');
+    return store.aggregateGoalEvents(state,m).map(row=>store.goalBreakdownText(row)).join(' · ');
   }
   function matchStatusMeta(state,m){
     if(store.matchStatusInfo)return store.matchStatusInfo(state,m);

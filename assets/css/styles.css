@@ -8100,7 +8100,7 @@ a.article-card-main{cursor:pointer;}
   .report-complete-form .scorer-remove-btn{grid-column:1/-1}
 }
 
-/* Kings scorer audit v1.28.2: correzioni di stampa dimostrate dai test PDF reali. */
+/* Print safeguards retained in v1.29.0. */
 @media print {
   body.print-page {
     background: #080b12 !important;
@@ -8128,4 +8128,34 @@ a.article-card-main{cursor:pointer;}
     break-inside: avoid;
     page-break-inside: avoid;
   }
+}
+
+/* Kings scorer consistency v1.29.0: separate goal types and overflow-safe details. */
+.fixture-events span{
+  white-space:normal!important;
+  overflow:visible!important;
+  text-overflow:clip!important;
+  overflow-wrap:anywhere;
+  line-height:1.35;
+}
+.public-match-event-item>div{min-width:0;flex:1}
+.public-match-event-item strong,.public-match-event-item small{white-space:normal;overflow-wrap:anywhere;word-break:normal}
+.report-complete-form .scorer-editor-count,
+.report-complete-form .scorer-editor-weight{min-width:0}
+.report-complete-form .scorer-editor-count input,
+.report-complete-form .scorer-editor-weight input{width:100%;text-align:center;font-weight:950;font-variant-numeric:tabular-nums}
+.report-complete-form .is-president-scorer .event-icon{background:rgba(215,164,45,.22);color:var(--gold-soft)}
+@media(max-width:1050px){
+  .report-complete-form .scorer-editor-row{grid-template-columns:42px minmax(220px,1fr) 88px 118px!important}
+  .report-complete-form .scorer-editor-weight{grid-column:2/4}
+  .report-complete-form .scorer-remove-btn{grid-column:4}
+}
+@media(max-width:760px){
+  .report-complete-form .scorer-editor-weight{grid-column:2/-1}
+  .report-complete-form .scorer-remove-btn{grid-column:2/-1}
+}
+@media(max-width:480px){
+  .report-complete-form .scorer-editor-count,
+  .report-complete-form .scorer-editor-weight{grid-column:auto}
+  .report-complete-form .scorer-remove-btn{grid-column:1/-1}
 }

@@ -852,20 +852,18 @@
     // Statistiche aggregate calcolate SOLO sulle concluse incluse nel PDF
     if(concluded.length){
       const teams = new Set();
-      let totGoals = 0, totCards = 0;
+      let totCards = 0;
       concluded.forEach(m => {
         if(m.homeTeamId) teams.add(m.homeTeamId);
         if(m.awayTeamId) teams.add(m.awayTeamId);
-        totGoals += (m.goals||[]).filter(g => !g.ownGoal).length + (m.goals||[]).filter(g=>g.ownGoal).length;
-        // più semplice: gol = lunghezza array (autogol inclusi)
-        totGoals = totGoals; // no-op, già contato sopra (sostituisco sotto)
         totCards += (m.cards||[]).length;
       });
-      const totGoalsClean = concluded.reduce((acc,m)=>acc+(m.goals||[]).length,0);
+      const totalScoreGoals=concluded.reduce((acc,m)=>{const sc=store.matchGoals(s,m);return acc+sc.home+sc.away;},0);
+      const totalScorerGoals=concluded.reduce((acc,m)=>acc+(m.goals||[]).length,0);
       y = drawSummary(doc, [
         { label:'Partite concluse',  value:String(concluded.length), note:'Incluse nel PDF', tone:'accent' },
         { label:'Squadre coinvolte', value:String(teams.size), note:'Partecipanti unici' },
-        { label:'Gol totali',        value:String(totGoalsClean), note:'Su partite incluse' },
+        { label:'Reti nel risultato',value:String(totalScoreGoals), note:`${totalScorerGoals} eventi marcatore` },
         { label:'Cartellini',        value:String(totCards), note:'Gialli + rossi' }
       ], y, 4);
     } else {
@@ -884,10 +882,10 @@
     const H = doc.internal.pageSize.getHeight();
     const margin = 14;
     const cardW = W - margin*2;
-    const cardH = 50;
     const cardGap = 4;
 
     concluded.forEach(m => {
+      const cardH=matchCardHeight(doc,s,m,cardW);
       if(y + cardH > H - 18){
         doc.addPage();
         drawHeader(doc, ctx);
@@ -901,6 +899,27 @@
     doc.save(pdfName(s, 'recap-partite'));
   }
 
+  function matchCardEventLines(doc,s,m,w){
+    const events=buildMatchEvents(s,m);
+    const goalsText=events.goals.length?events.goals.map(g=>`${g.teamSide==='home'?'◀':'▶'} ${g.name}`).join('  ·  '):'—';
+    const cardsText=events.cards.length?events.cards.map(c=>`${c.teamSide==='home'?'◀':'▶'} ${c.name} (${c.type==='red'?'R':'G'})`).join('  ·  '):'—';
+    doc.setFont('helvetica','normal');doc.setFontSize(7.4);
+    return {
+      events,
+      goalsLines:doc.splitTextToSize(goalsText,w/2-10),
+      cardsLines:doc.splitTextToSize(cardsText,w/2-10)
+    };
+  }
+  function matchCardHeight(doc,s,m,w){
+    const lines=matchCardEventLines(doc,s,m,w);
+    const maxLines=Math.max(lines.goalsLines.length,lines.cardsLines.length,1);
+    return Math.max(50,43+(maxLines*3.45)+(m.referee?4:0));
+  }
+  function fitPdfTextSize(doc,text,maxWidth,start=11,min=7){
+    let size=start;doc.setFontSize(size);
+    while(size>min&&doc.getTextWidth(String(text||''))>maxWidth){size-=0.4;doc.setFontSize(size);}
+    return size;
+  }
   function drawMatchCard(doc, s, logos, m, x, y, w, h){
     // Cornice
     setFill(doc, C.white); setDraw(doc, C.hair); doc.setLineWidth(0.22);
@@ -940,8 +959,8 @@
 
     // Home logo + nome
     drawLogo(doc, logos[homeId], x + 5, teamY, logoSize, homeName);
-    setText(doc, homeWin ? C.goldInk : C.ink); doc.setFont('helvetica','bold'); doc.setFontSize(11);
-    doc.text(String(homeName), x + 5 + logoSize + 3, teamY + 6, { maxWidth: (w/2) - 24 });
+    setText(doc, homeWin ? C.goldInk : C.ink); doc.setFont('helvetica','bold'); fitPdfTextSize(doc,homeName,(w/2)-31,11,7);
+    doc.text(String(homeName), x + 5 + logoSize + 3, teamY + 6, { maxWidth: (w/2) - 31 });
     if(homeWin){
       setText(doc, C.gold); doc.setFont('helvetica','bold'); doc.setFontSize(6.4);
       doc.text('VINCITRICE', x + 5 + logoSize + 3, teamY + 11);
@@ -963,44 +982,29 @@
 
     // Away logo + nome (a destra, mirrored)
     drawLogo(doc, logos[awayId], x + w - 5 - logoSize, teamY, logoSize, awayName);
-    setText(doc, awayWin ? C.goldInk : C.ink); doc.setFont('helvetica','bold'); doc.setFontSize(11);
-    doc.text(String(awayName), x + w - 5 - logoSize - 3, teamY + 6, { align:'right', maxWidth:(w/2) - 24 });
+    setText(doc, awayWin ? C.goldInk : C.ink); doc.setFont('helvetica','bold'); fitPdfTextSize(doc,awayName,(w/2)-31,11,7);
+    doc.text(String(awayName), x + w - 5 - logoSize - 3, teamY + 6, { align:'right', maxWidth:(w/2) - 31 });
     if(awayWin){
       setText(doc, C.gold); doc.setFont('helvetica','bold'); doc.setFontSize(6.4);
       doc.text('VINCITRICE', x + w - 5 - logoSize - 3, teamY + 11, { align:'right' });
     }
 
-    // Linea separatore
+    // Linea separatore ed eventi: altezza dinamica, nessun taglio a due righe.
+    const eventLayout=matchCardEventLines(doc,s,m,w);
+    const separatorY=y+31.5;
     setDraw(doc, C.hair); doc.setLineWidth(0.16);
-    doc.line(x + 5, y + h - 16, x + w - 5, y + h - 16);
-
-    // Eventi: marcatori + cartellini  (su due colonne)
-    const events = buildMatchEvents(s, m);
-    const goalsList = events.goals.length ? events.goals : [];
-    const cardsList = events.cards.length ? events.cards : [];
-    const evY = y + h - 13;
+    doc.line(x + 5, separatorY, x + w - 5, separatorY);
+    const evY=separatorY+4;
 
     setText(doc, C.muted); doc.setFont('helvetica','bold'); doc.setFontSize(6.4);
     doc.text('GOL', x + 5, evY);
     setText(doc, C.ink); doc.setFont('helvetica','normal'); doc.setFontSize(7.4);
-    const goalsText = goalsList.length ? goalsList.map(g=>{
-      const own = g.ownGoal ? ' (AG)' : '';
-      const team = g.teamSide === 'home' ? '◀' : '▶';
-      return `${team} ${g.name}${own}`;
-    }).join('  ·  ') : '—';
-    const goalsLines = doc.splitTextToSize(goalsText, w/2 - 10);
-    doc.text(goalsLines.slice(0,2), x + 5, evY + 3.6);
+    doc.text(eventLayout.goalsLines, x + 5, evY + 3.6);
 
     setText(doc, C.muted); doc.setFont('helvetica','bold'); doc.setFontSize(6.4);
     doc.text('CARTELLINI', x + w/2 + 2, evY);
     setText(doc, C.ink); doc.setFont('helvetica','normal'); doc.setFontSize(7.4);
-    const cardsText = cardsList.length ? cardsList.map(c=>{
-      const sym = c.type==='red' ? '🟥' : '🟨';
-      const team = c.teamSide === 'home' ? '◀' : '▶';
-      return `${team} ${c.name} (${c.type==='red'?'R':'G'})`;
-    }).join('  ·  ') : '—';
-    const cardsLines = doc.splitTextToSize(cardsText, w/2 - 10);
-    doc.text(cardsLines.slice(0,2), x + w/2 + 2, evY + 3.6);
+    doc.text(eventLayout.cardsLines, x + w/2 + 2, evY + 3.6);
 
     // Arbitro in basso a destra (se presente)
     if(referee){
@@ -1009,19 +1013,12 @@
     }
   }
   function buildMatchEvents(s, m){
-    const aggregated=store.aggregateGoalEvents?store.aggregateGoalEvents(s,m):[];
-    const goals=(aggregated.length?aggregated:(m.goals||[]).map(g=>({
-      teamId:store.goalScoringTeamId?store.goalScoringTeamId(s,m,g):(g.teamId||''),
-      ownGoal:Boolean(g.ownGoal),
-      label:store.goalEventLabel?store.goalEventLabel(s,m,g):store.playerName(s,g.playerId),
-      number:store.getParticipant(s,g.playerId)?.number??'',count:1,scoreValue:store.eventScoreWeight?store.eventScoreWeight(s,g):1
-    }))).map(row=>{
-      const number=row.number!==''&&row.number!=null?`#${row.number} `:'';
-      const quantity=Number(row.count)>1?` ×${row.count}`:'';
-      const doubles=Number(row.doubleCount)||0;
-      const doubleLabel=doubles?` (${doubles===1?'1 gol doppio':`${doubles} gol doppi`})`:'';
-      return {name:`${number}${row.label}${quantity}${doubleLabel}`,ownGoal:Boolean(row.ownGoal),teamSide:row.teamId===m.homeTeamId?'home':(row.teamId===m.awayTeamId?'away':null)};
-    });
+    const goals=store.aggregateGoalEvents(s,m).map(row=>({
+      name:store.goalBreakdownText(row),
+      ownGoal:Boolean(row.ownGoal),
+      kind:row.kind||'',
+      teamSide:row.teamId===m.homeTeamId?'home':(row.teamId===m.awayTeamId?'away':null)
+    }));
     const cards=(m.cards||[]).map(c=>{
       const participant=store.getParticipant(s,c.playerId);
       const teamId=participant?.team?.id||'';

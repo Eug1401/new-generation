@@ -68,75 +68,92 @@
  function renderPreview(){}
  function teamEventOptions(state,match,selected=''){
    const ids=[match.homeTeamId,match.awayTeamId].filter(Boolean);
-   return '<option value="">Prima scegli squadra</option>'+ids.map(id=>`<option value="${id}" ${id===selected?'selected':''}>${UI.esc(store.teamName(state,id))}</option>`).join('');
+   return '<option value="">Tutte le squadre della partita</option>'+ids.map(id=>`<option value="${id}" ${id===selected?'selected':''}>${UI.esc(store.teamName(state,id))}</option>`).join('');
  }
  function playerLabelWithNumber(p){
    const num=p.number!==''&&p.number!=null?`#${p.number} `:'';
    const year=p.birthYear?` · ${p.birthYear}`:'';
    return `${num}${p.name}${year}`;
  }
- function playerOptionsForTeam(state,teamId,search='',selected='',kind='goal'){
+ function playerOptionsForTeam(state,teamId,search='',selected='',kind='goal',match=null){
    const q=String(search||'').trim().toLowerCase();
-   const team=store.getTeam(state,teamId);
-   if(!team)return '<option value="">Seleziona prima una squadra</option>';
-   const players=(team.players||[]).map(p=>({
-     id:p.id,
-     name:p.name,
-     number:p.number,
-     label:playerLabelWithNumber(p),
-     type:'player',
-     searchKey:`${p.number!==''&&p.number!=null?p.number:''} ${p.name||''} ${p.birthYear||''}`.toLowerCase()
-   }));
-   // Ordino per numero (vuoti in fondo)
-   players.sort((a,b)=>{
-     const an=a.number===''||a.number==null?9999:Number(a.number);
-     const bn=b.number===''||b.number==null?9999:Number(b.number);
-     if(an!==bn)return an-bn;
-     return String(a.name||'').localeCompare(String(b.name||''),'it');
-   });
-   const people=[...players];
-   if(kind==='goal'){
-     people.unshift({
+   const allowedTeamIds=(teamId?[teamId]:[match?.homeTeamId,match?.awayTeamId]).filter(Boolean);
+   const teams=allowedTeamIds.map(id=>store.getTeam(state,id)).filter(Boolean);
+   if(!teams.length)return '<option value="">Nessun partecipante disponibile</option>';
+   const people=[];
+   teams.forEach(team=>{
+     (team.players||[]).forEach(p=>people.push({
+       id:p.id,
+       teamId:team.id,
+       teamName:team.name,
+       name:p.name,
+       number:p.number,
+       label:`${playerLabelWithNumber(p)}${teamId?'':` · ${team.name}`}`,
+       type:'player',
+       searchKey:`${p.number!==''&&p.number!=null?p.number:''} ${p.name||''} ${p.birthYear||''} ${team.name||''}`.toLowerCase()
+     }));
+     if(kind==='goal')people.push({
        id:ownGoalValue(team.id),
+       teamId:team.id,
+       teamName:team.name,
        name:'Autogol',
-       label:'Autogol',
+       number:'',
+       label:`Autogol${teamId?'':` · ${team.name}`}`,
        type:'own-goal',
        searchKey:`autogol auto own goal ${team.name||''}`.toLowerCase()
      });
-   }
-   if(kind==='goal'&&isKings(state)&&team.president?.name){
-     people.push({id:team.president.id,name:team.president.name,label:store.presidentGoalLabel?store.presidentGoalLabel(state,team.president.id):`${team.president.name} (rig.)`,type:'president',searchKey:`pres presidente rig rigore ${team.president.name||''}`.toLowerCase()});
-   }
+     if(kind==='goal'&&isKings(state)&&team.president?.name)people.push({
+       id:team.president.id,
+       teamId:team.id,
+       teamName:team.name,
+       name:team.president.name,
+       number:'',
+       label:`${team.president.name} · Gol (rig.)${teamId?'':` · ${team.name}`}`,
+       type:'president',
+       searchKey:`pres presidente rig rigore ${team.president.name||''} ${team.name||''}`.toLowerCase()
+     });
+   });
+   people.sort((a,b)=>{
+     const typeOrder={player:0,president:1,'own-goal':2};
+     if(a.teamId!==b.teamId)return allowedTeamIds.indexOf(a.teamId)-allowedTeamIds.indexOf(b.teamId);
+     if(typeOrder[a.type]!==typeOrder[b.type])return typeOrder[a.type]-typeOrder[b.type];
+     const an=a.type==='player'&&a.number!==''&&a.number!=null?Number(a.number):9999;
+     const bn=b.type==='player'&&b.number!==''&&b.number!=null?Number(b.number):9999;
+     return an-bn||String(a.name||'').localeCompare(String(b.name||''),'it');
+   });
    let filtered=people;
    if(q){
-     // Se la query è puramente numerica filtro per numero esatto/inizio.
-     // L'autogol resta cercabile con “autogol”, “auto” o “own goal”.
      if(/^\d+$/.test(q)){
-       filtered=people.filter(p=>p.type!=='own-goal'&&String(p.number??'').startsWith(q));
-       // Fallback: se nessun risultato per numero, prova anche nel nome
-       if(!filtered.length)filtered=people.filter(p=>(p.searchKey||'').includes(q));
-     } else {
-       filtered=people.filter(p=>(p.searchKey||'').includes(q));
-     }
+       const exact=people.filter(p=>p.type==='player'&&String(p.number??'')===q);
+       const prefix=people.filter(p=>p.type==='player'&&String(p.number??'').startsWith(q)&&String(p.number??'')!==q);
+       filtered=[...exact,...prefix];
+     }else filtered=people.filter(p=>(p.searchKey||'').includes(q));
    }
-   return '<option value="">Seleziona marcatore/autogol</option>'+filtered.map(p=>`<option value="${UI.esc(p.id)}" ${p.id===selected?'selected':''}>${UI.esc(p.label)}</option>`).join('')+(filtered.length?'':'<option value="" disabled>Nessun risultato</option>');
+   const selectedStillVisible=filtered.some(p=>p.id===selected);
+   const first='<option value="">Seleziona marcatore/autogol</option>';
+   return first+filtered.map(p=>`<option value="${UI.esc(p.id)}" ${p.id===selected&&selectedStillVisible?'selected':''}>${UI.esc(p.label)}</option>`).join('')+(filtered.length?'':'<option value="" disabled>Nessun risultato</option>');
  }
  function updateEventPlayerPickers(form,kind){
    const teamPicker=form.querySelector(`[data-${kind}-team-picker]`);
    const search=form.querySelector(`[data-${kind}-player-search]`);
    const playerPicker=form.querySelector(`[data-${kind}-player-picker]`);
    if(!teamPicker||!playerPicker)return;
-   playerPicker.innerHTML=playerOptionsForTeam(A.state(),teamPicker.value,search?.value||'',playerPicker.value,kind);
+   const match=A.state().matches.find(item=>item.id===form.dataset.matchId);
+   playerPicker.innerHTML=playerOptionsForTeam(A.state(),teamPicker.value,search?.value||'',playerPicker.value,kind,match);
  }
  function syncQuickGoalDoublePicker(form){
-   const input=form?.querySelector('[data-goal-double-count-picker]');if(!input)return;
-   const count=Math.max(1,Math.min(99,Number(form.querySelector('[data-goal-count-picker]')?.value)||1));
+   const doubleInput=form?.querySelector('[data-goal-double-count-picker]');if(!doubleInput)return;
+   const normalInput=form.querySelector('[data-goal-normal-count-picker]');
    const picked=form.querySelector('[data-goal-player-picker]')?.value||'';
    const participant=store.getParticipant(A.state(),picked);
-   const enabled=Boolean(participant&&participant.type==='player');
-   input.disabled=!enabled;
-   input.max=String(count);
-   input.value=enabled?String(Math.max(0,Math.min(count,Number(input.value)||0))):'0';
+   const enabled=Boolean(isKings(A.state())&&participant&&participant.type==='player');
+   doubleInput.disabled=!enabled;
+   doubleInput.value=enabled?String(Math.max(0,Math.min(99,Number(doubleInput.value)||0))):'0';
+   if(normalInput){
+     normalInput.value=String(Math.max(0,Math.min(99,Number(normalInput.value)||0)));
+     const label=normalInput.closest('div')?.querySelector('label');
+     if(label)label.textContent=participant?.type==='president'?'Gol (rig.)':(isOwnGoalValue(picked)?'Autogol':'Gol normali');
+   }
  }
  function cardTypeSelect(selected='yellow'){
    return `<select data-card-type-picker><option value="yellow" ${selected==='yellow'?'selected':''}>Giallo</option><option value="red" ${selected==='red'?'selected':''}>Rosso</option></select>`;
@@ -173,37 +190,62 @@
      const own=Boolean(goal?.ownGoal);
      const weight=own?1:(Number(goal?.weight)===2?2:1);
      const key=own?`own:${goal?.teamId||''}`:`player:${goal?.playerId||''}`;
-     if(!grouped.has(key))grouped.set(key,{ownGoal:own,teamId:own?(goal?.teamId||''):'',playerId:own?'':(goal?.playerId||''),count:0,doubleCount:0,singleMinutes:[],doubleMinutes:[]});
+     if(!grouped.has(key))grouped.set(key,{
+       ownGoal:own,
+       teamId:own?(goal?.teamId||''):'',
+       playerId:own?'':(goal?.playerId||''),
+       normalCount:0,
+       doubleCount:0,
+       singleMinutes:[],
+       doubleMinutes:[],
+       singleIds:[],
+       doubleIds:[]
+     });
      const row=grouped.get(key);
-     row.count+=1;
      const minute=Number(goal?.minute);
      const cleanMinute=Number.isInteger(minute)&&minute>0?minute:'';
-     if(!own&&weight===2){row.doubleCount+=1;row.doubleMinutes.push(cleanMinute);}else row.singleMinutes.push(cleanMinute);
+     const id=String(goal?.id||'');
+     if(!own&&weight===2){
+       row.doubleCount+=1;
+       row.doubleMinutes.push(cleanMinute);
+       row.doubleIds.push(id);
+     }else{
+       row.normalCount+=1;
+       row.singleMinutes.push(cleanMinute);
+       row.singleIds.push(id);
+     }
    });
    return Array.from(grouped.values());
  }
  function cardLabel(type){return type==='red'?'Rosso':'Giallo';}
  function goalDraftItem(state,match,arg,weight=1){
-   const g=(arg&&typeof arg==='object')?arg:{playerId:arg,weight};
-   const count=Math.max(1,Math.min(99,Number(g.count)||1));
-   const doubleCount=Math.max(0,Math.min(count,Number(g.doubleCount ?? (Number(g.weight)===2?count:0))||0));
+   const g=(arg&&typeof arg==='object')?arg:{playerId:arg,normalCount:Number(weight)===2?0:1,doubleCount:Number(weight)===2?1:0};
+   const legacyCount=Math.max(0,Math.min(99,Number(g.count)||0));
+   const legacyDouble=Math.max(0,Math.min(legacyCount,Number(g.doubleCount ?? (Number(g.weight)===2?legacyCount:0))||0));
+   let normalCount=Math.max(0,Math.min(99,Number(g.normalCount ?? (legacyCount-legacyDouble))||0));
+   let doubleCount=Math.max(0,Math.min(99,Number(g.doubleCount ?? legacyDouble)||0));
+   if(!normalCount&&!doubleCount){normalCount=1;}
    const singleMinutesValue=UI.esc(JSON.stringify(Array.isArray(g.singleMinutes)?g.singleMinutes:[]));
    const doubleMinutesValue=UI.esc(JSON.stringify(Array.isArray(g.doubleMinutes)?g.doubleMinutes:[]));
+   const singleIdsValue=UI.esc(JSON.stringify(Array.isArray(g.singleIds)?g.singleIds:[]));
+   const doubleIdsValue=UI.esc(JSON.stringify(Array.isArray(g.doubleIds)?g.doubleIds:[]));
    if(g.ownGoal){
      const teamId=g.teamId||'';
      const team=store.getTeam(state,teamId);
      if(!team)return '';
-     return `<div class="event-item goal-draft-row scorer-editor-row" data-event-item data-own-goal-team="${UI.esc(teamId)}">
+     return `<div class="event-item goal-draft-row scorer-editor-row is-own-goal-scorer" data-event-item data-own-goal-team="${UI.esc(teamId)}">
       <input type="hidden" name="goalOwnGoal" value="1">
       <input type="hidden" name="goalTeamId" value="${UI.esc(teamId)}">
       <input type="hidden" name="goalPlayerId" value="">
       <input type="hidden" name="goalDoubleCount" value="0">
       <input type="hidden" name="goalSingleMinutes" value="${singleMinutesValue}">
       <input type="hidden" name="goalDoubleMinutes" value="[]">
+      <input type="hidden" name="goalSingleIds" value="${singleIdsValue}">
+      <input type="hidden" name="goalDoubleIds" value="[]">
       <span class="event-icon" aria-hidden="true">↩️</span>
-      <div class="scorer-editor-main"><label>Marcatore</label><strong>Autogol a favore di ${UI.esc(team.name||'squadra')}</strong><small>Evento attribuito alla squadra, senza giocatore.</small></div>
+      <div class="scorer-editor-main"><label>Evento</label><strong>Autogol a favore di ${UI.esc(team.name||'squadra')}</strong><small>Attribuito alla squadra, senza classifica marcatore.</small></div>
       <div class="scorer-editor-number"><label>Maglia</label><input value="—" aria-label="Numero di maglia" readonly></div>
-      <div class="scorer-editor-count"><label>Numero di gol</label><input name="goalCount" type="number" min="1" max="99" step="1" inputmode="numeric" value="${count}" aria-label="Numero di autogol"></div>
+      <div class="scorer-editor-count"><label>Autogol</label><input name="goalNormalCount" type="number" min="0" max="99" step="1" inputmode="numeric" value="${normalCount}" aria-label="Numero di autogol"></div>
       <button class="btn small danger scorer-remove-btn" type="button" data-remove-draft-row>Rimuovi</button>
      </div>`;
    }
@@ -212,18 +254,21 @@
    const participant=store.getParticipant(state,playerId);
    if(!participant)return '';
    const isPresident=participant.type==='president';
+   if(isPresident){normalCount=Math.max(1,normalCount+doubleCount);doubleCount=0;}
    const doubleField=isKings(state)&&!isPresident
-     ?`<div class="scorer-editor-weight"><label>Di cui da 2 punti</label><input name="goalDoubleCount" type="number" min="0" max="${count}" step="1" inputmode="numeric" value="${doubleCount}" aria-label="Gol validi due punti"></div>`
+     ?`<div class="scorer-editor-weight"><label>Gol doppi</label><input name="goalDoubleCount" type="number" min="0" max="99" step="1" inputmode="numeric" value="${doubleCount}" aria-label="Numero di gol doppi"></div>`
      :`<input type="hidden" name="goalDoubleCount" value="0">`;
    return `<div class="event-item goal-draft-row scorer-editor-row ${isPresident?'is-president-scorer':''}" data-event-item>
     <input type="hidden" name="goalOwnGoal" value="0">
     <input type="hidden" name="goalTeamId" value="">
     <input type="hidden" name="goalSingleMinutes" value="${singleMinutesValue}">
     <input type="hidden" name="goalDoubleMinutes" value="${doubleMinutesValue}">
+    <input type="hidden" name="goalSingleIds" value="${singleIdsValue}">
+    <input type="hidden" name="goalDoubleIds" value="${doubleIdsValue}">
     <span class="event-icon" aria-hidden="true">⚽</span>
-    <div class="scorer-editor-main"><label>Giocatore</label><select name="goalPlayerId" data-goal-row-player aria-label="Modifica marcatore">${matchGoalPlayerOptions(state,match,playerId)}</select><small>${UI.esc(participant.team.name)}${isPresident?' · Gol presidenziale su rigore, valore massimo 1':''}</small></div>
+    <div class="scorer-editor-main"><label>${isPresident?'Presidente':'Giocatore'}</label><select name="goalPlayerId" data-goal-row-player aria-label="Modifica marcatore">${matchGoalPlayerOptions(state,match,playerId)}</select><small>${UI.esc(participant.team.name)}${isPresident?' · Classifica presidenti separata':''}</small></div>
     <div class="scorer-editor-number"><label>Maglia</label><input data-goal-jersey value="${UI.esc(participantNumber(state,playerId)||'—')}" aria-label="Numero di maglia" readonly></div>
-    <div class="scorer-editor-count"><label>Numero di gol</label><input name="goalCount" type="number" min="1" max="99" step="1" inputmode="numeric" value="${count}" aria-label="Numero di gol segnati"></div>
+    <div class="scorer-editor-count"><label>${isPresident?'Gol (rig.)':'Gol normali'}</label><input name="goalNormalCount" type="number" min="0" max="99" step="1" inputmode="numeric" value="${normalCount}" aria-label="${isPresident?'Numero di gol del presidente':'Numero di gol normali'}"></div>
     ${doubleField}
     <button class="btn small danger scorer-remove-btn" type="button" data-remove-draft-row>Rimuovi</button>
    </div>`;
@@ -246,7 +291,7 @@
  }
  function emptyGoals(){return `<div class="empty" data-empty-goals>Nessun marcatore o autogol aggiunto. Seleziona ${isKings(A.state())?'calciatore, presidente o autogol':'un calciatore o autogol'} e premi “Aggiungi”.</div>`;}
  function emptyCards(){return '<div class="empty" data-empty-cards>Nessun cartellino aggiunto. Seleziona un calciatore, scegli il tipo e premi “Aggiungi”.</div>';}
- function draftFromMatch(m){return {field:m.field||'',referee:m.referee||'',date:m.date||'',time:m.time||'',status:m.status||'scheduled',penaltiesHome:m.penalties?String(m.penalties.home):'',penaltiesAway:m.penalties?String(m.penalties.away):'',goals:(m.goals||[]).map(g=>store.isOwnGoalEvent&&store.isOwnGoalEvent(g)?{ownGoal:true,teamId:g.teamId,weight:1,minute:g.minute}:{playerId:g.playerId,weight:Number(g.weight)===2?2:1,minute:g.minute}),cards:(m.cards||[]).map(c=>({playerId:c.playerId,type:c.type==='red'?'red':'yellow',minute:c.minute}))};}
+ function draftFromMatch(m){return {field:m.field||'',referee:m.referee||'',date:m.date||'',time:m.time||'',status:m.status||'scheduled',penaltiesHome:m.penalties?String(m.penalties.home):'',penaltiesAway:m.penalties?String(m.penalties.away):'',goals:(m.goals||[]).map(g=>store.isOwnGoalEvent&&store.isOwnGoalEvent(g)?{id:g.id,ownGoal:true,teamId:g.teamId,weight:1,minute:g.minute}:{id:g.id,playerId:g.playerId,weight:Number(g.weight)===2?2:1,minute:g.minute}),cards:(m.cards||[]).map(c=>({id:c.id,playerId:c.playerId,type:c.type==='red'?'red':'yellow',minute:c.minute}))};}
  function getReportDraft(match){
    if(!match)return {field:'',referee:'',date:'',time:'',status:'scheduled',penaltiesHome:'',penaltiesAway:'',goals:[],cards:[]};
    if(!reportDrafts.has(match.id)) reportDrafts.set(match.id,draftFromMatch(match));
@@ -256,6 +301,45 @@
    if(!('penaltiesHome' in draft)){draft.penaltiesHome=match.penalties?String(match.penalties.home):'';draft.penaltiesAway=match.penalties?String(match.penalties.away):'';}
    return draft;
  }
+ function goalEventsFromRows(state,match,rows){
+   const events=[];
+   const readArray=(row,name)=>{try{const value=JSON.parse(row.querySelector(`[name="${name}"]`)?.value||'[]');return Array.isArray(value)?value:[];}catch(_){return [];}};
+   const cleanCount=(row,name)=>Math.max(0,Math.min(99,Number(row.querySelector(`[name="${name}"]`)?.value)||0));
+   (rows||[]).forEach(row=>{
+     const own=String(row.querySelector('[name="goalOwnGoal"]')?.value||'')==='1';
+     let normalCount=cleanCount(row,'goalNormalCount');
+     let doubleCount=cleanCount(row,'goalDoubleCount');
+     const singleMinutes=readArray(row,'goalSingleMinutes');
+     const doubleMinutes=readArray(row,'goalDoubleMinutes');
+     const singleIds=readArray(row,'goalSingleIds');
+     const doubleIds=readArray(row,'goalDoubleIds');
+     if(own){
+       const teamId=String(row.querySelector('[name="goalTeamId"]')?.value||'');
+       if(!match||(teamId!==match.homeTeamId&&teamId!==match.awayTeamId))return;
+       for(let index=0;index<normalCount;index++){
+         const minute=Number(singleMinutes[index]);
+         events.push({id:String(singleIds[index]||''),ownGoal:true,teamId,weight:1,...(Number.isInteger(minute)&&minute>0?{minute}:{})});
+       }
+       return;
+     }
+     const playerId=String(row.querySelector('[name="goalPlayerId"]')?.value||'');
+     if(!playerId)return;
+     const participant=store.getParticipant(state,playerId);
+     if(!participant||!match||![match.homeTeamId,match.awayTeamId].includes(participant.team.id))return;
+     if(store.isPresidentId(state,playerId)&&!isPresidentScorerAllowed(state))return;
+     if(participant.type==='president'||!isKings(state)){normalCount+=doubleCount;doubleCount=0;}
+     for(let index=0;index<normalCount;index++){
+       const minute=Number(singleMinutes[index]);
+       events.push({id:String(singleIds[index]||''),playerId,weight:1,...(Number.isInteger(minute)&&minute>0?{minute}:{})});
+     }
+     for(let index=0;index<doubleCount;index++){
+       const minute=Number(doubleMinutes[index]);
+       events.push({id:String(doubleIds[index]||''),playerId,weight:2,...(Number.isInteger(minute)&&minute>0?{minute}:{})});
+     }
+   });
+   return events;
+ }
+
  function syncFormDraft(form){
    if(!form)return;
    if(form.classList?.contains('match-edit-form')){
@@ -286,38 +370,7 @@
    const state=A.state();
    const m=state.matches.find(x=>x.id===matchId); const current=getReportDraft(m);
    const goalRows=Array.from(form.querySelectorAll('.goal-draft-row'));
-   const nextGoals=[];
-   const readMinutes=(row,name)=>{try{const value=JSON.parse(row.querySelector(`[name="${name}"]`)?.value||'[]');return Array.isArray(value)?value:[];}catch(_){return [];}};
-   goalRows.forEach(row=>{
-     const own=String(row.querySelector('[name="goalOwnGoal"]')?.value||'')==='1';
-     const count=Math.max(1,Math.min(99,Number(row.querySelector('[name="goalCount"]')?.value)||1));
-     const singleMinutes=readMinutes(row,'goalSingleMinutes');
-     const doubleMinutes=readMinutes(row,'goalDoubleMinutes');
-     if(own){
-       const teamId=String(row.querySelector('[name="goalTeamId"]')?.value||'');
-       if(!m||(teamId!==m.homeTeamId&&teamId!==m.awayTeamId))return;
-       for(let index=0;index<count;index++){
-         const minute=Number(singleMinutes[index]);
-         nextGoals.push({ownGoal:true,teamId,weight:1,...(Number.isInteger(minute)&&minute>0?{minute}:{})});
-       }
-       return;
-     }
-     const playerId=String(row.querySelector('[name="goalPlayerId"]')?.value||'');
-     if(!playerId)return;
-     const participant=store.getParticipant(state,playerId);
-     if(!participant||(m&&participant.team.id!==m.homeTeamId&&participant.team.id!==m.awayTeamId))return;
-     if(store.isPresidentId(state,playerId)&&!isPresidentScorerAllowed(state))return;
-     const doubleCount=isKings(state)&&participant.type!=='president'?Math.max(0,Math.min(count,Number(row.querySelector('[name="goalDoubleCount"]')?.value)||0)):0;
-     const singleCount=count-doubleCount;
-     for(let index=0;index<singleCount;index++){
-       const minute=Number(singleMinutes[index]);
-       nextGoals.push({playerId,weight:1,...(Number.isInteger(minute)&&minute>0?{minute}:{})});
-     }
-     for(let index=0;index<doubleCount;index++){
-       const minute=Number(doubleMinutes[index]);
-       nextGoals.push({playerId,weight:2,...(Number.isInteger(minute)&&minute>0?{minute}:{})});
-     }
-   });
+   const nextGoals=goalEventsFromRows(state,m,goalRows);
    const cardIds=fd.getAll('cardPlayerId').filter(Boolean);
    const cardTypes=fd.getAll('cardType');
    const cardMinutes=fd.getAll('cardMinute');
@@ -342,26 +395,9 @@
  function draftCardRows(s,draft){return (draft.cards||[]).map(c=>cardDraftItem(s,c)).join('');}
 
  function countDraftGoalsByTeam(state,match,form){
-   let home=0, away=0, actual=0;
-   form.querySelectorAll('.goal-draft-row').forEach(row=>{
-     const count=Math.max(1,Math.min(99,Number(row.querySelector('[name="goalCount"]')?.value)||1));
-     actual+=count;
-     if(String(row.querySelector('[name="goalOwnGoal"]')?.value||'')==='1'){
-       const teamId=String(row.querySelector('[name="goalTeamId"]')?.value||'');
-       if(teamId===match.homeTeamId)home+=count;
-       if(teamId===match.awayTeamId)away+=count;
-       return;
-     }
-     const pid=String(row.querySelector('[name="goalPlayerId"]')?.value||'');
-     if(!pid)return;
-     const participant=store.getParticipant(state,pid);
-     if(!participant||participant.type==='president'&&!isPresidentScorerAllowed(state))return;
-     const doubleCount=isKings(state)&&participant.type!=='president'?Math.max(0,Math.min(count,Number(row.querySelector('[name="goalDoubleCount"]')?.value)||0)):0;
-     const scoreValue=count+doubleCount;
-     if(participant.team.id===match.homeTeamId)home+=scoreValue;
-     if(participant.team.id===match.awayTeamId)away+=scoreValue;
-   });
-   return {home,away,actual};
+   const goals=goalEventsFromRows(state,match,Array.from(form.querySelectorAll('.goal-draft-row')));
+   const score=store.matchGoals(state,{...match,goals});
+   return {home:score.home,away:score.away,actual:goals.length};
  }
  function countCards(form){
    const types=new FormData(form).getAll('cardType');
@@ -397,13 +433,17 @@
    const identity=goalRowIdentity(row);if(!identity||identity.endsWith(':'))return row;
    const duplicate=Array.from(form.querySelectorAll('.goal-draft-row')).find(candidate=>candidate!==row&&goalRowIdentity(candidate)===identity);
    if(!duplicate)return row;
-   const target=duplicate.querySelector('[name="goalCount"]');
-   const source=row.querySelector('[name="goalCount"]');
-   const nextCount=Math.min(99,(Number(target?.value)||1)+(Number(source?.value)||1));
-   if(target)target.value=String(nextCount);
-   const targetDouble=duplicate.querySelector('[name="goalDoubleCount"]');
-   const sourceDouble=row.querySelector('[name="goalDoubleCount"]');
-   if(targetDouble)targetDouble.value=String(Math.min(nextCount,(Number(targetDouble.value)||0)+(Number(sourceDouble?.value)||0)));
+   const mergeCount=name=>{
+     const target=duplicate.querySelector(`[name="${name}"]`),source=row.querySelector(`[name="${name}"]`);
+     if(target)target.value=String(Math.min(99,(Number(target.value)||0)+(Number(source?.value)||0)));
+   };
+   const mergeArray=name=>{
+     const parse=el=>{try{const value=JSON.parse(el?.value||'[]');return Array.isArray(value)?value:[];}catch(_){return [];}};
+     const target=duplicate.querySelector(`[name="${name}"]`),source=row.querySelector(`[name="${name}"]`);
+     if(target)target.value=JSON.stringify([...parse(target),...parse(source)]);
+   };
+   mergeCount('goalNormalCount');mergeCount('goalDoubleCount');
+   ['goalSingleMinutes','goalDoubleMinutes','goalSingleIds','goalDoubleIds'].forEach(mergeArray);
    row.remove();
    refreshGoalRowParticipant(A.state(),duplicate);
    return duplicate;
@@ -412,23 +452,30 @@
    const picker=row?.querySelector('[data-goal-row-player]');if(!picker)return;
    const participant=store.getParticipant(state,picker.value);
    const jersey=row.querySelector('[data-goal-jersey]');if(jersey)jersey.value=participantNumber(state,picker.value)||'—';
-   const meta=row.querySelector('.scorer-editor-main small');if(meta)meta.textContent=participant?.team?.name?(participant.type==='president'?`${participant.team.name} · Gol presidenziale su rigore, valore massimo 1`:participant.team.name):'Giocatore non disponibile';
+   const meta=row.querySelector('.scorer-editor-main small');if(meta)meta.textContent=participant?.team?.name?(participant.type==='president'?`${participant.team.name} · Classifica presidenti separata`:participant.team.name):'Giocatore non disponibile';
+   const normalLabel=row.querySelector('.scorer-editor-count label');
+   const normalInput=row.querySelector('[name="goalNormalCount"]');
    row.classList.toggle('is-president-scorer',participant?.type==='president');
-   const count=Math.max(1,Math.min(99,Number(row.querySelector('[name="goalCount"]')?.value)||1));
    let doubleInput=row.querySelector('[name="goalDoubleCount"]');
    const holder=row.querySelector('.scorer-editor-weight');
    if(participant?.type==='president'||!isKings(state)){
-     if(holder){holder.outerHTML='<input type="hidden" name="goalDoubleCount" value="0">';doubleInput=row.querySelector('[name="goalDoubleCount"]');}
-     if(doubleInput)doubleInput.value='0';
-   }else if(!holder){
-     const hidden=row.querySelector('input[type="hidden"][name="goalDoubleCount"]');
-     const wrapper=document.createElement('div');wrapper.className='scorer-editor-weight';wrapper.innerHTML=`<label>Di cui da 2 punti</label><input name="goalDoubleCount" type="number" min="0" max="${count}" step="1" inputmode="numeric" value="0" aria-label="Gol validi due punti">`;
-     hidden?.replaceWith(wrapper);
+     if(holder){
+       const normal=Math.max(0,Number(normalInput?.value)||0)+(Math.max(0,Number(doubleInput?.value)||0));
+       if(normalInput)normalInput.value=String(Math.min(99,normal));
+       holder.outerHTML='<input type="hidden" name="goalDoubleCount" value="0">';
+     }
+     if(normalLabel)normalLabel.textContent=participant?.type==='president'?'Gol (rig.)':'Gol normali';
+     if(normalInput)normalInput.setAttribute('aria-label',participant?.type==='president'?'Numero di gol del presidente':'Numero di gol normali');
    }else{
-     doubleInput.max=String(count);
-     doubleInput.value=String(Math.max(0,Math.min(count,Number(doubleInput.value)||0)));
+     if(normalLabel)normalLabel.textContent='Gol normali';
+     if(!holder){
+       const hidden=row.querySelector('input[type="hidden"][name="goalDoubleCount"]');
+       const wrapper=document.createElement('div');wrapper.className='scorer-editor-weight';wrapper.innerHTML='<label>Gol doppi</label><input name="goalDoubleCount" type="number" min="0" max="99" step="1" inputmode="numeric" value="0" aria-label="Numero di gol doppi">';
+       hidden?.replaceWith(wrapper);
+     }
    }
  }
+
 
 
  function draftScoreFromDraft(state,m,d){
@@ -484,13 +531,13 @@
       <div class="report-head clean"><div><h3>${mode==='goals'?'Marcatori e autogol':'Cartellini'}</h3><p class="muted">${UI.esc(store.teamName(s,m.homeTeamId,m.homeLabel))} vs ${UI.esc(store.teamName(s,m.awayTeamId,m.awayLabel))}</p></div><span class="score-badge" data-draft-score>${savedScore.home} - ${savedScore.away}</span></div>
       ${mode==='goals'?`
       <section class="event-panel match-task-panel-body margin-top">
-        <div class="section-title compact"><div><h3>Marcatori e autogol</h3><p>${isKings(s)?'Inserisci ogni giocatore una sola volta, indica quanti gol ha segnato e modifica direttamente la riga. Il presidente vale sempre 1.':'Inserisci ogni giocatore una sola volta, indica quanti gol ha segnato e modifica direttamente la riga.'}</p></div></div>
+        <div class="section-title compact"><div><h3>Marcatori e autogol</h3><p>${isKings(s)?'Inserisci ogni giocatore una sola volta e gestisci separatamente gol normali, gol doppi e gol del presidente.':'Inserisci ogni giocatore una sola volta e modifica direttamente la quantità dei gol.'}</p></div></div>
         <div class="quick-add-bar event-picker-grid">
           <div><label>Squadra gol</label><select data-goal-team-picker>${teamEventOptions(s,m)}</select></div>
-          <div><label>Cerca numero/autogol</label><input data-goal-player-search inputmode="search" placeholder="Es. 10 o autogol" autocomplete="off"></div>
+          <div><label>Cerca nome, numero o autogol</label><input data-goal-player-search inputmode="search" placeholder="Es. 10, Paolo o autogol" autocomplete="off"></div>
           <div><label>Nuovo marcatore</label><select data-goal-player-picker><option value="">Seleziona prima una squadra</option></select></div>
-          <div><label>Gol segnati</label><input data-goal-count-picker type="number" min="1" max="99" step="1" inputmode="numeric" value="1"></div>
-          ${isKings(s)?`<div><label>Di cui da 2 punti</label><input data-goal-double-count-picker type="number" min="0" max="1" step="1" inputmode="numeric" value="0"><small>Solo calciatori. I gol del presidente valgono sempre 1.</small></div>`:''}
+          <div><label>Gol normali</label><input data-goal-normal-count-picker type="number" min="0" max="99" step="1" inputmode="numeric" value="1"></div>
+          ${isKings(s)?`<div><label>Gol doppi</label><input data-goal-double-count-picker type="number" min="0" max="99" step="1" inputmode="numeric" value="0"><small>Ogni gol doppio vale 2 nel risultato e 1 nella classifica marcatori.</small></div>`:''}
           <button class="btn primary" type="button" data-add-goal-row>Aggiungi marcatore</button>
         </div>
         <div class="stack margin-top" data-goal-rows>${goalsRows||emptyGoals()}</div>
@@ -714,8 +761,9 @@ Verrà svuotato il campo arbitro in ${withRef.length} partita/e. Campo, data, or
    const m0=s0.matches.find(x=>x.id===selectedMatch);
    if(!m0)return false;
    const safeGoals=(draft.goals||[]).filter(g=>{
-     if(g.ownGoal)return m0&&(g.teamId===m0.homeTeamId||g.teamId===m0.awayTeamId);
-     return g.playerId&&(!store.isPresidentId(s0,g.playerId)||isPresidentScorerAllowed(s0));
+     if(g.ownGoal)return g.teamId===m0.homeTeamId||g.teamId===m0.awayTeamId;
+     const participant=store.getParticipant(s0,g.playerId);
+     return Boolean(participant&&[m0.homeTeamId,m0.awayTeamId].includes(participant.team.id)&&(!store.isPresidentId(s0,g.playerId)||isPresidentScorerAllowed(s0)));
    });
    const safeCards=(draft.cards||[]).filter(c=>c.playerId&&!store.isPresidentId(s0,c.playerId));
    const draftMatch={...m0,goals:safeGoals.map(g=>g.ownGoal?{ownGoal:true,teamId:g.teamId,playerId:'',weight:1,minute:g.minute}:{playerId:g.playerId,weight:g.weight||1,minute:g.minute})};
@@ -741,7 +789,7 @@ Verrà svuotato il campo arbitro in ${withRef.length} partita/e. Campo, data, or
      m.date=(draft.date||'').trim ? (draft.date||'').trim() : (draft.date||'');
      m.time=(draft.time||'').trim ? (draft.time||'').trim() : (draft.time||'');
      m.datetime=m.date&&m.time?`${m.date}T${m.time}`:'';
-     m.goals=safeGoals.map(g=>g.ownGoal?{id:store.uid('goal'),ownGoal:true,teamId:g.teamId,playerId:'',weight:1,...(Number.isInteger(Number(g.minute))&&Number(g.minute)>0?{minute:Number(g.minute)}:{})}:{id:store.uid('goal'),playerId:g.playerId,weight:isKings(s)&&Number(g.weight)===2&&!store.isPresidentId(s,g.playerId)?2:1,...(Number.isInteger(Number(g.minute))&&Number(g.minute)>0?{minute:Number(g.minute)}:{})});
+     m.goals=safeGoals.map(g=>g.ownGoal?{id:g.id||store.uid('goal'),ownGoal:true,teamId:g.teamId,playerId:'',weight:1,...(Number.isInteger(Number(g.minute))&&Number(g.minute)>0?{minute:Number(g.minute)}:{})}:{id:g.id||store.uid('goal'),playerId:g.playerId,weight:isKings(s)&&Number(g.weight)===2&&!store.isPresidentId(s,g.playerId)?2:1,...(Number.isInteger(Number(g.minute))&&Number(g.minute)>0?{minute:Number(g.minute)}:{})});
      m.cards=safeCards.map(c=>({id:store.uid('card'),playerId:c.playerId,type:c.type==='red'?'red':'yellow',...(Number.isInteger(Number(c.minute))&&Number(c.minute)>0?{minute:Number(c.minute)}:{})}));
      m.status=finalStatus;
      m.penalties=penalties;
@@ -880,7 +928,7 @@ Verrà svuotato il campo arbitro in ${withRef.length} partita/e. Campo, data, or
      updateDraftSummary(form);syncFormDraft(form);return;
    }
    if(e.target.matches('[data-goal-player-picker]')){syncQuickGoalDoublePicker(form);return;}
-   if(e.target.matches('.goal-draft-row [name="goalDoubleCount"]')){updateDraftSummary(form);syncFormDraft(form);}
+   if(e.target.matches('.goal-draft-row [name="goalNormalCount"],.goal-draft-row [name="goalDoubleCount"]')){updateDraftSummary(form);syncFormDraft(form);}
  });
  document.addEventListener('input',e=>{
    const info=e.target.closest('.match-edit-form');
@@ -889,21 +937,15 @@ Verrà svuotato il campo arbitro in ${withRef.length} partita/e. Campo, data, or
    if(!form)return;
    if(e.target.matches('[data-goal-player-search]')){updateEventPlayerPickers(form,'goal');return;}
    if(e.target.matches('[data-card-player-search]')){updateEventPlayerPickers(form,'card');return;}
-   if(e.target.matches('[data-goal-count-picker]')){const value=Math.max(1,Math.min(99,Number(e.target.value)||1));if(String(e.target.value)!==String(value))e.target.value=String(value);syncQuickGoalDoublePicker(form);return;}
-   if(e.target.matches('[data-goal-double-count-picker]')){syncQuickGoalDoublePicker(form);return;}
-   if(e.target.matches('.goal-draft-row [name="goalCount"]')){
-     const value=Math.max(1,Math.min(99,Number(e.target.value)||1));
+   if(e.target.matches('[data-goal-normal-count-picker],[data-goal-double-count-picker]')){
+     const value=Math.max(0,Math.min(99,Number(e.target.value)||0));
      if(String(e.target.value)!==String(value))e.target.value=String(value);
-     const doubleInput=e.target.closest('.goal-draft-row')?.querySelector('[name="goalDoubleCount"]');
-     if(doubleInput){doubleInput.max=String(value);doubleInput.value=String(Math.max(0,Math.min(value,Number(doubleInput.value)||0)));}
-     updateDraftSummary(form);syncFormDraft(form);return;
+     syncQuickGoalDoublePicker(form);return;
    }
-   if(e.target.matches('.goal-draft-row [name="goalDoubleCount"]')){
-     const row=e.target.closest('.goal-draft-row');
-     const count=Math.max(1,Math.min(99,Number(row?.querySelector('[name="goalCount"]')?.value)||1));
-     const value=Math.max(0,Math.min(count,Number(e.target.value)||0));
+   if(e.target.matches('.goal-draft-row [name="goalNormalCount"],.goal-draft-row [name="goalDoubleCount"]')){
+     const value=Math.max(0,Math.min(99,Number(e.target.value)||0));
      if(String(e.target.value)!==String(value))e.target.value=String(value);
-     updateDraftSummary(form);syncFormDraft(form);
+     updateDraftSummary(form);syncFormDraft(form);return;
    }
  });
  document.addEventListener('click',e=>{
@@ -934,34 +976,43 @@ Verrà svuotato il campo arbitro in ${withRef.length} partita/e. Campo, data, or
      const form=addGoal.closest('.report-complete-form'), s=A.state(), box=form.querySelector('[data-goal-rows]');
      const picker=form.querySelector('[data-goal-player-picker]');
      const picked=picker?.value||'';
-     const count=Math.max(1,Math.min(99,Number(form.querySelector('[data-goal-count-picker]')?.value)||1));
+     let normalCount=Math.max(0,Math.min(99,Number(form.querySelector('[data-goal-normal-count-picker]')?.value)||0));
+     let doubleCount=Math.max(0,Math.min(99,Number(form.querySelector('[data-goal-double-count-picker]')?.value)||0));
      const match=s.matches.find(x=>x.id===form.dataset.matchId);
      if(!picked){alert('Seleziona marcatore o autogol.');return;}
      if(!match){alert('Partita non disponibile.');return;}
-     box.querySelector('[data-empty-goals]')?.remove();
      let existing=null;
      if(isOwnGoalValue(picked)){
+       doubleCount=0;
+       if(normalCount<1){alert('Inserisci almeno un autogol.');return;}
        const teamId=ownGoalTeamFromValue(picked);
        if(teamId!==match.homeTeamId&&teamId!==match.awayTeamId){alert('Autogol non valido per questa partita.');return;}
+       box.querySelector('[data-empty-goals]')?.remove();
        existing=Array.from(box.querySelectorAll('.goal-draft-row')).find(row=>goalRowIdentity(row)===`own:${teamId}`);
-       if(existing){const input=existing.querySelector('[name="goalCount"]');input.value=String(Math.min(99,(Number(input.value)||1)+count));}
-       else box.insertAdjacentHTML('beforeend',goalDraftItem(s,match,{ownGoal:true,teamId,count}));
+       if(existing){
+         const input=existing.querySelector('[name="goalNormalCount"]');
+         if(input)input.value=String(Math.min(99,(Number(input.value)||0)+normalCount));
+       }else box.insertAdjacentHTML('beforeend',goalDraftItem(s,match,{ownGoal:true,teamId,normalCount,doubleCount:0}));
      } else {
        const playerId=picked;
        if(store.isPresidentId(s,playerId)&&!isPresidentScorerAllowed(s)){alert('Fuori dalla Kings League il presidente non può essere selezionato come marcatore.');return;}
        const participant=store.getParticipant(s,playerId);
-       const requestedDouble=isKings(s)&&participant?.type==='player'?Math.max(0,Math.min(count,Number(form.querySelector('[data-goal-double-count-picker]')?.value)||0)):0;
+       if(!participant||![match.homeTeamId,match.awayTeamId].includes(participant.team.id)){alert('Il marcatore non appartiene alle squadre della partita.');return;}
+       if(participant.type==='president'||!isKings(s)){normalCount+=doubleCount;doubleCount=0;}
+       if(normalCount+doubleCount<1){alert('Inserisci almeno un gol normale, doppio o del presidente.');return;}
+       box.querySelector('[data-empty-goals]')?.remove();
        existing=Array.from(box.querySelectorAll('.goal-draft-row')).find(row=>goalRowIdentity(row)===`player:${playerId}`);
        if(existing){
-         const input=existing.querySelector('[name="goalCount"]');
-         const nextCount=Math.min(99,(Number(input.value)||1)+count);input.value=String(nextCount);
-         const doubleInput=existing.querySelector('[name="goalDoubleCount"]');if(doubleInput)doubleInput.value=String(Math.min(nextCount,(Number(doubleInput.value)||0)+requestedDouble));
+         const normalInput=existing.querySelector('[name="goalNormalCount"]');
+         const doubleInput=existing.querySelector('[name="goalDoubleCount"]');
+         if(normalInput)normalInput.value=String(Math.min(99,(Number(normalInput.value)||0)+normalCount));
+         if(doubleInput)doubleInput.value=String(Math.min(99,(Number(doubleInput.value)||0)+doubleCount));
          refreshGoalRowParticipant(s,existing);
-       } else box.insertAdjacentHTML('beforeend',goalDraftItem(s,match,{playerId,count,doubleCount:requestedDouble}));
+       } else box.insertAdjacentHTML('beforeend',goalDraftItem(s,match,{playerId,normalCount,doubleCount}));
      }
      picker.value='';
      form.querySelector('[data-goal-player-search]').value='';
-     const countPicker=form.querySelector('[data-goal-count-picker]');if(countPicker)countPicker.value='1';
+     const normalPicker=form.querySelector('[data-goal-normal-count-picker]');if(normalPicker)normalPicker.value='1';
      const doublePicker=form.querySelector('[data-goal-double-count-picker]');if(doublePicker)doublePicker.value='0';
      updateEventPlayerPickers(form,'goal');syncQuickGoalDoublePicker(form);
      updateDraftSummary(form);syncFormDraft(form);

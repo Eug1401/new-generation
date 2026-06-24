@@ -983,17 +983,13 @@
     const played=store.hasScore(state,m)||m.status==='played';
     const showScore=played||isLive||(store.hasGoals&&store.hasGoals(state,m));
     const homeGoals=[], awayGoals=[], yellow=[], red=[];
-    const scorerRows=store.aggregateGoalEvents?store.aggregateGoalEvents(state,m):[];
-    if(scorerRows.length){
-      scorerRows.forEach(item=>{
-        const number=item.number!==''&&item.number!=null?`#${item.number} `:'';
-        const quantity=item.count>1?` ×${item.count}`:'';
-        const row={icon:item.ownGoal?'↩️':'⚽',kind:item.ownGoal?'own-goal':'goal',name:`${number}${item.label}${quantity}`,meta:item.ownGoal?`${item.count} autogol`:(item.count===1?'1 gol':`${item.count} gol`)};
-        if(item.teamId===m.homeTeamId)homeGoals.push(row);else if(item.teamId===m.awayTeamId)awayGoals.push(row);else homeGoals.push(row);
-      });
-    } else {
-      (m.goals||[]).forEach(g=>{const own=store.isOwnGoalEvent&&store.isOwnGoalEvent(g);const row={icon:own?'↩️':'⚽',kind:own?'own-goal':'goal',name:store.goalEventLabel?store.goalEventLabel(state,m,g):store.playerName(state,g.playerId),meta:own?'Autogol':(Number(g.weight)===2?'Gol doppio Kings League':'')};const teamId=store.goalScoringTeamId?store.goalScoringTeamId(state,m,g):(store.getParticipant(state,g.playerId)?.team?.id);if(teamId===m.homeTeamId)homeGoals.push(row);else if(teamId===m.awayTeamId)awayGoals.push(row);else homeGoals.push(row);});
-    }
+    const scorerRows=store.aggregateGoalEvents(state,m);
+    scorerRows.forEach(item=>{
+      const name=store.goalBreakdownText(item);
+      const meta=item.kind==='double'?`Valore risultato: ${item.scoreValue} reti`:(item.kind==='president'?'Classifica presidenti separata':(item.ownGoal?'Nessuna attribuzione individuale':''));
+      const row={icon:item.ownGoal?'↩️':(item.kind==='president'?'🎯':'⚽'),kind:item.ownGoal?'own-goal':item.kind,name,meta};
+      if(item.teamId===m.homeTeamId)homeGoals.push(row);else if(item.teamId===m.awayTeamId)awayGoals.push(row);else homeGoals.push(row);
+    });
     (m.cards||[]).forEach(c=>{const row={icon:c.type==='red'?'■':'■',kind:c.type==='red'?'red':'yellow',name:store.playerName(state,c.playerId),meta:c.type==='red'?'Espulsione':'Ammonizione'};(c.type==='red'?red:yellow).push(row);});
     const status=store.matchStatusInfo?store.matchStatusInfo(state,m):(played?{label:'Giocata',cls:'is-played'}:{label:'Da giocare',cls:'is-pending'});
     // Compone una sottostringa pulita per la pill, evitando duplicati di "Girone X" tra
