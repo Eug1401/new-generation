@@ -1,0 +1,339 @@
+
+> new-generation-tournament@1.28.2 test:kings-audit
+> node tools/test-kings-scorer-audit.mjs && node tools/test-kings-export-audit.mjs && node tools/test-kings-aux-pdf-audit.mjs && node tools/test-kings-sync-audit.mjs && node tools/test-kings-image-visual.mjs && node tools/test-kings-print-pdf.mjs
+
+{
+  "total": 42,
+  "passed": 42,
+  "failed": 0,
+  "failures": []
+}
+{
+  "total": 7,
+  "passed": 7,
+  "failed": 0,
+  "results": [
+    {
+      "name": "PDF marcatori: classifica giocatori usa eventi, non valore doppio",
+      "ok": true
+    },
+    {
+      "name": "PDF marcatori: presidenti separati e senza (rig.)",
+      "ok": true
+    },
+    {
+      "name": "PDF marcatori: riepilogo gol e media non sono zero",
+      "ok": true
+    },
+    {
+      "name": "PDF recap: risultato ponderato e label eventi coerenti",
+      "ok": true
+    },
+    {
+      "name": "PDF classifica squadre: GF usa valore ponderato",
+      "ok": true
+    },
+    {
+      "name": "PDF calendario: risultato usa valore ponderato",
+      "ok": true
+    },
+    {
+      "name": "Eventi PDF rigenerati dopo modifica ed eliminazione",
+      "ok": true
+    }
+  ]
+}
+{
+  "total": 3,
+  "passed": 3,
+  "failed": 0,
+  "results": [
+    {
+      "name": "recap globale: giocatore usa eventi e presidente resta separato",
+      "ok": true
+    },
+    {
+      "name": "scheda squadra PDF: roster usa gol personali, GF usa valore squadra",
+      "ok": true
+    },
+    {
+      "name": "scheda squadra PDF: calendario mostra risultato ponderato",
+      "ok": true
+    }
+  ]
+}
+{
+  "total": 6,
+  "passed": 6,
+  "failed": 0,
+  "results": [
+    {
+      "name": "salvataggio remoto preserva evento doppio e normalizza presidente",
+      "ok": true
+    },
+    {
+      "name": "payload remoto e frontend producono conteggi semanticamente uguali",
+      "ok": true
+    },
+    {
+      "name": "modifica doppio->normale sostituisce il payload precedente",
+      "ok": true
+    },
+    {
+      "name": "modifica marcatore mantiene associazione tramite ID, non nome",
+      "ok": true
+    },
+    {
+      "name": "eliminazione evento rimuove il dato dal payload e dalle classifiche",
+      "ok": true
+    },
+    {
+      "name": "evento con ID duplicato viene deduplicato prima del database",
+      "ok": true
+    }
+  ],
+  "upsertCount": 5
+}
+{
+  "ok": true,
+  "images": [
+    {
+      "file": "/mnt/data/scorer-audit/new-generation-main/reports/kings-visual/match-combined.png",
+      "width": 1080,
+      "height": 1410,
+      "title": "Associazione Sportiva Internazionale d’Àngelo vs Boreale United Football Club dalla Valle",
+      "size": 539068
+    },
+    {
+      "file": "/mnt/data/scorer-audit/new-generation-main/reports/kings-visual/match-stress.png",
+      "width": 1080,
+      "height": 1410,
+      "title": "Associazione Sportiva Internazionale d’Àngelo vs Boreale United Football Club dalla Valle",
+      "size": 548800
+    },
+    {
+      "file": "/mnt/data/scorer-audit/new-generation-main/reports/kings-visual/match-many-scorers.png",
+      "width": 1080,
+      "height": 2466,
+      "title": "Associazione Sportiva Internazionale d’Àngelo vs Boreale United Football Club dalla Valle",
+      "size": 912681
+    }
+  ]
+}
+{
+  "ok": true,
+  "pdfs": [
+    {
+      "type": "calendar",
+      "file": "/mnt/data/scorer-audit/new-generation-main/reports/kings-visual/print-calendar.pdf",
+      "size": 1172501,
+      "rows": 42,
+      "documentHeight": 10628
+    },
+    {
+      "type": "standings",
+      "file": "/mnt/data/scorer-audit/new-generation-main/reports/kings-visual/print-standings.pdf",
+      "size": 676978,
+      "rows": 12,
+      "documentHeight": 1625
+    }
+  ]
+}
+
+> new-generation-tournament@1.28.2 test
+> node tools/validate-project.mjs && node tools/test-calendar-constraints.mjs && node tools/test-match-card-scorers.mjs && node tools/test-scorer-consistency.mjs
+
+{
+  "root": "/mnt/data/scorer-audit/new-generation-main",
+  "html": 13,
+  "js": 24,
+  "errors": 0,
+  "warnings": 0,
+  "mode": "test"
+}
+{
+  "ok": true,
+  "scenarios": 14
+}
+{
+  "ok": true,
+  "aggregatedScorers": 23,
+  "canvas": [
+    1080,
+    2290
+  ],
+  "responsiveEditor": true
+}
+{
+  "ok": true,
+  "score": {
+    "home": 6,
+    "away": 1
+  },
+  "playerGoals": 3,
+  "playerScoreGoals": 5,
+  "presidentGoals": 1,
+  "presidentLabel": "Ada Bianchi (rig.)",
+  "standingsGF": 6
+}
+
+> new-generation-tournament@1.28.2 test:match-ui
+> node tools/test-ui-stability.mjs --matches-only
+
+{
+  "root": "/mnt/data/scorer-audit/new-generation-main",
+  "pages": 13,
+  "widths": [
+    320,
+    360,
+    375,
+    390,
+    412,
+    430,
+    480,
+    768,
+    1024,
+    1280,
+    1440,
+    1920
+  ],
+  "mode": "matches",
+  "results": [
+    {
+      "test": "Editor marcatori: ricerca maglia, quantità, gol doppi misti, modifica presidente e coerenza pubblica",
+      "result": "PASS",
+      "details": "{\"jerseySearch\":{\"a\":[{\"value\":\"player_a\",\"text\":\"#9 Marco Verdi · 2001\"}],\"b\":[{\"value\":\"player_b\",\"text\":\"#10 Andrea Gialli · 2000\"}]},\"aggregation\":{\"rows\":1,\"count\":\"5\",\"doubleCount\":\"2\",\"jersey\":\"9\",\"score\":\"Risultato bozza: 7 - 0\",\"hasEditablePlayer\":true},\"mixedSaved\":{\"goals\":5,\"weights\":[1,1,1,2,2],\"score\":{\"home\":7,\"away\":0},\"playerGoals\":5,\"standingsGF\":7},\"reloadedMixed\":{\"count\":\"5\",\"doubleCount\":\"2\"},\"presidentEdit\":{\"jersey\":\"—\",\"player\":\"pres_a\",\"label\":\"Ada Rossi (rig.)\",\"doubleValue\":\"0\",\"doubleVisible\":false,\"score\":\"Risultato bozza: 5 - 0\"},\"restoredPlayer\":{\"jersey\":\"9\",\"doubleVisible\":true,\"doubleValue\":\"0\"},\"saved\":{\"goals\":2,\"weights\":[1,1],\"players\":[\"pres_a\",\"pres_a\"],\"score\":{\"home\":2,\"away\":0},\"presidentGoals\":2,\"playerGoals\":0,\"label\":\"Ada Rossi (rig.)\"},\"publicDetail\":{\"text\":\"\\n      \\n        \\n          Campionato · Giornata 1\\n          Giocata\\n        \\n        \\n          Aurora FC\\n          2-0\\n          Nova United\\n        \\n        \\n        \\n          Data e ora20 giu 2026, 18:00\\n          CampoCampo 1\\n          ArbitroArbitro Test\\n        \\n      \\n      \\n        ⚽Marcatori Aurora FC⚽Ada Rossi (rig.) ×22 gol\\n        ⚽Marcatori Nova UnitedNessun marcatore\\n        🟨Cartellini gialliNessun ammonito\\n        🟥Cartellini rossiNessun espulso\\n      \\n      Condividi immagine\\n    \",\"score\":\"\"},\"failures\":[]}"
+    },
+    {
+      "test": "Console JavaScript e richieste locali",
+      "result": "PASS",
+      "details": "{\"runtimeErrors\":[],\"localNetworkErrors\":[]}"
+    }
+  ],
+  "runtimeErrors": [],
+  "localNetworkErrors": []
+}
+
+> new-generation-tournament@1.28.2 test:simulation
+> node tools/test-simulation.mjs
+
+[NG-Simulation] {
+  operationId: 'sim_mqrvqkyh_zdwx82y',
+  stage: 'error',
+  message: 'Conferma la sostituzione dei dati del torneo.',
+  durationMs: 0
+}
+[NG-Simulation] {
+  operationId: 'sim_mqrvqkyl_j5eedgi',
+  stage: 'start',
+  teamMode: 'generated',
+  format: 'groups_knockout',
+  kings: false,
+  duration: 'one_day',
+  requestSource: 'automated-test'
+}
+[NG-Simulation] {
+  operationId: 'sim_mqrvqkyl_j5eedgi',
+  stage: 'commit',
+  teams: 8,
+  players: 40,
+  format: 'groups_knockout',
+  startDate: '2026-06-23',
+  endDate: '2026-06-23',
+  matches: 15,
+  events: 72,
+  winner: 'Golden Lions',
+  durationMs: 200
+}
+[NG-Simulation] {
+  operationId: 'sim_mqrvql4b_qpp0c28',
+  stage: 'start',
+  teamMode: 'generated',
+  format: 'groups_knockout',
+  kings: false,
+  duration: 'one_day',
+  requestSource: 'automated-test'
+}
+[NG-Simulation] { operationId: 'sim_mqrvql4b_qpp0c28', stage: 'rollback-start' }
+[NG-Simulation] { operationId: 'sim_mqrvql4b_qpp0c28', stage: 'rollback-complete' }
+[NG-Simulation] {
+  operationId: 'sim_mqrvql4b_qpp0c28',
+  stage: 'error',
+  message: 'forced remote failure È stato eseguito il rollback completo.',
+  durationMs: 196
+}
+{
+  "ok": true,
+  "generatedCases": 8,
+  "formats": [
+    "groups_knockout",
+    "league_knockout"
+  ],
+  "existingTeams": true,
+  "eventChronology": true,
+  "buildFailureIsolation": true,
+  "finalConfirmationGuard": true,
+  "doubleStart": true,
+  "rollback": true
+}
+
+> new-generation-tournament@1.28.2 test:calendar-share
+> node tools/test-calendar-share.mjs
+
+{
+  "ok": true,
+  "manualPreview": true,
+  "noAutoRepair": true,
+  "firstRoundLock": true,
+  "shareModuleStatic": true,
+  "bracketImageLayout": true,
+  "simulationFormats": true,
+  "draftPersistence": true,
+  "infeasibleFlow": true,
+  "optionalPreferencesRemoved": true,
+  "hardConflictBlocked": true,
+  "debutExactTime": true,
+  "legacyConstraintsRemoved": true,
+  "debutConflict": true,
+  "fieldFallback": true,
+  "technicalStates": true
+}
+
+> new-generation-tournament@1.28.2 test:scheduler-worker
+> node tools/test-optimal-scheduler-worker.mjs
+
+{
+  "ok": true,
+  "worker": true,
+  "mainThreadResponsive": true,
+  "progressEvents": 8,
+  "ticks": 78,
+  "nodes": 8244,
+  "pruned": 5759,
+  "uniqueTeams": 7,
+  "occurrences": 10
+}
+
+> new-generation-tournament@1.28.2 lint
+> node tools/validate-project.mjs --lint
+
+{
+  "root": "/mnt/data/scorer-audit/new-generation-main",
+  "html": 13,
+  "js": 24,
+  "errors": 0,
+  "warnings": 0,
+  "mode": "lint"
+}
+
+> new-generation-tournament@1.28.2 build
+> node tools/build-static.mjs
+
+{
+  "root": "/mnt/data/scorer-audit/new-generation-main",
+  "html": 13,
+  "js": 24,
+  "errors": 0,
+  "warnings": 0,
+  "mode": "test"
+}
