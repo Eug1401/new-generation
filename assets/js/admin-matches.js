@@ -5,6 +5,8 @@
  let suppressNextDraftSync=false;
  let pendingUndo=null;
  let taskFocusReturn=null;
+ let pendingZeroConfirmationMatchId='';
+ let saveNotice=null;
  const OWN_GOAL_PREFIX='__own_goal__:';
 
  function ownGoalValue(teamId){return `${OWN_GOAL_PREFIX}${teamId||''}`;}
@@ -446,6 +448,8 @@
        status:isLive?'live':(current.status==='played'?'played':(current.status==='live'?'scheduled':current.status||'scheduled'))
      });
      reportDrafts.set(matchId,current);
+     pendingZeroConfirmationMatchId='';
+     updateSectionDraftIndicator(form);
      return;
    }
    if(!form.classList?.contains('report-complete-form'))return;
@@ -465,15 +469,89 @@
      goals:(goalRows.length||hasGoalEditor)?nextGoals:((current.goals||[]).filter(g=>g.ownGoal||(!store.isPresidentId(state,g.playerId)||isPresidentScorerAllowed(state)))),
      cards:(cardIds.length||hasCardEditor)?cardIds.map((playerId,i)=>{const minute=Number(cardMinutes[i]);return {playerId,type:cardTypes[i]==='red'?'red':'yellow',...(Number.isInteger(minute)&&minute>0?{minute}:{})};}):current.cards||[]
    });
+   pendingZeroConfirmationMatchId='';
+   updateSectionDraftIndicator(form);
  }
  function syncOpenTaskDraft(){
    document.querySelectorAll('.match-edit-form,.report-complete-form').forEach(syncFormDraft);
  }
- function hasUnsavedDraft(m){
-   if(!m||!reportDrafts.has(m.id))return false;
-   const d=reportDrafts.get(m.id)||{};
-   const base=draftFromMatch(m);
-   return JSON.stringify(d)!==JSON.stringify(base);
+ function canonicalGoalDrafts(goals){
+   return (goals||[]).map(g=>g?.ownGoal
+     ? `own|${String(g.teamId||'')}|1|${Number(g.minute)||0}`
+     : `player|${String(g.playerId||'')}|${Number(g.weight)===2?2:1}|${Number(g.minute)||0}`
+   ).sort();
+ }
+ function canonicalCardDrafts(cards){
+   return (cards||[]).map(c=>`${String(c?.playerId||'')}|${c?.type==='red'?'red':'yellow'}|${Number(c?.minute)||0}`).sort();
+ }
+ function normalizedDraftStatus(value){return ['scheduled','live','played'].includes(value)?value:'scheduled';}
+ function draftChangeSet(m,draft=null){
+   if(!m)return {info:false,goals:false,cards:false,penalties:false,status:false,report:false,any:false,infoOnly:false};
+   const d=draft||getReportDraft(m),base=draftFromMatch(m);
+   const clean=v=>String(v??'').trim();
+   const info=['field','referee','date','time'].some(key=>clean(d[key])!==clean(base[key]));
+   const goals=JSON.stringify(canonicalGoalDrafts(d.goals))!==JSON.stringify(canonicalGoalDrafts(base.goals));
+   const cards=JSON.stringify(canonicalCardDrafts(d.cards))!==JSON.stringify(canonicalCardDrafts(base.cards));
+   const penalties=clean(d.penaltiesHome)!==clean(base.penaltiesHome)||clean(d.penaltiesAway)!==clean(base.penaltiesAway);
+   const status=normalizedDraftStatus(d.status)!==normalizedDraftStatus(base.status);
+   const report=goals||cards||penalties;
+   const any=info||report||status;
+   return {info,goals,cards,penalties,status,report,any,infoOnly:info&&!report&&!status};
+ }
+ function hasUnsavedDraft(m){return Boolean(m&&reportDrafts.has(m.id)&&draftChangeSet(m,reportDrafts.get(m.id)).any);}
+ function hasDraftReportContent(draft){
+   const d=draft||{};
+   return Boolean((d.goals||[]).length||(d.cards||[]).length||String(d.penaltiesHome||'').trim()||String(d.penaltiesAway||'').trim());
+ }
+ function draftSectionLabels(changes){
+   const labels=[];
+   if(changes.info)labels.push('Info');
+   if(changes.goals)labels.push('Marcatori');
+   if(changes.cards)labels.push('Cartellini');
+   if(changes.penalties)labels.push('Rigori');
+   if(changes.status)labels.push('Stato partita');
+   return [...new Set(labels)];
+ }
+ function savePlanForMatch(state,m,draft){
+   const changes=draftChangeSet(m,draft);
+   const score=draftScoreFromDraft(state,m,draft);
+   const goals=(draft.goals||[]).length,cards=(draft.cards||[]).length;
+   const penaltiesEntered=Boolean(String(draft.penaltiesHome||'').trim()||String(draft.penaltiesAway||'').trim());
+   const draftLive=normalizedDraftStatus(draft.status)==='live';
+   const wasLive=normalizedDraftStatus(m.status)==='live';
+   const wasPlayed=normalizedDraftStatus(m.status)==='played';
+   const emptySport=goals===0&&cards===0&&!penaltiesEntered;
+   const reportContent=hasDraftReportContent(draft);
+   const isKO=Boolean(store.isKnockoutPhase&&store.isKnockoutPhase(m)&&m.homeTeamId&&m.awayTeamId);
+   const parsedPenalties=parsePenaltiesFromDraft(draft);
+   const penaltiesValid=Boolean(parsedPenalties&&!parsedPenalties.error&&parsedPenalties.home!==parsedPenalties.away);
+   const knockoutTieBlocked=isKO&&score.home===score.away&&!penaltiesValid;
+   const knockoutBlock=()=>({kind:'blocked-penalties',finalStatus:'played',label:'Rigori necessari',title:'Completa il risultato ai rigori',description:`La fase a eliminazione diretta non può essere chiusa sul ${score.home}-${score.away} senza un vincitore ai rigori. Inserisci entrambi i valori in Info partita.`,changes,score,goals,cards,disabled:true,needsZeroConfirmation:false});
+
+   if(changes.infoOnly){
+     return {kind:'info',finalStatus:normalizedDraftStatus(m.status),label:'Salva informazioni',title:'Salva soltanto le informazioni',description:'Campo, arbitro, data e orario verranno aggiornati. La partita non sarà refertata e resterà nello stato attuale.',changes,score,goals,cards,disabled:false,needsZeroConfirmation:false};
+   }
+   if(draftLive){
+     if(wasLive&&!changes.any){
+       return {kind:'noop-live',finalStatus:'live',label:'Live già aggiornato',title:'Nessuna modifica Live da salvare',description:'Per concludere la gara, apri Info partita, disattiva “Partita Live” e torna qui per il salvataggio generale.',changes,score,goals,cards,disabled:true,needsZeroConfirmation:false};
+     }
+     return {kind:'live',finalStatus:'live',label:wasLive?'Aggiorna partita Live':'Avvia partita Live',title:wasLive?'Aggiorna la partita Live':'Avvia la partita Live',description:'Tutte le modifiche in bozza saranno pubblicate come aggiornamento Live, senza entrare nelle classifiche definitive.',changes,score,goals,cards,disabled:false,needsZeroConfirmation:false};
+   }
+   if(wasPlayed){
+     if(!changes.any)return {kind:'noop-played',finalStatus:'played',label:'Nessuna modifica',title:'Partita già salvata',description:'Il referto è già definitivo e non ci sono modifiche in bozza.',changes,score,goals,cards,disabled:true,needsZeroConfirmation:false};
+     if(knockoutTieBlocked)return knockoutBlock();
+     if(emptySport&&changes.report){
+       return {kind:'played-update-zero',finalStatus:'played',label:'Conferma aggiornamento 0-0',title:'Aggiornamento a referto vuoto',description:'Le modifiche rimuovono tutti i marcatori, i cartellini e gli eventuali rigori. Prima di sostituire il referto definitivo con uno 0-0 senza eventi è richiesta una conferma esplicita.',changes,score,goals,cards,disabled:false,needsZeroConfirmation:true};
+     }
+     return {kind:'played-update',finalStatus:'played',label:'Salva modifiche partita',title:'Aggiorna il referto definitivo',description:'Le modifiche in bozza sostituiranno i dati attualmente salvati, mantenendo la partita nello stato Giocata.',changes,score,goals,cards,disabled:false,needsZeroConfirmation:false};
+   }
+   if(changes.report||changes.status||reportContent||wasLive){
+     if(knockoutTieBlocked)return knockoutBlock();
+     const needsZeroConfirmation=emptySport;
+     return {kind:'report',finalStatus:'played',label:needsZeroConfirmation?'Conferma referto 0-0':'Salva e referta partita',title:needsZeroConfirmation?'Referto senza eventi':'Salva il referto completo',description:needsZeroConfirmation?'Non risultano marcatori, cartellini o rigori. La gara verrà chiusa sullo 0-0 soltanto dopo una conferma esplicita.':'Marcatori, cartellini, rigori e informazioni verranno salvati insieme e la gara passerà a Giocata.',changes,score,goals,cards,disabled:false,needsZeroConfirmation};
+   }
+   if(knockoutTieBlocked)return knockoutBlock();
+   return {kind:'zero',finalStatus:'played',label:'Referta 0-0',title:'Nessuna modifica inserita',description:'Puoi comunque chiudere la partita sullo 0-0 senza cartellini. Prima del salvataggio verrà richiesta una conferma esplicita.',changes,score,goals,cards,disabled:false,needsZeroConfirmation:true};
  }
  function draftGoalRows(s,m,draft){
    const compact=compactGoalDrafts((draft.goals||[]).filter(g=>g.ownGoal||(g.playerId&&(!store.isPresidentId(s,g.playerId)||isPresidentScorerAllowed(s)))));
@@ -676,8 +754,23 @@
    // Includo anche 0-0: a volte i KO finiscono 0-0 e si va ai rigori.
    return sc.home===sc.away;
  }
- function matchTaskFooterHtml({isLive=false,label='Salva partita'}={}){
-   return `<footer class="match-task-footer" aria-label="Azioni finali della partita"><button class="btn" type="button" data-back-match-menu>Torna alla partita</button><div class="match-task-footer-primary">${isLive?'<button class="btn live-update-btn" type="button" data-update-live-context>🔴 Aggiorna Live</button>':''}<button class="btn primary" type="button" data-save-match-context>${UI.esc(label)}</button></div></footer>`;
+ function matchTaskBackHtml(){
+   return `<footer class="match-task-backbar"><button class="btn" type="button" data-back-match-menu>← Torna alla scheda partita</button><small>Le modifiche restano in bozza finché non usi il salvataggio generale nella scheda partita.</small></footer>`;
+ }
+ function sectionDraftBannerHtml(section,dirty=false){
+   const labels={info:'Info partita',goals:'Marcatori',cards:'Cartellini'};
+   return `<div class="section-draft-banner ${dirty?'is-dirty':''}" data-section-draft-banner data-section-kind="${section}" role="status" aria-live="polite"><span class="section-draft-dot" aria-hidden="true"></span><div><strong data-section-draft-title>${dirty?'Modifiche in bozza':'Nessuna modifica in questa sezione'}</strong><small data-section-draft-copy>${dirty?`${labels[section]||'Sezione'} aggiornata: torna alla scheda partita per applicare tutto con il salvataggio generale.`:'Ogni variazione verrà mantenuta localmente in bozza e non sarà salvata da questa schermata.'}</small></div></div>`;
+ }
+ function updateSectionDraftIndicator(form){
+   if(!form?.dataset?.matchId)return;
+   const m=A.state().matches.find(x=>x.id===form.dataset.matchId);if(!m)return;
+   const changes=draftChangeSet(m,getReportDraft(m));
+   const banner=form.querySelector('[data-section-draft-banner]');if(!banner)return;
+   const kind=banner.dataset.sectionKind||'';
+   const dirty=kind==='info'?(changes.info||changes.status||changes.penalties):(kind==='goals'?changes.goals:changes.cards);
+   banner.classList.toggle('is-dirty',dirty);
+   const title=banner.querySelector('[data-section-draft-title]');if(title)title.textContent=dirty?'Modifiche in bozza':'Nessuna modifica in questa sezione';
+   const copy=banner.querySelector('[data-section-draft-copy]');if(copy)copy.textContent=dirty?`${kind==='info'?'Info partita':kind==='goals'?'Marcatori':'Cartellini'} aggiornata: torna alla scheda partita per applicare tutto con il salvataggio generale.`:'Ogni variazione verrà mantenuta localmente in bozza e non sarà salvata da questa schermata.';
  }
  function teamDraftSummaryHtml(s,m){
    return `<div class="match-draft-summary" aria-label="Riepilogo provvisorio" aria-live="polite">${[m.homeTeamId,m.awayTeamId].filter(Boolean).map((teamId,index)=>`<div class="match-draft-team"><strong>${UI.esc(store.teamName(s,teamId))}</strong><div class="match-draft-breakdown"><span><b data-team-normal="${UI.esc(teamId)}">0</b> normali</span>${isKings(s)?`<span><b data-team-double="${UI.esc(teamId)}">0</b> doppi</span><span><b data-team-president="${UI.esc(teamId)}">0</b> presidente</span>`:''}<span><b data-team-own="${UI.esc(teamId)}">0</b> autogol</span></div><em>Totale <b ${index===0?'data-home-goals-count':'data-away-goals-count'}>0</b></em></div>`).join('')}</div>`;
@@ -699,17 +792,18 @@
       </div>`:'';
    return `<form class="match-edit-form match-info-form" data-match-id="${m.id}">
       <div class="report-head clean"><div><span class="section-kicker">Informazioni partita</span><h3>Dettagli e stato</h3><p class="muted">${UI.esc(store.teamName(s,m.homeTeamId,m.homeLabel))} vs ${UI.esc(store.teamName(s,m.awayTeamId,m.awayLabel))}</p></div><span class="score-badge">${score.home} – ${score.away}</span></div>
+      ${sectionDraftBannerHtml('info',draftChangeSet(m,d).info||draftChangeSet(m,d).status||draftChangeSet(m,d).penalties)}
       <section class="event-panel match-task-panel-body match-info-grid">
         <div><label>Campo</label><input name="field" value="${UI.esc(d.field||'')}" placeholder="Es. Campo 1"></div>
         <div><label>Arbitro</label><input name="referee" value="${UI.esc(d.referee||'')}" placeholder="Nome arbitro"></div>
         ${s.rules.oneDay?`<div><label>Ora partita</label><input name="time" type="time" value="${UI.esc(d.time||'')}"></div>`:`<div><label>Data</label><input name="date" type="date" value="${UI.esc(d.date||'')}"></div><div><label>Ora</label><input name="time" type="time" value="${UI.esc(d.time||'')}"></div>`}
         <label class="check-card field-full live-toggle ${isLive?'is-active':''}">
           <input name="isLive" type="checkbox" ${isLive?'checked':''} ${isPlayed?'disabled':''}>
-          <span><strong>🔴 Partita Live</strong><small>${isPlayed?'La partita è già stata segnata come Giocata. Pulisci il referto per riabilitare lo stato Live.':'Attiva mentre la partita è in corso. Il punteggio sarà visibile in arancione, ma la partita non entra in classifica finché non la chiudi come Giocata.'}</small></span>
+          <span><strong>🔴 Partita Live</strong><small>${isPlayed?'La partita è già stata segnata come Giocata. Pulisci il referto per riabilitare lo stato Live.':'La variazione resta in bozza. Salva dalla scheda partita per avviare o aggiornare il Live; per concluderlo, disattiva questa opzione e usa lo stesso salvataggio generale.'}</small></span>
         </label>
         ${penaltyBlock}
       </section>
-      ${matchTaskFooterHtml({isLive,label:isLive?'Salva e concludi':'Salva partita'})}
+      ${matchTaskBackHtml()}
     </form>`;
  }
  function reportFormHtml(s,m,mode='goals'){
@@ -725,6 +819,7 @@
    const searchResultsId=`${mode}-participant-results-${m.id}`;
    return `<form class="report-complete-form" data-match-id="${m.id}">
       <div class="report-head clean"><div><span class="section-kicker">Gestione referto</span><h3>${mode==='goals'?'Marcatori e autogol':'Cartellini'}</h3><p class="muted">${UI.esc(store.teamName(s,m.homeTeamId,m.homeLabel))} vs ${UI.esc(store.teamName(s,m.awayTeamId,m.awayLabel))}</p></div><span class="score-badge" data-draft-score>Risultato bozza: ${savedScore.home} – ${savedScore.away}</span></div>
+      ${sectionDraftBannerHtml(mode,mode==='goals'?draftChangeSet(m,draft).goals:draftChangeSet(m,draft).cards)}
       ${mode==='goals'?`${teamDraftSummaryHtml(s,m)}
       <section class="event-panel match-task-panel-body margin-top">
         <div class="section-title compact"><div><span class="section-kicker">Inserimento rapido</span><h3>Aggiungi un marcatore</h3><p>${isKings(s)?'Seleziona il partecipante e gestisci separatamente gol normali, doppi, autogol e gol del presidente.':'Seleziona il partecipante e indica la quantità dei gol.'}</p></div></div>
@@ -747,7 +842,7 @@
         <div class="stack margin-top" data-card-rows>${cardsRows||emptyCards()}</div><div class="undo-notice" data-undo-notice role="status" aria-live="polite" hidden></div>
         ${hiddenGoals}
       </section>`}
-      ${matchTaskFooterHtml({isLive:draft.status==='live',label:draft.status==='live'?'Salva e concludi':'Salva partita'})}
+      ${matchTaskBackHtml()}
     </form>`;
  }
  function ensureMatchListModal(){
@@ -785,6 +880,7 @@
    document.body.appendChild(modal);return modal;
  }
  function openMatchPanel(mode='menu'){
+   if(mode!=='menu')saveNotice=null;
    if(suppressNextDraftSync){suppressNextDraftSync=false;}else{syncOpenTaskDraft();}
    previousTaskMode=currentTaskMode||'menu';
    currentTaskMode=mode||'menu';
@@ -808,6 +904,8 @@
    body.innerHTML=mode==='menu'?matchCommandHtml(s,m):(mode==='info'?infoFormHtml(s,m):reportFormHtml(s,m,mode));
    modal.classList.add('open');
    const reportForm=body.querySelector('.report-complete-form');
+   const taskForm=body.querySelector('.match-edit-form,.report-complete-form');
+   if(taskForm)updateSectionDraftIndicator(taskForm);
    if(reportForm){
      updateEventPlayerPickers(reportForm,'goal');
      updateEventPlayerPickers(reportForm,'card');
@@ -815,6 +913,8 @@
      updateAddCardState(reportForm);
    }
    body.scrollTop=0;
+   const confirmationAction=body.querySelector('[data-confirm-zero-report]');
+   if(confirmationAction instanceof HTMLElement)confirmationAction.focus({preventScroll:true});
  }
  function closeMatchTaskModal(opts={}){
    syncOpenTaskDraft();
@@ -836,38 +936,61 @@
  function matchCommandHtml(s,m){
    const d=getReportDraft(m);
    const home=store.teamName(s,m.homeTeamId,m.homeLabel), away=store.teamName(s,m.awayTeamId,m.awayLabel);
-   const draftMatch={...m,field:d.field,referee:d.referee,date:d.date,time:d.time,status:d.status||m.status,goals:(d.goals||[]).map(g=>g.ownGoal?{ownGoal:true,teamId:g.teamId,playerId:'',weight:1,minute:g.minute}:{playerId:g.playerId,weight:g.weight||1,minute:g.minute}),cards:(d.cards||[])};
-   const meta=matchStatusMeta(s,draftMatch);
+   const persistedStatus=normalizedDraftStatus(m.status);
+   const draftStatus=normalizedDraftStatus(d.status);
+   const statusChanged=draftStatus!==persistedStatus;
+   let meta=matchStatusMeta(s,m);
+   if(statusChanged&&draftStatus==='live')meta={key:'live-draft',label:'Live in bozza',cls:'is-pending'};
+   else if(statusChanged&&persistedStatus==='live')meta={key:'closing-live-draft',label:'Chiusura Live in bozza',cls:'is-pending'};
    const real=m.homeTeamId&&m.awayTeamId;
-   const dirty=hasUnsavedDraft(m);
-   const isLive=d.status==='live';
+   const changes=draftChangeSet(m,d);
+   const dirty=changes.any;
+   const isLive=persistedStatus==='live'&&draftStatus==='live';
+   const liveMode=persistedStatus==='live'||draftStatus==='live';
    const isKO=store.isKnockoutPhase&&store.isKnockoutPhase(m)&&real;
    const score=draftScoreFromDraft(s,m,d);
    const needsPenalties=isKO&&score.home===score.away&&(d.goals?.length>0||d.cards?.length>0||d.status==='live'||d.status==='played');
    const pParsed=parsePenaltiesFromDraft(d);
    const validPenalties=pParsed&&!pParsed.error&&pParsed.home!==pParsed.away;
+   const plan=savePlanForMatch(s,m,d);
+   const dirtyLabels=draftSectionLabels(changes);
+   const infoDirty=changes.info||changes.status||changes.penalties;
+   const scorerCount=(d.goals||[]).length;
+   const cardCount=(d.cards||[]).length;
    let penaltyHint='';
    if(isKO&&score.home===score.away&&validPenalties){
      penaltyHint=`<div class="match-penalty-status ok">⚽ Rigori inseriti: <strong>${pParsed.home}-${pParsed.away}</strong> · Vince ${pParsed.home>pParsed.away?UI.esc(home):UI.esc(away)}</div>`;
    } else if(needsPenalties){
-     penaltyHint=`<div class="match-penalty-status warn">⚠ Pareggio ${score.home}-${score.away} in fase a eliminazione diretta: inserisci i rigori nel pannello "Info partita" prima di chiudere.</div>`;
+     penaltyHint=`<div class="match-penalty-status warn">⚠ Pareggio ${score.home}-${score.away} in fase a eliminazione diretta: inserisci i rigori nel pannello “Info partita” prima di chiudere.</div>`;
    }
-   return `<article class="match-command-center ${isLive?'is-live-card':''}">
-      <div class="match-command-hero"><span class="pill">${UI.esc(matchPhaseLabel(m))} · ${UI.esc(m.round)}</span><h3>${UI.esc(home)} <span>vs</span> ${UI.esc(away)}</h3><p>${UI.esc(d.field||'Campo da inserire')} · ${UI.esc(d.date||'Data da inserire')} ${UI.esc(d.time||'')}</p><strong class="score-badge match-status-badge ${meta.cls}" role="status">${isLive?'🔴 ':''}${UI.esc(meta.label)}</strong>${dirty?'<small class="draft-status">Modifiche non salvate</small>':''}</div>
+   const sectionBadge=active=>active?'<em class="match-section-draft">Bozza</em>':'';
+   const summaryChips=[
+     `<span><b>${score.home} – ${score.away}</b> risultato</span>`,
+     `<span><b>${scorerCount}</b> eventi gol</span>`,
+     `<span><b>${cardCount}</b> cartellini</span>`,
+     dirty?`<span class="is-dirty"><b>${dirtyLabels.length}</b> sezioni in bozza</span>`:'<span><b>0</b> modifiche in bozza</span>'
+   ].join('');
+   const updatesExistingZero=plan.kind==='played-update-zero';
+   const confirmation=pendingZeroConfirmationMatchId===m.id?`<div class="zero-report-confirm" role="alertdialog" aria-labelledby="zeroReportTitle" aria-describedby="zeroReportCopy"><strong id="zeroReportTitle">${updatesExistingZero?'Confermare l’aggiornamento a 0-0?':'Confermare il referto 0-0?'}</strong><p id="zeroReportCopy">${updatesExistingZero?'Il referto definitivo esistente verrà sostituito con un risultato 0-0 senza marcatori, cartellini o rigori.':'La partita verrà segnata come Giocata con risultato 0-0 e senza cartellini.'} Le informazioni organizzative presenti verranno mantenute.</p><div><button class="btn" type="button" data-cancel-zero-report>Annulla</button><button class="btn primary" type="button" data-confirm-zero-report>${updatesExistingZero?'Conferma aggiornamento':'Conferma 0-0'}</button></div></div>`:'';
+   const notice=saveNotice?.matchId===m.id?`<div class="match-save-notice ${saveNotice.type==='error'?'is-error':'is-ok'}" role="status">${UI.esc(saveNotice.text)}</div>`:'';
+   return `<article class="match-command-center ${isLive?'is-live-card':''} ${statusChanged?'has-status-draft':''}">
+      <div class="match-command-hero"><span class="pill">${UI.esc(matchPhaseLabel(m))} · ${UI.esc(m.round)}</span><h3>${UI.esc(home)} <span>vs</span> ${UI.esc(away)}</h3><p>${UI.esc(d.field||'Campo da inserire')} · ${UI.esc(d.date||'Data da inserire')} ${UI.esc(d.time||'')}</p><strong class="score-badge match-status-badge ${meta.cls} ${statusChanged?'is-draft-status':''}" role="status">${isLive?'🔴 ':''}${UI.esc(meta.label)}</strong>${dirty?`<small class="draft-status">Bozza attiva · ${UI.esc(dirtyLabels.join(' · '))}</small>`:'<small class="draft-status is-clean">Nessuna modifica in bozza</small>'}</div>
       ${penaltyHint}
       <div class="match-action-grid">
-        <button class="match-action-card" type="button" data-open-match-panel="info"><span>🗓️</span><strong>Info partita</strong><small>Campo, arbitro, data, orario${isKO?', rigori':''} e ${isLive?'<em>partita Live attiva</em>':'stato Live'}.</small></button>
-        <button class="match-action-card" type="button" data-open-match-panel="goals" ${real?'':'disabled'}><span>⚽</span><strong>Marcatori</strong><small>Gol, autogol, peso Kings League e risultato.</small></button>
-        <button class="match-action-card" type="button" data-open-match-panel="cards" ${real?'':'disabled'}><span>🟨</span><strong>Cartellini</strong><small>Gialli e rossi dei calciatori.</small></button>
+        <button class="match-action-card" type="button" data-open-match-panel="info"><span>🗓️</span><strong>Info partita ${sectionBadge(infoDirty)}</strong><small>Campo, arbitro, data, orario${isKO?', rigori':''} e stato Live.</small></button>
+        <button class="match-action-card" type="button" data-open-match-panel="goals" ${real?'':'disabled'}><span>⚽</span><strong>Marcatori ${sectionBadge(changes.goals)}</strong><small>Gol, autogol, peso Kings League e risultato.</small></button>
+        <button class="match-action-card" type="button" data-open-match-panel="cards" ${real?'':'disabled'}><span>🟨</span><strong>Cartellini ${sectionBadge(changes.cards)}</strong><small>Gialli e rossi dei calciatori.</small></button>
       </div>
-      <div class="match-context-savebar ${isLive?'is-live-mode':''}" aria-label="Azioni finali referto">
-        <div class="match-context-savebar-head"><strong>Azioni</strong><small>${isLive?'<strong style="color:#fdba74">Partita Live attiva.</strong> Usa "Aggiorna Live" per propagare il punteggio senza chiuderla, oppure "Salva tutto" per concluderla.':'Usale dopo aver completato Info partita, Marcatori e Cartellini.'}</small></div>
-        <div class="match-context-savebar-actions">
-          ${isLive?'<button class="btn live-update-btn" type="button" data-update-live-context>🔴 Aggiorna Live</button>':''}
-          <button class="btn primary match-save-only" type="button" data-save-match-context>${isLive?'✓ Salva tutto (concludi)':'Salva tutto'}</button>
-        </div>
-        <small class="match-context-help">Per pulire il referto usa il pulsante Pulisci sulla card della partita nell’elenco.</small>
-      </div>
+      <section class="match-general-save-card ${dirty?'has-draft':''} ${liveMode?'is-live-mode':''}" aria-labelledby="generalSaveTitle">
+        <span class="section-kicker">Salvataggio generale</span>
+        <h3 id="generalSaveTitle">${UI.esc(plan.title)}</h3>
+        <p>${UI.esc(plan.description)}</p>
+        <div class="match-save-summary" aria-label="Riepilogo dati in bozza">${summaryChips}</div>
+        ${notice}
+        ${confirmation||`<button class="btn primary match-general-save-button" type="button" data-save-match-context ${plan.disabled?'disabled':''}>${UI.esc(plan.label)}</button>`}
+        <small class="match-general-save-help">Il salvataggio è disponibile soltanto in questa scheda. Le singole sezioni non scrivono dati definitivi.</small>
+      </section>
+      <small class="match-context-help">Per pulire un referto già salvato usa “Pulisci” nella card della partita nell’elenco.</small>
     </article>`;
  }
 
@@ -880,6 +1003,8 @@
    const ok=confirm(`Pulire il referto di ${label}?\n\nVerranno eliminati marcatori, autogol e cartellini. La partita tornerà a “Da giocare”. Campo, arbitro, data e orario resteranno invariati.`);
    if(!ok)return false;
    reportDrafts.delete(matchId);
+   pendingZeroConfirmationMatchId='';
+   saveNotice=null;
    suppressNextDraftSync=true;
    const body=UI.$('#matchTaskBody');
    if(selectedMatch===matchId && body) body.innerHTML='<div class="empty">Referto pulito. Aggiorno la partita...</div>';
@@ -911,6 +1036,8 @@
    const ok=confirm(`Pulire tutti i referti?\n\nVerranno eliminati marcatori, autogol e cartellini da ${dirty.length} partita/e. Tutte le partite torneranno a “Da giocare”. Campo, arbitro, data e orario resteranno invariati.`);
    if(!ok)return false;
    reportDrafts.clear();
+   pendingZeroConfirmationMatchId='';
+   saveNotice=null;
    suppressNextDraftSync=true;
    A.commit(s=>{
      (s.matches||[]).forEach(m=>{
@@ -963,6 +1090,19 @@ Verrà svuotato il campo arbitro in ${withRef.length} partita/e. Campo, data, or
    if(h===''||a==='')return {error:'Inserisci entrambi i punteggi dei rigori (casa e ospite).'};
    return {home:nh,away:na};
  }
+ function persistMatchInfo(draft){
+   if(!selectedMatch)return false;
+   A.commit(s=>{
+     const m=s.matches.find(x=>x.id===selectedMatch);if(!m)return;
+     m.field=String(draft.field||'').trim();
+     m.referee=String(draft.referee||'').trim();
+     m.date=String(draft.date||'').trim();
+     m.time=String(draft.time||'').trim();
+     m.datetime=m.date&&m.time?`${m.date}T${m.time}`:'';
+   });
+   return true;
+ }
+
  function persistMatchContext(s0, draft, finalStatus){
    // Calcolo punteggio finale per validare i rigori
    const m0=s0.matches.find(x=>x.id===selectedMatch);
@@ -1007,52 +1147,34 @@ Verrà svuotato il campo arbitro in ${withRef.length} partita/e. Campo, data, or
    return true;
  }
 
- // SALVA TUTTO: conclude la partita come "Giocata" (entra in classifica e marcatori)
- function saveMatchContext(){
+ // SALVATAGGIO GENERALE: unica azione definitiva, disponibile soltanto nella scheda partita.
+ function saveMatchContext({confirmedZero=false}={}){
    syncOpenTaskDraft();
-   const s0=A.state(), m0=s0.matches.find(x=>x.id===selectedMatch); if(!m0)return;
+   const s0=A.state(),m0=s0.matches.find(x=>x.id===selectedMatch);if(!m0)return;
    const draft=getReportDraft(m0);
-   const wasLive = draft.status==='live' || m0.status==='live';
-   // Conferma una sola volta che la partita è davvero conclusa
-   if(wasLive){
-     const finished = confirm('Vuoi concludere la partita?\n\nOK = Sì, segna come "Giocata" (entra in classifica e marcatori)\nAnnulla = No, mantienila ancora Live');
-     if(!finished){
-       // Annullato: non chiudo. Se l'utente voleva solo aggiornare il live, deve usare "Aggiorna Live".
-       return;
-     }
-   }
-   const ok = persistMatchContext(s0, draft, 'played');
-   if(!ok) return;
-   reportDrafts.delete(selectedMatch);
-   // Re-render istantaneo della UI corrente per riflettere subito il nuovo status
-   render();
-   // Riapri la schermata corrente con i dati aggiornati invece di aspettare la chiusura del modale
-   if(UI.$('#matchTaskModal')?.classList.contains('open')){
+   const plan=savePlanForMatch(s0,m0,draft);
+   if(plan.disabled)return;
+   if(plan.needsZeroConfirmation&&!confirmedZero){
+     pendingZeroConfirmationMatchId=selectedMatch;
+     saveNotice=null;
      openMatchPanel('menu');
+     return;
    }
- }
-
- // AGGIORNA LIVE: salva il punteggio/info parziali e lascia la partita "Live".
- // Non chiede conferma. Propaga il punteggio a tutti i client e triggera le notifiche.
- // Opzioni: {silent} per evitare di riaprire la schermata menu (usato dal "primo click Live").
- function updateLiveContext(opts={}){
-   syncOpenTaskDraft();
-   const s0=A.state(), m0=s0.matches.find(x=>x.id===selectedMatch); if(!m0)return;
-   const draft=getReportDraft(m0);
-   // Forza status live, indipendentemente da cosa diceva il draft.
-   draft.status='live';
-   const ok = persistMatchContext(s0, draft, 'live');
-   if(!ok) return;
-   // Mantengo il draft in memoria così l'admin può continuare a editare senza perdere lo stato corrente.
-   reportDrafts.set(selectedMatch, draft);
+   pendingZeroConfirmationMatchId='';
+   let ok=false;
+   if(plan.kind==='info')ok=persistMatchInfo(draft);
+   else ok=persistMatchContext(s0,draft,plan.finalStatus);
+   if(!ok){saveNotice={matchId:selectedMatch,type:'error',text:'Salvataggio non completato. Correggi i dati indicati e riprova.'};openMatchPanel('menu');return;}
+   const matchId=selectedMatch;
+   const message=plan.kind==='info'
+     ? 'Informazioni salvate. La partita non è stata refertata.'
+     : plan.finalStatus==='live'
+       ? 'Partita Live aggiornata. Il risultato non è ancora definitivo.'
+       : (plan.kind==='played-update-zero'?'Referto definitivo aggiornato a 0-0 senza eventi.':plan.needsZeroConfirmation?'Referto 0-0 confermato e salvato.':'Partita salvata e refertata correttamente.');
+   reportDrafts.delete(matchId);
+   saveNotice={matchId,type:'ok',text:message};
    render();
-   if(UI.$('#matchTaskModal')?.classList.contains('open')){
-     // Al primo click su Live resta nel pannello corrente, ma lo rigenera subito
-     // per mostrare le azioni e le etichette coerenti con lo stato Live.
-     openMatchPanel(opts.silent?(currentTaskMode||'info'):'menu');
-   }
-   // Feedback piccolo, non blocking
-   try{ const el=UI.$('#matchTaskTitle'); if(el){const old=el.textContent; el.textContent='🔴 Live aggiornato'; setTimeout(()=>{el.textContent=old;},1400);}}catch(_){}
+   if(UI.$('#matchTaskModal')?.classList.contains('open'))openMatchPanel('menu');
  }
 
  function renderEditor(){
@@ -1085,7 +1207,7 @@ Verrà svuotato il campo arbitro in ${withRef.length} partita/e. Campo, data, or
    const clearInline=e.target.closest('[data-clear-report-match]');
    if(clearInline){e.preventDefault();e.stopPropagation();clearReportForMatch(clearInline.dataset.clearReportMatch);return;}
    const match=e.target.closest('[data-select-match]');
-   if(match){selectedMatch=match.dataset.selectMatch;render();taskFocusReturn=UI.$('#openTeamMatchesBtn')||UI.$(`[data-match-team="${teamFilter}"]`);closeMatchListModal();openMatchPanel('menu');return;}
+   if(match){selectedMatch=match.dataset.selectMatch;pendingZeroConfirmationMatchId='';saveNotice=null;render();taskFocusReturn=UI.$('#openTeamMatchesBtn')||UI.$(`[data-match-team="${teamFilter}"]`);closeMatchListModal();openMatchPanel('menu');return;}
    const panel=e.target.closest('[data-open-match-panel]');if(panel){syncOpenTaskDraft();openMatchPanel(panel.dataset.openMatchPanel);return;}
    if(e.target.closest('#closeMatchListModal')){closeMatchListModal();return;}
    if(e.target.id==='matchListModal'){e.preventDefault();e.stopPropagation();closeMatchListModal();return;}
@@ -1178,11 +1300,6 @@ Verrà svuotato il campo arbitro in ${withRef.length} partita/e. Campo, data, or
      if(card)card.classList.toggle('is-active',e.target.checked);
      const form=e.target.closest('.match-edit-form');
      if(form)syncFormDraft(form);
-     if(e.target.checked && selectedMatch){
-       const s=A.state();
-       const m=s.matches.find(x=>x.id===selectedMatch);
-       if(m && m.status!=='live' && m.status!=='played')updateLiveContext({silent:true});
-     }
      return;
    }
    const form=e.target.closest('.report-complete-form');
@@ -1308,8 +1425,10 @@ Verrà svuotato il campo arbitro in ${withRef.length} partita/e. Campo, data, or
    const remove=e.target.closest('[data-remove-draft-row]');
    const saveContext=e.target.closest('[data-save-match-context]');
    if(saveContext){e.preventDefault();saveMatchContext();return;}
-   const updateLive=e.target.closest('[data-update-live-context]');
-   if(updateLive){e.preventDefault();updateLiveContext();return;}
+   const confirmZero=e.target.closest('[data-confirm-zero-report]');
+   if(confirmZero){e.preventDefault();saveMatchContext({confirmedZero:true});return;}
+   const cancelZero=e.target.closest('[data-cancel-zero-report]');
+   if(cancelZero){e.preventDefault();pendingZeroConfirmationMatchId='';openMatchPanel('menu');return;}
    const clearReport=e.target.closest('[data-clear-report]');
    if(clearReport){e.preventDefault();const form=clearReport.closest('.report-complete-form');clearReportForMatch(form?.dataset.matchId||selectedMatch);return;}
    if(addGoal){
@@ -1346,7 +1465,8 @@ Verrà svuotato il campo arbitro in ${withRef.length} partita/e. Campo, data, or
      const doublePicker=form.querySelector('[data-goal-double-count-picker]');if(doublePicker)doublePicker.value='0';
      syncQuickGoalDoublePicker(form);updateDraftSummary(form);syncFormDraft(form);
      showGoalFeedback(form,existing?`${personLabel}: quantità aggiornata.`:`${personLabel} aggiunto.`);
-     form.querySelector('[data-goal-player-search]')?.focus();
+     form.querySelector('[data-goal-player-search]')?.focus({preventScroll:true});
+     closeParticipantResults(form,'goal');
      return;
    }
    if(addCard){
@@ -1355,7 +1475,7 @@ Verrà svuotato il campo arbitro in ${withRef.length} partita/e. Campo, data, or
      const playerId=picker?.value;const type=typePicker?.value==='red'?'red':'yellow';
      if(!playerId||store.isPresidentId(s,playerId))return;
      box.querySelector('[data-empty-cards]')?.remove();box.insertAdjacentHTML('beforeend',cardDraftItem(s,playerId,type));
-     selectParticipant(form,'card','');typePicker.value='yellow';updateDraftSummary(form);syncFormDraft(form);form.querySelector('[data-card-player-search]')?.focus();return;
+     selectParticipant(form,'card','');typePicker.value='yellow';updateDraftSummary(form);syncFormDraft(form);form.querySelector('[data-card-player-search]')?.focus({preventScroll:true});closeParticipantResults(form,'card');return;
    }
    if(remove){
      const form=remove.closest('.report-complete-form');const row=remove.closest('[data-event-item]');if(!form||!row)return;

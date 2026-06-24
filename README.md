@@ -49,12 +49,12 @@ La build genera `dist/`, pronta per il deploy statico. Il progetto consegnato no
 │   ├── validate-project.mjs
 │   └── build-static.mjs
 ├── dist/
-└── INTERVENTO_UI_GESTIONE_PARTITA_V131.md
+└── INTERVENTO_UI_GESTIONE_PARTITA_V132.md
 ```
 
 ## Gestione partita responsive
 
-Dalla versione 1.31.0 la finestra di gestione partita utilizza una struttura responsive unica per desktop, tablet e smartphone:
+Dalla versione 1.32.0 la finestra di gestione partita utilizza una struttura responsive unica per desktop, tablet e smartphone:
 
 - intestazione e barra azioni sempre accessibili;
 - scroll esclusivamente verticale all’interno della finestra;
@@ -66,15 +66,27 @@ Dalla versione 1.31.0 la finestra di gestione partita utilizza una struttura res
 - layout adattivo anche per info partita e cartellini;
 - focus visibile, chiusura con `Escape` e ripristino del focus.
 
-Il report completo dell’intervento e dei test è disponibile in `INTERVENTO_UI_GESTIONE_PARTITA_V131.md`.
+Il report completo dell’intervento e dei test è disponibile in `INTERVENTO_UI_GESTIONE_PARTITA_V132.md`.
 
-### Hardening e test 1.31.0
+### Salvataggio generale e bozze 1.32.0
 
-La versione 1.31.0 aggiunge correzioni mirate alla gestione di `Escape` nei combobox e all’aggiornamento immediato dello stato Live. La verifica finale comprende 2.930 asserzioni browser, 12.400 asserzioni randomizzate sulla logica dei gol e una suite di regressione completa.
+La versione 1.32.0 introduce un solo punto di salvataggio definitivo, centrato nella scheda principale della partita. Le sezioni **Info partita**, **Marcatori** e **Cartellini** aggiornano esclusivamente una bozza locale e mostrano chiaramente lo stato delle modifiche.
+
+Regole operative:
+
+- nessun pulsante di salvataggio definitivo è presente nelle singole sezioni;
+- marcatori, cartellini, rigori e stato Live vengono applicati insieme dal salvataggio generale;
+- una gara senza modifiche può essere refertata 0-0 senza cartellini soltanto dopo conferma esplicita;
+- una gara con soli cartellini viene salvata correttamente come 0-0;
+- le sole variazioni organizzative — campo, arbitro, data e orario — vengono salvate senza refertare la partita;
+- lo svuotamento completo di un referto già definitivo richiede una conferma aggiuntiva;
+- lo stato mostrato distingue sempre i dati definitivi dalle variazioni ancora in bozza.
+
+La verifica V132 comprende **256 asserzioni browser**, una matrice di 30 combinazioni operative, modalità KINGS e non KINGS, fasi a eliminazione diretta, stato Live, responsive da 320 a 1600 px e zoom al 125%/150%.
 
 ## Marcatori e modalità KINGS
 
-La logica dei gol resta centralizzata in `assets/js/store.js` e non è stata modificata dall’intervento UI 1.31.0.
+La logica dei gol resta centralizzata in `assets/js/store.js` e non è stata modificata dall’intervento UI 1.32.0.
 
 - Un gol normale vale 1 nella classifica marcatori e 1 nel risultato.
 - Un gol doppio KINGS vale 1 nella classifica marcatori e 2 nel risultato.
