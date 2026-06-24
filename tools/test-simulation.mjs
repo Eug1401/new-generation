@@ -41,7 +41,7 @@ const makeExistingState=()=>{
   return store.normalizeState(s);
 };
 
-const formats=['league','knockout','groups_knockout','league_knockout'];
+const formats=['groups_knockout','league_knockout'];
 const results=[];
 const confirmedRunOptions=options=>({
   ...options,
@@ -60,7 +60,7 @@ for(const format of formats){
       assert.equal(built.validation.ok,true);
       assert.equal(built.state.teams.length,8);
       assert.equal(built.state.teams.reduce((n,t)=>n+t.players.length,0),40);
-      assert.equal(built.state.matches.length,{league:28,knockout:7,groups_knockout:15,league_knockout:35}[format]);
+      assert.equal(built.state.matches.length,{groups_knockout:15,league_knockout:35}[format]);
       assert.equal(JSON.stringify(built.state.articles),JSON.stringify(source.articles));
       assert.ok(built.validation.winnerId);
       for(const match of built.state.matches){
@@ -86,7 +86,7 @@ assert.ok(existingBuilt.state.teams.every(t=>t.logo));
 assert.ok(existingBuilt.state.teams.every(t=>t.president?.name));
 assert.equal(JSON.stringify(existingBuilt.state.articles),JSON.stringify(existing.articles));
 
-assert.throws(()=>sim.buildSimulation(existing,{teamMode:'existing',selectedTeamIds:selected.slice(0,7),format:'league',duration:'multi_day'}),/esattamente 8/);
+assert.throws(()=>sim.buildSimulation(existing,{teamMode:'existing',selectedTeamIds:selected.slice(0,7),format:'groups_knockout',duration:'multi_day'}),/esattamente 8/);
 const invalid=clone(existingBuilt.state);
 invalid.teams[0].players.pop();
 invalid.matches[0].homeTeamId=invalid.matches[0].awayTeamId;
@@ -106,24 +106,24 @@ const pristine=makeExistingState();
 const pristineJson=JSON.stringify(pristine);
 const originalGenerateCalendar=store.generateCalendar;
 store.generateCalendar=()=>({ok:false,message:'forced calendar failure'});
-assert.throws(()=>sim.buildSimulation(pristine,{teamMode:'generated',format:'league',duration:'multi_day'}),/forced calendar failure/);
+assert.throws(()=>sim.buildSimulation(pristine,{teamMode:'generated',format:'groups_knockout',duration:'multi_day'}),/forced calendar failure/);
 store.generateCalendar=originalGenerateCalendar;
 assert.equal(JSON.stringify(pristine),pristineJson);
 const originalResolve=store.autoResolveKnockout;
 store.autoResolveKnockout=()=>{throw new Error('forced bracket failure');};
-assert.throws(()=>sim.buildSimulation(pristine,{teamMode:'generated',format:'knockout',duration:'one_day'}),/forced bracket failure/);
+assert.throws(()=>sim.buildSimulation(pristine,{teamMode:'generated',format:'groups_knockout',duration:'one_day'}),/forced bracket failure/);
 store.autoResolveKnockout=originalResolve;
 assert.equal(JSON.stringify(pristine),pristineJson);
 
 // Il motore rifiuta avvii esterni privi delle conferme finali del wizard.
 const beforeUnconfirmed=JSON.stringify(store.load('admin'));
-await assert.rejects(sim.run({teamMode:'generated',format:'knockout',kings:false,duration:'one_day'}),/Conferma la sostituzione/i);
+await assert.rejects(sim.run({teamMode:'generated',format:'groups_knockout',kings:false,duration:'one_day'}),/Conferma la sostituzione/i);
 assert.equal(JSON.stringify(store.load('admin')),beforeUnconfirmed);
 
 // Commit locale completo e prevenzione di due avvii contemporanei.
 store.save('admin',store.normalizeState({...store.emptyState(),articles:[{id:'keep',title:'Keep',body:'Body',status:'published'}]}));
-const first=sim.run(confirmedRunOptions({teamMode:'generated',format:'knockout',kings:false,duration:'one_day'}));
-const second=sim.run(confirmedRunOptions({teamMode:'generated',format:'league',kings:false,duration:'multi_day'})).then(()=>false,err=>/già in corso/.test(String(err.message||err)));
+const first=sim.run(confirmedRunOptions({teamMode:'generated',format:'groups_knockout',kings:false,duration:'one_day'}));
+const second=sim.run(confirmedRunOptions({teamMode:'generated',format:'league_knockout',kings:false,duration:'multi_day'})).then(()=>false,err=>/già in corso/.test(String(err.message||err)));
 assert.equal(await second,true);
 const committed=await first;
 assert.equal(store.load('admin')._simulationOperationId,committed.operationId);
@@ -138,7 +138,7 @@ context.NG_SUPABASE_CLIENT={};
 context.NG_FORCE_REMOTE_SAVE=async state=>{if(state._simulationOperationId)throw new Error('forced remote failure');return true;};
 context.NG_FLUSH_REMOTE_SAVE=async()=>true;
 let rollbackError='';
-try{await sim.run(confirmedRunOptions({teamMode:'generated',format:'knockout',kings:false,duration:'one_day'}));}catch(err){rollbackError=String(err.message||err);}
+try{await sim.run(confirmedRunOptions({teamMode:'generated',format:'groups_knockout',kings:false,duration:'one_day'}));}catch(err){rollbackError=String(err.message||err);}
 assert.match(rollbackError,/rollback completo/i);
 assert.equal(store.load('admin').teams[0].id,'safe_team');
 assert.equal(store.load('admin').articles[0].id,'safe_article');

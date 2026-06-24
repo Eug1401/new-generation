@@ -7922,7 +7922,7 @@ a.article-card-main{cursor:pointer;}
 .calendar-wizard-panel{width:min(1180px,100%);max-height:92vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow);padding:18px}
 .calendar-wizard-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px}
 .calendar-wizard-head h2{margin:0}
-.calendar-wizard-steps{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:12px 0 16px}
+.calendar-wizard-steps{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0 16px}
 .calendar-wizard-step{border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:8px 10px;background:rgba(255,255,255,.045);color:var(--muted);font-weight:850;text-align:center}
 .calendar-wizard-step.active{background:linear-gradient(135deg,var(--primary),var(--blue));color:#1a1408;border-color:transparent}
 .calendar-wizard-body{display:grid;gap:14px}
@@ -7996,3 +7996,14 @@ a.article-card-main{cursor:pointer;}
 .calendar-field-error{display:block;margin-top:6px;color:#fb7185;font-weight:750;line-height:1.35}
 #calendarWizardModal [aria-invalid="true"]{border-color:#fb7185!important;box-shadow:0 0 0 3px rgba(251,113,133,.14)!important}
 @media(max-width:760px){.calendar-editor-row.debut.constraint-row{grid-template-columns:1fr}.constraint-row-actions{justify-content:stretch}.constraint-row-actions .btn{width:100%}}
+
+/* Ricerca esatta calendario v129 */
+.calendar-search-status,.calendar-search-ready,.calendar-optimal-metrics{display:flex;gap:16px;align-items:flex-start;border:1px solid rgba(255,255,255,.13);border-radius:18px;padding:18px;background:rgba(255,255,255,.045)}
+.calendar-search-status h3,.calendar-search-ready h3,.calendar-optimal-metrics h3{margin:0 0 8px}
+.calendar-search-status p,.calendar-search-ready p{margin:4px 0}
+.calendar-search-spinner{width:34px;height:34px;flex:0 0 34px;border:4px solid rgba(255,255,255,.16);border-top-color:var(--primary);border-radius:50%;animation:calendar-search-spin .9s linear infinite}
+.calendar-optimal-metrics{display:grid;margin-top:14px}
+.calendar-optimal-metrics span{display:block}
+.calendar-zero-result{font-weight:900;color:var(--primary)}
+@keyframes calendar-search-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.calendar-search-spinner{animation:none;border-top-color:rgba(255,255,255,.16);box-shadow:inset 0 0 0 5px var(--primary)}}

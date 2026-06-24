@@ -49,7 +49,32 @@ function assertIntegrity(state,sizes){
   }
 }
 
-// 1. Gironi uguali: nessun prestito di campo.
+function validTopologicalOrders(matches){
+  const result=[];
+  function ready(match,remaining){
+    return [match.homeTeamId,match.awayTeamId].every(teamId=>!remaining.some(other=>other.id!==match.id&&(other.homeTeamId===teamId||other.awayTeamId===teamId)&&Number(other.roundIndex)<Number(match.roundIndex)));
+  }
+  function visit(remaining,order){
+    if(!remaining.length){result.push([...order]);return;}
+    for(const match of remaining.filter(match=>ready(match,remaining)).sort((a,b)=>String(a.id).localeCompare(String(b.id)))){
+      visit(remaining.filter(other=>other.id!==match.id),[...order,match]);
+    }
+  }
+  visit([...matches],[]);
+  return result;
+}
+
+function adjacencyObjective(slotMatches){
+  const lastSlot=new Map(),consecutiveTeams=new Set();
+  let occurrences=0;
+  slotMatches.forEach((matches,slot)=>matches.flatMap(match=>[match.homeTeamId,match.awayTeamId]).forEach(teamId=>{
+    if(lastSlot.get(teamId)===slot-1){consecutiveTeams.add(teamId);occurrences++;}
+    lastSlot.set(teamId,slot);
+  }));
+  return [consecutiveTeams.size,occurrences];
+}
+
+// 1. Gironi uguali: nessun prestito di campo e prova di ottimalità presente.
 {
   const state=makeState([4,4]);
   const result=store.generateCalendar(state,{preserveResults:false});
@@ -57,9 +82,11 @@ function assertIntegrity(state,sizes){
   assertIntegrity(state,[4,4]);
   assert.equal(groupMatches(state).some(match=>match.groupName==='Girone A'&&match.field!=='Campo 1'),false);
   assert.equal(groupMatches(state).some(match=>match.groupName==='Girone B'&&match.field!=='Campo 2'),false);
+  assert.equal(result.optimality?.provenOptimal,true,'Lo scheduler non certifica l ottimo globale.');
+  assert.equal(result.optimality?.algorithm,'exact-branch-and-bound');
 }
 
-// 2. Gironi diversi: il girone più grande usa il campo libero.
+// 2. Gironi diversi: il girone più grande usa il campo libero senza sottrarlo al proprietario.
 let unequalState;
 {
   unequalState=makeState([4,6]);
@@ -74,11 +101,12 @@ let unequalState;
     assert.ok(sameSlot.some(other=>other.id!==match.id&&other.groupName==='Girone B'&&other.field==='Campo 2'),'Il prestito deve avvenire solo quando il campo naturale del girone è già occupato.');
     assert.equal(sameSlot.some(other=>other.groupName==='Girone A'),false,'Il Campo 1 è stato sottratto al Girone A mentre il proprietario giocava nello stesso slot.');
   }
+  assert.equal(result.optimality?.internalEmptyFields,0,'Esiste ancora almeno un buco interno riempibile.');
   const audit=store.auditDataState(unequalState);
   assert.equal(audit.issues.some(issue=>issue.area==='Calendario'&&/uso non valido|dovrebbe giocare/i.test(issue.message)),false,'L audit considera erroneamente non valido il prestito controllato del campo.');
 }
 
-// 3. Il vecchio blocco per roundIndex non deve lasciare un campo vuoto se una partita pronta esiste.
+// 3. Il vecchio blocco per roundIndex non lascia un campo vuoto se una partita pronta esiste.
 {
   const slots=new Map();
   groupMatches(unequalState).forEach(match=>{const key=`${match.date}|${match.time}`;if(!slots.has(key))slots.set(key,[]);slots.get(key).push(match);});
@@ -87,7 +115,7 @@ let unequalState;
   assert.deepEqual(new Set(mixedRoundSlot.map(match=>match.field)),new Set(['Campo 1','Campo 2']));
 }
 
-// 4. Il campo alternativo non viene usato se il girone proprietario ha ancora una partita pronta.
+// 4. Il campo alternativo non viene usato se il girone proprietario ha una partita pronta.
 {
   const matches=groupMatches(unequalState);
   for(const borrowed of matches.filter(match=>match.groupName==='Girone B'&&match.field==='Campo 1')){
@@ -100,15 +128,15 @@ let unequalState;
   }
 }
 
-// 5. Orario esatto di esordio.
+// 5. Orario esatto di esordio obbligatorio.
 {
-  const state=makeState([4,6]);
-  state.rules.calendarCustomization.teamDebuts=[{id:'exact_1',teamId:'team_1',kind:'exactTime',value:'11:30',mode:'hard'}];
+  const state=makeState([3,3]);
+  state.rules.calendarCustomization.teamDebuts=[{id:'exact_1',teamId:'team_1',kind:'exactTime',value:'10:40',mode:'hard'}];
   const result=store.generateCalendar(state,{preserveResults:false});
   assert.equal(result.ok,true,result.message);
   const first=chronological(groupMatches(state).filter(match=>match.homeTeamId==='team_1'||match.awayTeamId==='team_1'))[0];
-  assert.equal(first.time,'11:30');
-  assertIntegrity(state,[4,6]);
+  assert.equal(first.time,'10:40');
+  assertIntegrity(state,[3,3]);
 }
 
 // 6. Vincoli di esordio incompatibili bloccano la generazione.
@@ -120,9 +148,9 @@ let unequalState;
   assert.ok((preview.conflicts||[]).some(conflict=>/orari di esordio diversi/i.test(conflict.message)));
 }
 
-// 7. Preferenze e Prima giornata restano operative: riposo minimo e orario/campo fissati.
+// 7. Riposo minimo e prima giornata fissata restano vincoli obbligatori.
 {
-  const state=makeState([4,6],{minRestMinutes:30,firstRoundLocks:[{id:'preferred_slot',groupName:'Girone A',homeTeamId:'team_1',awayTeamId:'team_2',requiredTime:'10:40',requiredField:'Campo 1',mode:'hard'}],preferences:{balanceFields:true,avoidConsecutive:true,reduceWaiting:true}});
+  const state=makeState([3,3],{minRestMinutes:30,firstRoundLocks:[{id:'locked_slot',groupName:'Girone A',homeTeamId:'team_1',awayTeamId:'team_2',requiredTime:'10:40',requiredField:'Campo 1',mode:'hard'}]});
   const result=store.generateCalendar(state,{preserveResults:false});
   assert.equal(result.ok,true,result.message);
   const locked=groupMatches(state).find(match=>match.manualLock);
@@ -134,35 +162,41 @@ let unequalState;
   }
 }
 
-// 8. I vecchi tipi di vincolo vengono eliminati dal modello e non influenzano lo scheduler.
+// 8. Preferenze opzionali e vecchi tipi di vincolo sono eliminati dal modello.
 {
-  const normalized=store.normalizeCalendarCustomization({teamDebuts:[{id:'keep',teamId:'team_1',kind:'exactTime',value:'10:40'},{id:'drop_position',teamId:'team_2',kind:'firstRoundPosition',value:'2'},{id:'drop_field',teamId:'team_3',kind:'field',value:'Campo 1'},{id:'drop_round',teamId:'team_4',kind:'firstRound',value:'1'}],teamUnavailability:[{teamId:'team_1'}],fieldBlocks:[{field:'Campo 1'}],events:[{date:'2026-07-01'}]});
+  const normalized=store.normalizeCalendarCustomization({profile:'custom',seed:123,preferences:{avoidConsecutive:false},teamDebuts:[{id:'keep',teamId:'team_1',kind:'exactTime',value:'10:40'},{id:'drop_position',teamId:'team_2',kind:'firstRoundPosition',value:'2'},{id:'drop_field',teamId:'team_3',kind:'field',value:'Campo 1'},{id:'drop_round',teamId:'team_4',kind:'firstRound',value:'1'}],teamUnavailability:[{teamId:'team_1'}],fieldBlocks:[{field:'Campo 1'}],events:[{date:'2026-07-01'}]});
   assert.deepEqual(normalized.teamDebuts.map(rule=>rule.kind),['exactTime']);
-  assert.equal('teamUnavailability' in normalized,false);
-  assert.equal('fieldBlocks' in normalized,false);
-  assert.equal('events' in normalized,false);
+  for(const removed of ['profile','seed','preferences','teamUnavailability','fieldBlocks','events'])assert.equal(removed in normalized,false,`${removed} è ancora presente nel modello.`);
   const clean=makeState([4,4]);
   const legacy=makeState([4,4]);
-  legacy.rules.calendarCustomization={...legacy.rules.calendarCustomization,teamDebuts:[{id:'legacy',teamId:'team_1',kind:'firstRoundPosition',value:'4',mode:'hard'}],teamUnavailability:[{teamId:'team_1',date:'2026-07-01',time:'09:00'}],fieldBlocks:[{field:'Campo 1',date:'2026-07-01',time:'09:00'}]};
+  legacy.rules.calendarCustomization={...legacy.rules.calendarCustomization,profile:'aggressive',seed:999,preferences:{avoidConsecutive:false},teamDebuts:[{id:'legacy',teamId:'team_1',kind:'firstRoundPosition',value:'4',mode:'hard'}],teamUnavailability:[{teamId:'team_1',date:'2026-07-01',time:'09:00'}],fieldBlocks:[{field:'Campo 1',date:'2026-07-01',time:'09:00'}]};
   assert.equal(store.generateCalendar(clean,{preserveResults:false}).ok,true);
   assert.equal(store.generateCalendar(legacy,{preserveResults:false}).ok,true);
-  assert.deepEqual(scheduleTuple(legacy),scheduleTuple(clean),'I vincoli legacy influenzano ancora il calendario.');
+  assert.deepEqual(scheduleTuple(legacy),scheduleTuple(clean),'Le vecchie preferenze influenzano ancora il calendario.');
 }
 
-// 9. Wizard: Preferenze e Prima giornata restano, Vincoli mostra solo l'orario di esordio.
+// 9. UI: quattro step, nessuna preferenza, Web Worker e metriche dell'ottimo.
 {
   const uiSource=fs.readFileSync(path.join(root,'assets/js/admin-rules.js'),'utf8');
+  const htmlSource=fs.readFileSync(path.join(root,'admin-rules.html'),'utf8');
   const storeSource=fs.readFileSync(path.join(root,'assets/js/store.js'),'utf8');
-  assert.match(uiSource,/Prerequisiti','Preferenze','Prima giornata','Vincoli','Anteprima/);
-  assert.match(uiSource,/function preferencesStep/);
+  const workerSource=fs.readFileSync(path.join(root,'assets/js/calendar-worker.js'),'utf8');
+  assert.match(uiSource,/const steps=\['Prerequisiti','Prima giornata','Vincoli obbligatori','Anteprima'\]/);
   assert.match(uiSource,/function firstRoundStep/);
-  assert.match(uiSource,/data-add-debut-time/);
-  assert.doesNotMatch(uiSource,/data-add-first-position|Posizione della squadra nella prima giornata|firstRoundPosition/);
+  assert.match(uiSource,/function constraintsStep/);
+  assert.match(uiSource,/new Worker\('assets\/js\/calendar-worker\.js'\)/);
+  assert.match(uiSource,/Ricerca del calendario ottimale in corso/);
+  assert.match(uiSource,/Squadre con almeno due partite consecutive/);
+  assert.doesNotMatch(uiSource,/function preferencesStep|data-profile|data-seed|balanceFields|avoidConsecutive|reduceWaiting/);
+  assert.doesNotMatch(htmlSource,/generateAlternativeCalendarBtn/);
+  assert.match(workerSource,/importScripts\('store\.js'\)/);
+  assert.match(workerSource,/onProgress/);
+  assert.match(storeSource,/exact-branch-and-bound/);
+  assert.match(storeSource,/provenOptimal:true/);
   assert.doesNotMatch(storeSource,/firstRoundPosition/);
-  assert.doesNotMatch(storeSource,/function teamUnavailableAt|function fieldBlockedAt|function eventBlocksSlot/);
 }
 
-// 10. Anteprima non persistente e rigenerazione completa.
+// 10. L'anteprima non sovrascrive il calendario precedente.
 {
   const state=makeState([4,4]);
   state.matches=[{id:'existing_calendar_sentinel',phase:'league',round:'Vecchio calendario',roundIndex:0,date:'2026-01-01',time:'09:00',field:'Campo 1',homeTeamId:'team_1',awayTeamId:'team_2',goals:[],cards:[],status:'scheduled'}];
@@ -170,9 +204,77 @@ let unequalState;
   const preview=store.previewCalendar(state);
   assert.equal(preview.ok,true,preview.message);
   assert.equal(JSON.stringify(state.matches),before);
+  assert.equal(preview.notPersisted,true);
   const result=store.generateCalendar(state,{preserveResults:false});
   assert.equal(result.ok,true,result.message);
   assert.equal(state.matches.some(match=>match.id==='existing_calendar_sentinel'),false);
 }
 
-console.log(JSON.stringify({ok:true,scenarios:10},null,2));
+// 11. Prova indipendente dell'ottimo globale su due gironi da quattro.
+{
+  const state=makeState([4,4]);
+  const result=store.generateCalendar(state,{preserveResults:false});
+  assert.equal(result.ok,true,result.message);
+  const a=groupMatches(state).filter(match=>match.groupName==='Girone A');
+  const b=groupMatches(state).filter(match=>match.groupName==='Girone B');
+  const ordersA=validTopologicalOrders(a),ordersB=validTopologicalOrders(b);
+  assert.ok(ordersA.length>1&&ordersB.length>1,'Il test indipendente non sta esplorando combinazioni alternative.');
+  let bruteBest=null,checked=0;
+  for(const orderA of ordersA)for(const orderB of ordersB){
+    const objective=adjacencyObjective(orderA.map((match,index)=>[match,orderB[index]]));
+    checked++;
+    if(!bruteBest||objective[0]<bruteBest[0]||(objective[0]===bruteBest[0]&&objective[1]<bruteBest[1]))bruteBest=objective;
+  }
+  assert.ok(checked>1,'Nessuna enumerazione esaustiva eseguita.');
+  assert.deepEqual([result.consecutiveStats.uniqueTeams,result.consecutiveStats.totalOccurrences],bruteBest,'Esiste una configurazione valida migliore di quella restituita.');
+  assert.deepEqual([result.optimality.uniqueConsecutiveTeams,result.optimality.consecutiveOccurrences],bruteBest);
+}
+
+// 12. Messaggio esplicito quando il valore ottimo è zero.
+{
+  const state=makeState([2,2]);
+  const result=store.generateCalendar(state,{preserveResults:false});
+  assert.equal(result.ok,true,result.message);
+  assert.equal(result.consecutiveStats.uniqueTeams,0);
+  assert.equal(result.consecutiveStats.totalOccurrences,0);
+  assert.match(result.message,/Nessuna squadra giocherà due partite consecutive/);
+}
+
+
+// 13. Nelle fasi finali una terza partita consecutiva viene scambiata automaticamente quando possibile.
+{
+  const state=makeState([3,3]);
+  state.matches=[
+    {id:'g1',phase:'group',groupName:'Girone A',roundIndex:1,date:'2026-07-01',time:'09:00',datetime:'2026-07-01T09:00',field:'Campo 1',homeTeamId:'team_1',awayTeamId:'team_2',goals:[],cards:[],status:'scheduled'},
+    {id:'g2',phase:'group',groupName:'Girone A',roundIndex:2,date:'2026-07-01',time:'09:50',datetime:'2026-07-01T09:50',field:'Campo 1',homeTeamId:'team_1',awayTeamId:'team_3',goals:[],cards:[],status:'scheduled'},
+    {id:'sf1',phase:'knockout',bracketName:'Finali',roundIndex:10,bracketRoundIndex:1,bracketMatchIndex:1,date:'2026-07-01',time:'10:40',datetime:'2026-07-01T10:40',field:'Campo 1',homeTeamId:'team_1',awayTeamId:'team_4',goals:[],cards:[],status:'scheduled'},
+    {id:'sf2',phase:'knockout',bracketName:'Finali',roundIndex:10,bracketRoundIndex:1,bracketMatchIndex:2,date:'2026-07-01',time:'11:30',datetime:'2026-07-01T11:30',field:'Campo 1',homeTeamId:'team_5',awayTeamId:'team_6',goals:[],cards:[],status:'scheduled'}
+  ];
+  const before=store.calendarConsecutiveStats(state.matches,state.rules,state);
+  assert.equal(before.maxRun,3);
+  const rebalanced=store.rebalanceResolvedKnockoutSchedule(state);
+  const after=store.calendarConsecutiveStats(state.matches,state.rules,state);
+  assert.equal(rebalanced.provenOptimal,true);
+  assert.ok(rebalanced.combinationsEvaluated>=2);
+  assert.equal(rebalanced.changed,true);
+  assert.equal(after.maxRun,2);
+  assert.ok(after.totalOccurrences<before.totalOccurrences);
+  assert.equal(state.matches.find(match=>match.id==='sf1').time,'11:30');
+}
+
+// 14. Il pruning resta sicuro in presenza di una pausa che comprime gli indici degli slot utilizzabili.
+{
+  const state=makeState([3,3],{minRestMinutes:60});
+  state.rules.oneDayPauseEnabled=true;
+  state.rules.oneDayPauseStart='09:40';
+  state.rules.oneDayPauseDuration=60;
+  const result=store.generateCalendar(state,{preserveResults:false});
+  assert.equal(result.ok,true,result.message);
+  assert.equal(result.optimality?.provenOptimal,true);
+  for(const team of state.teams){
+    const list=chronological(groupMatches(state).filter(match=>match.homeTeamId===team.id||match.awayTeamId===team.id));
+    for(let index=1;index<list.length;index++)assert.ok(minutes(list[index].time)-(minutes(list[index-1].time)+state.rules.matchDuration)>=60,`Riposo con pausa non rispettato per ${team.id}.`);
+  }
+}
+
+console.log(JSON.stringify({ok:true,scenarios:14},null,2));

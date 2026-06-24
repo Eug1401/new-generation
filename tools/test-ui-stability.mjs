@@ -700,8 +700,8 @@ async function testSimulationDialog(){
   await evaluate(`document.querySelector('input[name="simulationTeamMode"][value="generated"]').focus()`);await pressKey('Enter');await delay(60);
   const afterEnter=await evaluate(`({step:NGTournamentSimulation.getWizardState()?.step,running:NGTournamentSimulation.getWizardState()?.running,operation:NexoraStore.load('admin')._simulationOperationId||''})`);
   const noEarlyStart=beforeChoice.step===0&&!beforeChoice.running&&afterChoice.step===0&&!afterChoice.running&&afterChoice.operation===beforeChoice.operation&&afterEnter.step===0&&!afterEnter.running&&afterEnter.operation===beforeChoice.operation&&afterChoice.title.includes('squadre già presenti');
-  await click('#simulationNextBtn');const formatOk=await evaluate(`document.querySelector('#simulationStepBody h3')?.textContent.includes('formato')&&document.querySelectorAll('input[name="simulationFormat"]').length===4`);
-  await click('input[name="simulationFormat"][value="knockout"]');await click('#simulationNextBtn');const kingsOk=await evaluate(`document.querySelector('#simulationStepBody h3')?.textContent.includes('Kings')`);
+  await click('#simulationNextBtn');const formatOk=await evaluate(`document.querySelector('#simulationStepBody h3')?.textContent.includes('formato')&&document.querySelectorAll('input[name="simulationFormat"]').length===2`);
+  await click('input[name="simulationFormat"][value="groups_knockout"]');await click('#simulationNextBtn');const kingsOk=await evaluate(`document.querySelector('#simulationStepBody h3')?.textContent.includes('Kings')`);
   await click('input[name="simulationKings"][value="yes"]');await click('#simulationNextBtn');const durationOk=await evaluate(`document.querySelector('#simulationStepBody h3')?.textContent.includes('un solo giorno o in più giorni')`);
   await click('input[name="simulationDuration"][value="one_day"]');await click('#simulationNextBtn');
   const summaryBefore=await evaluate(`({summary:document.querySelector('.simulation-summary')?.textContent||'',disabled:document.querySelector('#simulationExecuteBtn')?.disabled,label:document.querySelector('#simulationExecuteBtn')?.textContent||'',step:NGTournamentSimulation.getWizardState()?.step})`);
@@ -710,12 +710,12 @@ async function testSimulationDialog(){
   await click('#simulationBackBtn');const backState=await evaluate(`({step:NGTournamentSimulation.getWizardState()?.step,duration:document.querySelector('input[name="simulationDuration"][value="one_day"]')?.checked})`);
   await click('#simulationNextBtn');
   const selectionsKept=backState.step===3&&backState.duration===true;
-  const payloadOk=summaryAfter.payload?.teamMode==='generated'&&summaryAfter.payload?.generatedTeamCount===8&&summaryAfter.payload?.format==='knockout'&&summaryAfter.payload?.kings===true&&summaryAfter.payload?.presidentMode==='default_per_team'&&summaryAfter.payload?.duration==='one_day'&&summaryAfter.payload?.replaceTournamentConfirmed===true&&summaryAfter.payload?.replaceTeamsConfirmed===true&&summaryAfter.payload?.requestSource==='wizard-final-confirmation';
+  const payloadOk=summaryAfter.payload?.teamMode==='generated'&&summaryAfter.payload?.generatedTeamCount===8&&summaryAfter.payload?.format==='groups_knockout'&&summaryAfter.payload?.kings===true&&summaryAfter.payload?.presidentMode==='default_per_team'&&summaryAfter.payload?.duration==='one_day'&&summaryAfter.payload?.replaceTournamentConfirmed===true&&summaryAfter.payload?.replaceTeamsConfirmed===true&&summaryAfter.payload?.requestSource==='wizard-final-confirmation';
   await click('#simulationReplaceConfirm');await click('#simulationTeamsConfirm');
   await evaluate(`(()=>{const b=document.querySelector('#simulationExecuteBtn');b.click();b.click();})()`);
   await waitFor(()=>evaluate(`!!document.querySelector('.simulation-success')`),{label:'wizard final execution',timeout:15000});
   const completed=await evaluate(`(()=>{const s=NexoraStore.load('admin');return {teams:s.teams.length,players:s.teams.reduce((n,t)=>n+(t.players||[]).length,0),matches:s.matches.length,winner:s._simulationSummary?.winnerName||'',articlesSame:JSON.stringify(s.articles||[])===JSON.stringify(window.__preWizardState.articles||[]),running:NGTournamentSimulation.getWizardState()?.running};})()`);
-  const completionOk=completed.teams===8&&completed.players===40&&completed.matches===7&&Boolean(completed.winner)&&completed.articlesSame&&completed.running===false;
+  const completionOk=completed.teams===8&&completed.players===40&&completed.matches===15&&Boolean(completed.winner)&&completed.articlesSame&&completed.running===false;
   await click('#cancelSimulationBtn');
   await evaluate(`(()=>{NexoraStore.save('admin',window.__preWizardState);NexoraStore.save('public',window.__preWizardState);delete window.__preWizardState;})()`);
   const wizardOk=noEarlyStart&&formatOk&&kingsOk&&durationOk&&summaryBefore.step===4&&summaryBefore.disabled&&summaryBefore.label.includes('Genera torneo simulato')&&summaryAfter.enabled&&summaryAfter.kings&&payloadOk&&selectionsKept&&completionOk;

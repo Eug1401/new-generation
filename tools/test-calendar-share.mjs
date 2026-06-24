@@ -53,28 +53,18 @@ const broken=baseState();
 broken.rules.calendarCustomization=store.normalizeCalendarCustomization({firstRoundLocks:[{groupName:'Girone A',homeTeamId:'team_1',awayTeamId:'team_2',mode:'hard'},{groupName:'Girone A',homeTeamId:'team_1',awayTeamId:'team_3',mode:'hard'}]});
 const brokenPreview=store.previewCalendar(broken);
 assert.equal(brokenPreview.ok,false,'una squadra doppia nella prima giornata deve bloccare la preview');
-assert.equal(brokenPreview.status,'SIMPLIFICATION_AVAILABLE');
+assert.equal(brokenPreview.status,'INFEASIBLE');
 assert.ok(Array.isArray(brokenPreview.conflicts)&&brokenPreview.conflicts.length>0,'i conflitti devono essere strutturati');
 
-const preferredImpossible=baseState();
-preferredImpossible.rules.calendarCustomization=store.normalizeCalendarCustomization({firstRoundLocks:[{groupName:'Girone A',homeTeamId:'team_1',awayTeamId:'team_2',requiredDate:'2026-07-02',mode:'preferred'}]});
-const preferredPreview=store.previewCalendar(preferredImpossible);
-assert.equal(preferredPreview.ok,false,'una preferenza di slot impossibile deve bloccare la proposta personalizzata');
-assert.equal(preferredPreview.status,'SIMPLIFICATION_AVAILABLE');
-assert.equal(preferredImpossible.matches.length,0,'la proposta personalizzata non fattibile non deve salvare partite');
-const simplifiedPreferred=store.previewSimplifiedCalendar(preferredImpossible);
-assert.equal(simplifiedPreferred.ok,true,simplifiedPreferred.message);
-assert.equal(simplifiedPreferred.status,'SIMPLIFIED_SOLUTION');
-assert.equal(simplifiedPreferred.simplificationLevel,2,'deve usare il primo livello sufficiente, non saltare al calendario essenziale');
-assert.ok(simplifiedPreferred.relaxedPreferences.some(r=>/Accoppiamento preferito/.test(r.rule)),'la preferenza rilassata deve essere dichiarata');
-assert.equal(preferredImpossible.matches.length,0,'la preview semplificata non deve salvare partite');
-
-const hardImpossible=baseState();
-hardImpossible.rules.calendarCustomization=store.normalizeCalendarCustomization({firstRoundLocks:[{groupName:'Girone A',homeTeamId:'team_1',awayTeamId:'team_2',requiredDate:'2026-07-02',mode:'hard'}]});
-const hardSimplified=store.previewSimplifiedCalendar(hardImpossible);
-assert.equal(hardSimplified.ok,false,'un vincolo obbligatorio impossibile non deve essere rimosso automaticamente');
-assert.equal(hardSimplified.status,'NO_SOLUTION');
-assert.equal(hardImpossible.rules.calendarCustomization.firstRoundLocks[0].mode,'hard');
+const formerlyPreferred=baseState();
+formerlyPreferred.rules.calendarCustomization=store.normalizeCalendarCustomization({firstRoundLocks:[{groupName:'Girone A',homeTeamId:'team_1',awayTeamId:'team_2',requiredDate:'2026-07-02',mode:'preferred'}]});
+assert.equal(formerlyPreferred.rules.calendarCustomization.firstRoundLocks[0].mode,'hard','le vecchie preferenze devono essere convertite in vincoli obbligatori');
+const formerlyPreferredPreview=store.previewCalendar(formerlyPreferred);
+assert.equal(formerlyPreferredPreview.ok,false,'un vecchio vincolo preferito impossibile deve essere trattato come obbligatorio');
+assert.equal(formerlyPreferredPreview.status,'INFEASIBLE');
+assert.equal(formerlyPreferred.matches.length,0,'una proposta non fattibile non deve salvare partite');
+assert.equal(typeof store.previewSimplifiedCalendar,'undefined','la generazione semplificata deve essere rimossa');
+assert.equal(typeof store.generateAlternativeCalendar,'undefined','la generazione alternativa deve essere rimossa');
 
 const exactDebut=baseState();
 exactDebut.rules.calendarCustomization=store.normalizeCalendarCustomization({teamDebuts:[{teamId:'team_1',kind:'exactTime',value:'10:20',mode:'hard'}]});
@@ -196,10 +186,10 @@ const adminRulesSource=fs.readFileSync(path.join(root,'assets/js/admin-rules.js'
 assert.match(adminRulesSource,/new-generation-calendar-draft-v1/,'bozza calendario persistita con chiave dedicata');
 assert.match(adminRulesSource,/data-calendar-save-draft/,'azione UI per salvare la bozza presente');
 assert.match(adminRulesSource,/data-calendar-clear-draft/,'azione UI per eliminare la bozza presente');
-assert.match(adminRulesSource,/Impossibile generare il calendario personalizzato/,'pannello di infattibilita presente');
-assert.match(adminRulesSource,/Conferma e genera proposta semplificata/,'conferma esplicita per semplificazione presente');
-assert.match(adminRulesSource,/data-calendar-confirm-simplify/,'azione UI per confermare la semplificazione presente');
+assert.match(adminRulesSource,/Impossibile generare un calendario valido/,'pannello di infattibilita presente');
+assert.doesNotMatch(adminRulesSource,/proposta semplificata|data-calendar-confirm-simplify|preferenze opzionali/i,'la UI non deve più esporre semplificazioni o preferenze');
+assert.match(adminRulesSource,/Ricerca del calendario ottimale in corso/,'stato della ricerca esatta presente');
 assert.ok(adminRulesSource.includes('localStorage.setItem(DRAFT_KEY'),'salvataggio bozza in localStorage presente');
 assert.ok(adminRulesSource.includes('localStorage.removeItem(DRAFT_KEY'),'eliminazione bozza in localStorage presente');
 
-console.log(JSON.stringify({ok:true,manualPreview:true,noAutoRepair:true,firstRoundLock:true,shareModuleStatic:true,bracketImageLayout:true,simulationFormats:true,draftPersistence:true,infeasibleFlow:true,simplifiedPreview:true,hardConflictBlocked:true,debutExactTime:true,legacyConstraintsRemoved:true,debutConflict:true,fieldFallback:true,technicalStates:true},null,2));
+console.log(JSON.stringify({ok:true,manualPreview:true,noAutoRepair:true,firstRoundLock:true,shareModuleStatic:true,bracketImageLayout:true,simulationFormats:true,draftPersistence:true,infeasibleFlow:true,optionalPreferencesRemoved:true,hardConflictBlocked:true,debutExactTime:true,legacyConstraintsRemoved:true,debutConflict:true,fieldFallback:true,technicalStates:true},null,2));
