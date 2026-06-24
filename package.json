@@ -1,6 +1,6 @@
 {
   "name": "new-generation-tournament",
-  "version": "1.26.17",
+  "version": "1.27.0",
   "private": true,
   "description": "Sito statico per la gestione e la pubblicazione di un torneo.",
   "scripts": {
@@ -14,6 +14,7 @@
     "test:photos": "node tools/test-photo-system.mjs",
     "test:edge": "tsc --noEmit --target ES2022 --module ESNext --moduleResolution Bundler --lib ES2022,DOM,DOM.Iterable --skipLibCheck tools/edge-function-test-globals.d.ts supabase/functions/team-photos/index.ts",
     "test:photo-edge-live": "node tools/check-photo-edge.mjs",
-    "test:calendar": "node tools/test-calendar-constraints.mjs"
+    "test:calendar": "node tools/test-calendar-constraints.mjs",
+    "test:scheduler-worker": "node tools/test-optimal-scheduler-worker.mjs"
   }
 }

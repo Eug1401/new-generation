@@ -1,32 +1,35 @@
 # Riferimento regole calendario
 
-| Regola | Tipo | Ambito | Validazione principale |
+| Regola | Tipo | Ambito | Controllo |
 | --- | --- | --- | --- |
-| Accoppiamenti della prima giornata | Obbligatoria | Partite della prima giornata | Squadre valide, non duplicate e appartenenti allo stesso girone o fase |
-| Campo/orario di una partita fissata | Obbligatoria | Partita configurata nella prima giornata | Campo e slot disponibili, nessuna sovrapposizione |
-| Riposo minimo | Obbligatoria | Tutte le squadre | Intervallo tra fine e inizio non inferiore al minimo configurato |
-| Orario d'esordio | Obbligatoria | Prima partita cronologica della squadra | Orario esatto disponibile e compatibile con campi e altre regole |
-| Campo naturale del girone | Priorità strutturale | Fase a gironi | Il girone viene programmato prima sul campo assegnato |
-| Prestito del campo libero | Fallback strutturale | Fase a gironi | Ammesso solo quando il proprietario non ha una partita valida e il campo naturale del girone ospite è già occupato |
-| Preferenze del profilo | Non obbligatoria | Generazione completa | Applicate dopo le regole strutturali e i vincoli obbligatori |
+| Accoppiamenti della prima giornata | Obbligatoria | Prima giornata | Squadre valide, distinte e nello stesso girone/fase |
+| Campo e orario di una partita fissata | Obbligatoria | Partita bloccata | Slot disponibile e nessuna sovrapposizione |
+| Riposo minimo | Obbligatoria | Tutte le squadre | Intervallo tra fine e inizio almeno pari al minimo |
+| Orario d'esordio | Obbligatoria | Prima partita cronologica | Orario esatto compatibile con gli altri vincoli |
+| Campo naturale del girone | Strutturale | Fase a gironi | Uso prioritario del campo assegnato |
+| Prestito del campo libero | Strutturale | Gironi diversi | Solo se il proprietario non ha una partita pronta e il campo naturale dell'ospite è occupato |
+| Minimizzazione partite consecutive | Obbligatoria | Calendario complessivo | Ottimo globale, mai preferenza disattivabile |
 
-## Ordine di priorità
+## Ordine di confronto delle soluzioni
 
-1. Validità strutturale del torneo.
-2. Nessuna sovrapposizione per squadre e campi.
-3. Disponibilità di date, orari, durata e riposo minimo.
-4. Orario esatto d'esordio.
-5. Configurazione esplicita della prima giornata.
-6. Assegnazione abituale di ogni girone al proprio campo.
-7. Uso dell'altro campo soltanto per riempire uno slot altrimenti inutilizzato.
-8. Preferenze non obbligatorie.
+1. Rispetto di tutti i vincoli obbligatori.
+2. Minimo orizzonte temporale e minimo numero di buchi interni riempibili.
+3. Minimo numero di squadre uniche con almeno una coppia consecutiva.
+4. Minimo numero totale di occorrenze consecutive.
+5. Minimo numero di sequenze di almeno tre partite consecutive.
+6. Distribuzione più equilibrata dei tempi di riposo.
+7. Scelta deterministica di una qualsiasi soluzione ancora equivalente.
+
+## Garanzia di correttezza
+
+Lo scheduler usa enumerazione esatta, backtracking, branch and bound e memoization. Un ramo viene eliminato soltanto tramite un limite inferiore sicuro o perché viola un vincolo obbligatorio. Non sono usati greedy, casualità o limiti temporali nell'azione standard dell'interfaccia.
+
+L'oggetto `optimality` riporta algoritmo, orizzonti testati, nodi esplorati, rami potati e valore dell'obiettivo. `provenOptimal` è vero solo per una ricerca completata.
 
 ## Prontezza di una partita
 
-Le partite dei gironi non vengono più valutate esclusivamente per `roundIndex`. Per ogni squadra viene costruita una catena delle proprie partite: un incontro può essere programmato soltanto dopo l'incontro precedente di entrambe le squadre.
+Per ogni squadra viene costruita la catena dei propri incontri. Una partita può essere collocata soltanto dopo che entrambe le squadre hanno disputato le rispettive partite precedenti. Questo consente di riempire uno slot con una giornata numericamente successiva senza violare l'ordine sportivo individuale.
 
-In questo modo una partita realmente pronta può riempire un campo libero anche se appartiene a una giornata numericamente successiva, senza far giocare una squadra fuori ordine o contemporaneamente su due campi.
+## Nessuna soluzione
 
-## Mancanza di una soluzione
-
-I vincoli obbligatori non vengono ignorati. Se non esiste una soluzione completa, la generazione si interrompe, non salva partite parziali e restituisce un errore leggibile al wizard.
+Se i vincoli sono incompatibili, la ricerca restituisce `INFEASIBLE`, non salva un calendario parziale e non rilassa automaticamente alcuna regola.
