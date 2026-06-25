@@ -79,8 +79,17 @@
    const year=p.birthYear?` · ${p.birthYear}`:'';
    return `${num}${p.name}${year}`;
  }
+ function normalizeParticipantSearch(value){
+   return String(value??'')
+     .normalize('NFD')
+     .replace(/[\u0300-\u036f]/g,'')
+     .toLowerCase()
+     .replace(/[#.,;:_/\\-]+/g,' ')
+     .replace(/\s+/g,' ')
+     .trim();
+ }
  function participantChoicesForTeam(state,teamId,search='',kind='goal',match=null){
-   const q=String(search||'').trim().toLowerCase();
+   const q=normalizeParticipantSearch(search);
    const allowedTeamIds=(teamId?[teamId]:[match?.homeTeamId,match?.awayTeamId]).filter(Boolean);
    const teams=allowedTeamIds.map(id=>store.getTeam(state,id)).filter(Boolean);
    const people=[];
@@ -94,7 +103,7 @@
        birthYear:p.birthYear,
        label:`${playerLabelWithNumber(p)}${teamId?'':` · ${team.name}`}`,
        type:'player',
-       searchKey:`${p.number!==''&&p.number!=null?p.number:''} ${p.name||''} ${p.birthYear||''} ${team.name||''}`.toLowerCase()
+       searchKey:normalizeParticipantSearch(`${p.number!==''&&p.number!=null?p.number:''} ${p.name||''} ${p.birthYear||''} ${team.name||''}`)
      }));
      if(kind==='goal')people.push({
        id:ownGoalValue(team.id),
@@ -104,7 +113,7 @@
        number:'',
        label:`Autogol${teamId?'':` · ${team.name}`}`,
        type:'own-goal',
-       searchKey:`autogol auto own goal ${team.name||''}`.toLowerCase()
+       searchKey:normalizeParticipantSearch(`autogol auto own goal ${team.name||''}`)
      });
      if(kind==='goal'&&isKings(state)&&team.president?.name)people.push({
        id:team.president.id,
@@ -114,7 +123,7 @@
        number:'',
        label:`${team.president.name} · Gol (rig.)${teamId?'':` · ${team.name}`}`,
        type:'president',
-       searchKey:`pres presidente rig rigore ${team.president.name||''} ${team.name||''}`.toLowerCase()
+       searchKey:normalizeParticipantSearch(`pres presidente rig rigore ${team.president.name||''} ${team.name||''}`)
      });
    });
    const typeOrder={player:0,president:1,'own-goal':2};
@@ -131,7 +140,8 @@
      const prefix=people.filter(p=>p.type==='player'&&String(p.number??'').startsWith(q)&&String(p.number??'')!==q);
      return [...exact,...prefix];
    }
-   return people.filter(p=>(p.searchKey||'').includes(q));
+   const tokens=q.split(' ').filter(Boolean);
+   return people.filter(p=>tokens.every(token=>(p.searchKey||'').includes(token)));
  }
  function playerOptionsForTeam(state,teamId,search='',selected='',kind='goal',match=null){
    const people=participantChoicesForTeam(state,teamId,search,kind,match);
@@ -825,7 +835,7 @@
         <div class="section-title compact"><div><span class="section-kicker">Inserimento rapido</span><h3>Aggiungi un marcatore</h3><p>${isKings(s)?'Seleziona il partecipante e gestisci separatamente gol normali, doppi, autogol e gol del presidente.':'Seleziona il partecipante e indica la quantità dei gol.'}</p></div></div>
         <div class="quick-add-bar scorer-add-grid">
           <div class="scorer-add-team"><label>Squadra del gol</label><select data-goal-team-picker>${teamEventOptions(s,m)}</select></div>
-          <div class="participant-search-field"><label for="goal-search-${UI.esc(m.id)}">Cerca per nome o numero di maglia</label><div class="participant-combobox"><input id="goal-search-${UI.esc(m.id)}" data-goal-player-search type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="${UI.esc(searchResultsId)}" placeholder="Cerca per nome o numero di maglia" autocomplete="off"><input data-goal-player-picker type="hidden" value=""><div id="${UI.esc(searchResultsId)}" class="participant-results" data-goal-player-results role="listbox" hidden></div></div><div class="selected-participant" data-goal-selected-participant hidden></div><small>Puoi cercare anche “autogol” o “presidente”. I risultati includono solo le squadre della partita.</small></div>
+          <div class="participant-search-field"><label for="goal-search-${UI.esc(m.id)}">Cerca per nome o numero di maglia</label><div class="participant-combobox"><input id="goal-search-${UI.esc(m.id)}" data-goal-player-search type="search" inputmode="text" enterkeyhint="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="${UI.esc(searchResultsId)}" placeholder="Cerca per nome o numero di maglia" autocomplete="off"><input data-goal-player-picker type="hidden" value=""><div id="${UI.esc(searchResultsId)}" class="participant-results" data-goal-player-results role="listbox" hidden></div></div><div class="selected-participant" data-goal-selected-participant hidden></div><small>Puoi cercare anche “autogol” o “presidente”. I risultati includono solo le squadre della partita.</small></div>
           <div class="scorer-add-quantities">${quantityStepperHtml({dataAttr:'data-goal-normal-count-picker',value:1,label:'Gol normali',labelAttr:'data-goal-normal-label',ariaLabel:'numero di gol normali'})}${isKings(s)?quantityStepperHtml({dataAttr:'data-goal-double-count-picker',value:0,label:'Gol doppi',ariaLabel:'numero di gol doppi',help:'Valgono 2 nel risultato e 1 nella classifica marcatori.',disabled:true,controlAttr:'data-goal-double-control'}):'<input type="hidden" data-goal-double-count-picker value="0">'}</div>
           <div class="scorer-add-action"><button class="btn primary" type="button" data-add-goal-row disabled>Aggiungi marcatore</button><div class="form-feedback" data-goal-feedback role="status" aria-live="polite"></div></div>
         </div>
@@ -835,7 +845,7 @@
         <div class="section-title compact"><div><span class="section-kicker">Disciplina</span><h3>Aggiungi un cartellino</h3><p>Cerca per nome o numero di maglia. Il presidente non è selezionabile.</p></div></div>
         <div class="quick-add-bar card-add-grid">
           <div><label>Squadra</label><select data-card-team-picker>${teamEventOptions(s,m)}</select></div>
-          <div class="participant-search-field"><label for="card-search-${UI.esc(m.id)}">Cerca calciatore</label><div class="participant-combobox"><input id="card-search-${UI.esc(m.id)}" data-card-player-search type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="${UI.esc(searchResultsId)}" placeholder="Nome o numero di maglia" autocomplete="off"><input data-card-player-picker type="hidden" value=""><div id="${UI.esc(searchResultsId)}" class="participant-results" data-card-player-results role="listbox" hidden></div></div><div class="selected-participant" data-card-selected-participant hidden></div></div>
+          <div class="participant-search-field"><label for="card-search-${UI.esc(m.id)}">Cerca calciatore</label><div class="participant-combobox"><input id="card-search-${UI.esc(m.id)}" data-card-player-search type="search" inputmode="text" enterkeyhint="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="${UI.esc(searchResultsId)}" placeholder="Nome o numero di maglia" autocomplete="off"><input data-card-player-picker type="hidden" value=""><div id="${UI.esc(searchResultsId)}" class="participant-results" data-card-player-results role="listbox" hidden></div></div><div class="selected-participant" data-card-selected-participant hidden></div></div>
           <div><label>Tipo</label>${cardTypeSelect('yellow')}</div>
           <button class="btn primary" type="button" data-add-card-row disabled>Aggiungi cartellino</button>
         </div>
