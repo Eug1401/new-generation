@@ -12,7 +12,7 @@
     const tid=esc(team?.id||'');
     const inits=esc(initials(team?.name));
     const safeName=esc(team?.name||'squadra non definita');
-    const hasLogo=Boolean(team?.logo);
+    const hasLogo=Boolean(safeTeamLogoUrl(team?.logo));
     const classes=['team-logo-wrap'];
     if(big) classes.push('big');
     if(hasLogo) classes.push(`ng-tl-${tid}`);
@@ -20,11 +20,15 @@
     return `<span class="${classes.join(' ')}" data-team-id="${tid}" role="img" aria-label="Stemma di ${safeName}">${fallback}</span>`;
   }
 
-  // Inietta/aggiorna lo <style id="ngTeamLogos"> con tutte le regole
-  // .ng-tl-{teamId} { background-image:url(<data-url>) }. Chiamata UNA volta
-  // per stato (su render dello state). I data-URL base64 generati da
-  // canvas.toDataURL non contengono mai parentesi o virgolette, quindi
-  // possono finire dentro url(...) senza escape.
+  // Inietta/aggiorna lo <style id="ngTeamLogos"> con tutte le regole.
+  // Sono ammessi sia i vecchi data URL sia i nuovi URL HTTPS Cloudinary.
+  function safeTeamLogoUrl(value){
+    const url=String(value||'').trim();
+    if(/^data:image\/(?:png|jpeg|webp);base64,/i.test(url))return url;
+    if(/^https:\/\//i.test(url))return url;
+    return '';
+  }
+  function cssUrl(value){return String(value).replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/[\r\n]/g,'');}
   function injectTeamLogoStyles(state){
     if(!state || !Array.isArray(state.teams)) return;
     let style=document.getElementById('ngTeamLogos');
@@ -35,9 +39,10 @@
     }
     let css='';
     for(const t of state.teams){
-      if(t && t.id && t.logo){
+      const logoUrl=t&&safeTeamLogoUrl(t.logo);
+      if(t && t.id && logoUrl){
         // class name safe: gli id sono uid alfanumerici/underscore
-        css+=`.ng-tl-${t.id}{background-image:url(${t.logo})}\n`;
+        css+=`.ng-tl-${t.id}{background-image:url("${cssUrl(logoUrl)}")}\n`;
       }
     }
     // Update solo se diverso (no innerHTML inutili)

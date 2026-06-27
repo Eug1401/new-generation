@@ -40,6 +40,10 @@
   let pendingResolvers = [];
   let lastRemoteState = null;
   let lastRemoteHash = '';
+  // Timestamp dell'ultima versione completa già scaricata/salvata. Il polling
+  // usa questo valore per chiedere a PostgREST il payload pesante SOLO se
+  // updated_at è realmente cambiato.
+  let lastRemoteUpdatedAt = '';
   let lastBannerAt = 0;
   let retryTimer = null;
   let retryCount = 0;
@@ -207,17 +211,34 @@
     return { kind:'unknown', message: raw };
   }
 
+  function normalizeRemoteRow(row){
+    if(!row) return null;
+    const normalized = store.normalizeState(row.data);
+    normalized._remoteUpdatedAt = row.updated_at || '';
+    lastRemoteState = normalized;
+    lastRemoteHash = stateHash(normalized);
+    lastRemoteUpdatedAt = row.updated_at || lastRemoteUpdatedAt || '';
+    return normalized;
+  }
+
   async function fetchRemote(){
     if(!client) throw new Error('Client Supabase non inizializzato');
     const query = client.from(table).select('data,updated_at').eq('id', rowId).maybeSingle();
     const { data, error } = await withTimeout(query, REMOTE_FETCH_TIMEOUT_MS, 'fetchRemote');
     if(error) throw error;
-    if(!data) return null;
-    const normalized = store.normalizeState(data.data);
-    normalized._remoteUpdatedAt = data.updated_at || '';
-    lastRemoteState = normalized;
-    lastRemoteHash = stateHash(normalized);
-    return normalized;
+    return normalizeRemoteRow(data);
+  }
+
+  // Poll egress-safe: quando conosciamo updated_at aggiunge un filtro neq.
+  // Se la riga non è cambiata PostgREST restituisce [] (pochi byte), invece di
+  // rispedire ad ogni poll tutto app_state.data e le immagini eventualmente presenti.
+  async function fetchRemoteIfChanged(){
+    if(!client) throw new Error('Client Supabase non inizializzato');
+    let query = client.from(table).select('data,updated_at').eq('id', rowId);
+    if(lastRemoteUpdatedAt) query = query.neq('updated_at', lastRemoteUpdatedAt);
+    const { data, error } = await withTimeout(query.maybeSingle(), REMOTE_FETCH_TIMEOUT_MS, 'fetchRemoteIfChanged');
+    if(error) throw error;
+    return normalizeRemoteRow(data);
   }
 
   async function flushRemoteSave({manual=false}={}){
@@ -257,16 +278,18 @@
           updateSaveStatus('pending-auth', {hash:hashToSave});
           return false;
         }
+        const savedAt = new Date().toISOString();
         const payload = {
           id: rowId,
           // _clientId per echo check, _revision per anti-flicker (stessa revision del broadcast)
           data: Object.assign({}, stateToSave, { _clientId: CLIENT_ID, _revision: revToSave }),
-          updated_at: new Date().toISOString()
+          updated_at: savedAt
         };
         const { error } = await client.from(table).upsert(payload, { onConflict: 'id' });
         if(error) throw error;
         lastRemoteState = payload.data;
         lastRemoteHash = hashToSave;
+        lastRemoteUpdatedAt = savedAt;
         retryCount = 0;
         clearPersistedPending(hashToSave);
         quietBanner('Salvato online.', 'ok');
@@ -777,6 +800,7 @@
       .on('postgres_changes', { event: '*', schema: 'public', table, filter: `id=eq.${rowId}` }, payload => {
         const raw = payload.new && payload.new.data;
         if(!raw) return;
+        if(payload.new?.updated_at) lastRemoteUpdatedAt = payload.new.updated_at;
         if(raw._clientId && raw._clientId === CLIENT_ID) return;
         debugRealtime('[NG-Realtime] postgres_changes da', raw._clientId || 'unknown')
         const next = store.normalizeState(raw);
@@ -978,9 +1002,9 @@
   let pollTimer = null;
   let lastPollAt = 0;
   // Frequenza polling: ottimizzata per garantire consistenza senza spammare.
-  const POLL_INTERVAL_LIVE = 2000;   // 2s se ci sono partite live (massima reattività)
-  const POLL_INTERVAL_VISIBLE = 6000; // 6s se la pagina è visibile (riconciliazione)
-  const POLL_INTERVAL_HIDDEN = 30000; // 30s se la pagina è in background
+  const POLL_INTERVAL_LIVE = 5000;    // 5s durante una partita live: fallback, il realtime resta istantaneo
+  const POLL_INTERVAL_VISIBLE = 15000; // 15s con pagina visibile
+  const POLL_INTERVAL_HIDDEN = 60000;  // 60s in background
 
   function hasLiveMatchesLocally(){
     try{
@@ -1000,8 +1024,10 @@
     if(!navigator.onLine) return;
     if(saveInFlight) return; // evito di scaricare mentre sto caricando io stesso
     try{
-      const remote = await fetchRemote();
-      if(!remote) return;
+      const remote = await fetchRemoteIfChanged();
+      // Nessuna riga restituita = updated_at invariato. Il poll ha trasferito
+      // soltanto una risposta vuota, non l'intero stato dell'applicazione.
+      if(!remote){ lastPollAt = Date.now(); return; }
       if(isPublic){
         publishPublicState(remote, 'poll');
         // Se il poll riesce ma non avevamo mai letto online, segna come recuperato.

@@ -8485,3 +8485,12 @@ a.article-card-main{cursor:pointer;}
   color:#ffeaa2;
   box-shadow:none;
 }
+
+/* v133 — migrazione loghi fuori da app_state (riduzione PostgREST egress) */
+.logo-optimization-panel{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 16px;padding:14px 16px;border:1px solid rgba(255,213,106,.48);background:rgba(255,213,106,.09)}
+.logo-optimization-panel[hidden]{display:none!important}
+.logo-optimization-panel strong{display:block;margin-bottom:4px}
+.logo-optimization-panel p{margin:0;color:var(--muted);line-height:1.45}
+.logo-optimization-panel[data-type="ok"]{border-color:rgba(215,164,45,.42);background:rgba(215,164,45,.12)}
+.logo-optimization-panel[data-type="error"]{border-color:rgba(229,83,95,.55);background:rgba(229,83,95,.13)}
+@media(max-width:720px){.logo-optimization-panel{align-items:stretch;flex-direction:column}.logo-optimization-panel .btn{width:100%}}

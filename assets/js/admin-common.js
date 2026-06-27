@@ -564,7 +564,7 @@
           <div><label>Nome</label><input name="name" value="${UI.esc(t.name)}" required></div>
           <div><label>Presidente</label><input name="presidentName" value="${UI.esc(t.president?.name||'')}" placeholder="Cognome Nome"></div>
           <div><label>Allenatore</label><input name="coachName" value="${UI.esc(t.coach?.name||'')}" placeholder="Cognome Nome"></div>
-          <div class="field-full"><label>Sostituisci logo dal dispositivo</label><input name="logoFile" type="file" accept="image/*"></div>
+          <div class="field-full"><label>Sostituisci logo dal dispositivo</label><input name="logoFile" type="file" accept="image/png,image/jpeg,image/webp"></div>
           <div class="field-full row-actions"><button class="btn primary" type="submit">Salva modifica</button><button class="btn ghost" type="button" data-clear-team-staff="${t.id}">Pulisci staff</button><button class="btn danger" type="button" data-delete-team="${t.id}">Elimina squadra</button></div>
         </form>
       </div>

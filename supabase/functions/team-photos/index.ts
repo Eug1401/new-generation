@@ -7,6 +7,7 @@
 import JSZip from 'npm:jszip@3.10.1';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_LOGO_FILE_SIZE = 5 * 1024 * 1024;
 const MAX_BATCH_FILES = 20;
 const MAX_BATCH_SIZE = 80 * 1024 * 1024;
 const MAX_ZIP_FILES = 100;
@@ -156,6 +157,14 @@ function cloudinaryConfig() {
   return { cloudName, apiKey, apiSecret, rootFolder, sectionTag };
 }
 
+
+function logoConfig() {
+  const base = cloudinaryConfig();
+  const logoRootFolder = cleanSegment(env('CLOUDINARY_LOGO_FOLDER', 'team-logos'), 'team-logos');
+  const logoTag = cleanSegment(env('CLOUDINARY_LOGO_TAG', 'team-logo'), 'team-logo');
+  return { ...base, logoRootFolder, logoTag };
+}
+
 function configurationHealth(req: Request) {
   const fromUrl = cloudinaryUrlConfig();
   const cloudName = env('CLOUDINARY_CLOUD_NAME', fromUrl.cloudName || 'dc17izhac');
@@ -169,7 +178,8 @@ function configurationHealth(req: Request) {
   return {
     ok: cloudinaryConfigured && supabaseConfigured && isOriginAllowed(origin),
     service: 'team-photos',
-    version: 'v126.17',
+    version: 'v133-egress-logo',
+    capabilities: ['team-photos', 'team-logos'],
     origin: origin || null,
     originAllowed: isOriginAllowed(origin),
     configuredOrigins: allowedOrigins().length,
@@ -453,6 +463,87 @@ async function cloudinaryUpload(file: File, teamId: string) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+
+function logoDeliveryUrl(resource: any, cloudName: string) {
+  const publicId = resource.public_id || '';
+  const version = resource.version ? `v${resource.version}/` : '';
+  const format = resource.format ? `.${resource.format}` : '';
+  return `https://res.cloudinary.com/${cloudName}/image/upload/c_limit,w_512,h_512,q_auto,f_auto/${version}${encodedPublicId(publicId)}${format}`;
+}
+
+async function cloudinaryUploadLogo(file: File, teamId: string, teamName = '') {
+  const { cloudName, apiKey, apiSecret, logoRootFolder, logoTag } = logoConfig();
+  const safeTeamId = cleanSegment(teamId, 'team');
+  const folder = `${logoRootFolder}/${safeTeamId}`;
+  // Public ID stabile: le sostituzioni aggiornano la stessa risorsa e la versione
+  // Cloudinary cambia, evitando file orfani e cache stale.
+  const publicId = 'logo';
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const signedParams: Record<string, string> = {
+    folder,
+    public_id: publicId,
+    timestamp,
+    tags: `${logoTag},team_${safeTeamId}`,
+    overwrite: 'true',
+    invalidate: 'true',
+  };
+  const signature = await signParams(signedParams, apiSecret);
+  const uploadForm = new FormData();
+  uploadForm.set('file', file);
+  uploadForm.set('api_key', apiKey);
+  uploadForm.set('signature', signature);
+  Object.entries(signedParams).forEach(([key, value]) => uploadForm.set(key, value));
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60_000);
+  try {
+    const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+      method: 'POST', body: uploadForm, signal: controller.signal,
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) throw new HttpError(response.status, 'CLOUDINARY_LOGO_UPLOAD', data?.error?.message || 'Upload logo Cloudinary fallito.');
+    if (!data?.public_id || !Number(data?.width) || !Number(data?.height)) {
+      throw new HttpError(502, 'CLOUDINARY_LOGO_INVALID_RESPONSE', 'Cloudinary non ha restituito metadati validi per il logo.');
+    }
+    return {
+      publicId: data.public_id,
+      url: logoDeliveryUrl(data, cloudName),
+      originalUrl: data.secure_url || '',
+      version: Number(data.version || 0),
+      format: data.format || '',
+      width: Number(data.width || 0),
+      height: Number(data.height || 0),
+      bytes: Number(data.bytes || 0),
+    };
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw new HttpError(504, 'CLOUDINARY_LOGO_TIMEOUT', 'Cloudinary non ha risposto entro il tempo previsto.');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function uploadLogo(req: Request) {
+  const form = await req.formData();
+  const file = form.get('file');
+  if (!(file instanceof File)) throw new HttpError(400, 'FILE_MISSING', 'File logo mancante.');
+  if (file.size > MAX_LOGO_FILE_SIZE) throw new HttpError(413, 'LOGO_TOO_LARGE', 'Il logo supera il limite di 5 MB.');
+  await validateFile(file);
+  const teamId = cleanSegment(form.get('teamId'), 'team');
+  const teamName = safeText(form.get('teamName'), 100);
+  const logo = await cloudinaryUploadLogo(file, teamId, teamName);
+  return json(req, { ok: true, logo, message: 'Logo caricato e ottimizzato.' }, 201);
+}
+
+async function deleteLogo(req: Request) {
+  const body = await req.json().catch(() => ({}));
+  const publicId = String(body.publicId || '').trim();
+  if (!publicId) throw new HttpError(400, 'LOGO_ID_MISSING', 'Identificativo logo mancante.');
+  const { logoRootFolder } = logoConfig();
+  if (!publicId.startsWith(`${logoRootFolder}/`)) throw new HttpError(403, 'LOGO_SCOPE', 'La risorsa non appartiene ai loghi del torneo.');
+  await cloudinaryDestroy(publicId);
+  return json(req, { ok: true, publicId, message: 'Logo eliminato.' });
 }
 
 async function cloudinaryDestroy(publicId: string) {
@@ -739,6 +830,8 @@ async function route(req: Request) {
   if (req.method === 'GET' && action === 'detail') return json(req, { ok: true, photo: await resolvePhoto(url.searchParams.get('photoId') || '') });
   if (req.method === 'GET') return listResources(req);
   if (req.method === 'POST' && action === 'zip') return downloadZip(req);
+  if (req.method === 'POST' && action === 'logo') return uploadLogo(req);
+  if (req.method === 'DELETE' && action === 'logo') return deleteLogo(req);
   if (req.method === 'POST') return uploadResources(req);
   if (req.method === 'PUT') return replaceResource(req);
   if (req.method === 'PATCH') return updateMetadata(req);
