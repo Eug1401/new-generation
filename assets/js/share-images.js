@@ -9,10 +9,18 @@
   function phaseLabel(state){return store.FORMAT_LABELS[state?.rules?.format]||state?.rules?.format||'Torneo';}
   function nowLabel(){try{return new Intl.DateTimeFormat('it-IT',{dateStyle:'medium',timeStyle:'short'}).format(new Date());}catch(_){return new Date().toISOString();}}
   function safeName(value){return String(value||'new-generation').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,90)||'new-generation';}
+  function isTrustedImageOrigin(url){
+    const host=String(url?.hostname||'').toLowerCase();
+    if(url?.protocol!=='https:')return false;
+    return host==='res.cloudinary.com'||host.endsWith('.supabase.co');
+  }
   function isSafeImageSrc(src){
     if(!src)return false;
     if(/^data:image\//i.test(src)||/^blob:/i.test(src))return true;
-    try{const u=new URL(src,location.href);return u.origin===location.origin;}catch(_){return !/^https?:\/\//i.test(src);}
+    try{
+      const u=new URL(src,location.href);
+      return u.origin===location.origin||isTrustedImageOrigin(u);
+    }catch(_){return !/^https?:\/\//i.test(src);}
   }
   function loadImage(src,timeout=3500){
     if(!isSafeImageSrc(src))return Promise.resolve(null);
